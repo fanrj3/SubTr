@@ -37,6 +37,7 @@ export function SubTrApp() {
       setMode(next);
       if (!next) {
         setSubtitle({ kind: "idle" });
+        lastSelectionRef.current = "";
       }
     },
     [setMode, setSubtitle]
@@ -45,6 +46,7 @@ export function SubTrApp() {
   const handleTargetLangChange = useCallback(
     (lang: string) => {
       setTargetLang(lang);
+      lastSelectionRef.current = "";
     },
     [setTargetLang]
   );
@@ -52,6 +54,7 @@ export function SubTrApp() {
   const handleSettingsChange = useCallback(
     (next: PersistedSettings) => {
       setSettings(next);
+      lastSelectionRef.current = "";
     },
     [setSettings]
   );
@@ -68,7 +71,6 @@ export function SubTrApp() {
       const trimmed = text.trim();
       if (!trimmed) return;
       if (trimmed === lastSelectionRef.current) return;
-      lastSelectionRef.current = trimmed;
 
       if (trimmed.length > MAX_SELECTION_CHARS) {
         setSubtitle({
@@ -90,6 +92,8 @@ export function SubTrApp() {
         });
         return;
       }
+
+      lastSelectionRef.current = trimmed;
 
       if (abortRef.current) {
         abortRef.current.abort();
@@ -120,6 +124,7 @@ export function SubTrApp() {
           },
           onError: (message) => {
             setSubtitle({ kind: "error", original: trimmed, message });
+            lastSelectionRef.current = "";
           },
         }
       );
