@@ -1,6 +1,7 @@
 import { MAX_TEXT_CHARS } from "@/lib/types";
 import type { TranslateSuccess } from "@/lib/types";
 import {
+  applyBodyOverrides,
   buildSystemPrompt,
   buildUpstreamHeaders,
   createSseTextStream,
@@ -9,6 +10,7 @@ import {
   extractUpstreamError,
   isRecord,
   isTimeoutError,
+  parseBodyOverrides,
   parseJsonSafe,
   parseLlmConfig,
   readTextSafe,
@@ -29,7 +31,7 @@ export async function POST(req: Request): Promise<Response> {
     return errorResponse("Invalid request body", 400);
   }
 
-  const { text, targetLang, config: rawConfig, stream } = rawBody;
+  const { text, targetLang, config: rawConfig, stream, bodyOverrides } = rawBody;
 
   if (typeof text !== "string") {
     return errorResponse("text must be a string", 400);
@@ -59,6 +61,11 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
+  const parsedOverrides = parseBodyOverrides(bodyOverrides);
+  if (!parsedOverrides.ok) {
+    return errorResponse(parsedOverrides.error, 400);
+  }
+
   const parsedConfig = parseLlmConfig(rawConfig);
   if (!parsedConfig.ok) {
     return errorResponse(parsedConfig.error, 400);
@@ -72,7 +79,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const wantStream = stream !== false;
 
-  const upstreamBody: Record<string, unknown> = {
+  const baseBody: Record<string, unknown> = {
     model: config.model,
     stream: wantStream,
     messages: [
@@ -82,28 +89,51 @@ export async function POST(req: Request): Promise<Response> {
   };
   // Only sent when set: some providers require max_tokens, newer OpenAI models reject it.
   if (config.maxTokens != null) {
-    upstreamBody.max_tokens = config.maxTokens;
+    baseBody.max_tokens = config.maxTokens;
   }
+  // bodyOverrides can add provider-specific fields, but never model/messages/stream.
+  const overrides = parsedOverrides.value;
+  const upstreamBody = applyBodyOverrides(baseBody, overrides);
 
   // Compose the client disconnect signal with a 60s timeout.
   const signal = AbortSignal.any([req.signal, AbortSignal.timeout(60000)]);
 
-  let upstream: Response;
-  try {
-    upstream = await fetch(urlResult.url, {
+  const sendUpstream = (body: Record<string, unknown>): Promise<Response> =>
+    fetch(urlResult.url, {
       method: "POST",
       headers: buildUpstreamHeaders(config.apiKey, config.extraHeaders),
-      body: JSON.stringify(upstreamBody),
+      body: JSON.stringify(body),
       signal,
     });
+
+  const fetchErrorResponse = (error: unknown): Response =>
+    req.signal.aborted
+      ? errorResponse("Client disconnected", 499)
+      : errorResponse(
+          isTimeoutError(error) ? "Request timed out" : "Upstream request failed",
+          isTimeoutError(error) ? 504 : 502,
+        );
+
+  let upstream: Response;
+  try {
+    upstream = await sendUpstream(upstreamBody);
   } catch (error) {
-    if (req.signal.aborted) {
-      return errorResponse("Client disconnected", 499);
-    }
-    return errorResponse(
-      isTimeoutError(error) ? "Request timed out" : "Upstream request failed",
-      isTimeoutError(error) ? 504 : 502,
+    return fetchErrorResponse(error);
+  }
+
+  // A preset's fast-mode params (bodyOverrides) may be rejected by a user-chosen
+  // model that doesn't support them. Retry once without the overrides.
+  if (overrides !== undefined && (upstream.status === 400 || upstream.status === 422)) {
+    console.warn(
+      `[translate] upstream ${upstream.status} with bodyOverrides; retrying once without overrides`,
     );
+    // Drain the rejected response so the connection can be reused.
+    await readTextSafe(upstream);
+    try {
+      upstream = await sendUpstream(baseBody);
+    } catch (error) {
+      return fetchErrorResponse(error);
+    }
   }
 
   if (!upstream.ok) {

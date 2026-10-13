@@ -9,6 +9,8 @@ import {
   readSettings,
   toLlmConfig,
   streamTranslate,
+  resolveTargetLang,
+  countWords,
 } from "@/lib/client";
 import { TopBar } from "./top-bar";
 import { Reader } from "./reader";
@@ -17,7 +19,7 @@ import { SettingsModal } from "./settings-modal";
 
 const MODE_KEY = "subtr.mode.v1";
 const TARGET_LANG_KEY = "subtr.targetLang.v1";
-const DEFAULT_TARGET_LANG = "English";
+const DEFAULT_TARGET_LANG = "auto";
 
 export function SubTrApp() {
   const [mode, setMode] = useLocalStorage(MODE_KEY, false);
@@ -100,11 +102,19 @@ export function SubTrApp() {
       }
       abortRef.current = new AbortController();
 
+      const resolvedTargetLang = resolveTargetLang(trimmed, targetLang);
+      const wordCount = countWords(trimmed);
+      const fastModeLimit = settings.fastModeWordLimit ?? 20;
+      const useFastMode =
+        settings.fastModeEnabled !== false &&
+        wordCount <= fastModeLimit &&
+        preset?.fastModeParams != null;
+
       setSubtitle({ kind: "loading", original: trimmed });
 
       streamTranslate(
         trimmed,
-        targetLang,
+        resolvedTargetLang,
         config,
         abortRef.current.signal,
         {
@@ -126,7 +136,8 @@ export function SubTrApp() {
             setSubtitle({ kind: "error", original: trimmed, message });
             lastSelectionRef.current = "";
           },
-        }
+        },
+        useFastMode ? preset.fastModeParams : undefined
       );
     },
     [mode, settings, targetLang, setSubtitle]
@@ -155,8 +166,12 @@ export function SubTrApp() {
         onTargetLangChange={handleTargetLangChange}
         onOpenSettings={handleOpenSettings}
       />
-      <Reader onSelect={handleSelect} />
-      <SubtitleOverlay state={subtitle} onDismiss={dismissSubtitle} />
+      <Reader onSelect={handleSelect} mode={mode} />
+      <SubtitleOverlay
+        key={subtitle.kind === "idle" ? "idle" : subtitle.original}
+        state={subtitle}
+        onDismiss={dismissSubtitle}
+      />
       {settingsOpen && (
         <SettingsModal
           settings={settings}

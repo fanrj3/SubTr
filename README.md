@@ -21,11 +21,11 @@ Open http://localhost:3000.
 ## Usage
 
 1. Paste or type text into the reader (click the empty area, or use **Edit** later).
-2. Open **Settings**, pick a provider, paste your API key, and hit **Test connection** to verify it works. The endpoint (**Base URL**), **Model**, and key are all editable; presets fill sensible defaults.
+2. Open **Settings**, pick a provider, paste your API key, and hit **Test connection** to verify it works. The endpoint (**Base URL**), **Model**, and key are all editable; presets fill sensible defaults. **Fast mode for short text** requests reduced reasoning for short selections on providers that support it (e.g. OpenCode Go's `deepseek-v4.1-flash`), making short translations noticeably quicker.
 3. Toggle **Translate** on in the top bar.
-4. Select any passage in the reader — the translation streams into a subtitle card at the bottom center. Press **×** or wait 20 seconds to dismiss it.
+4. Select any passage in the reader — the translation streams into a subtitle card at the bottom center. Long translations scroll like a teleprompter: a short hold at the top, then a scroll paced to the text length and reading speed, then a brief hold before auto-hiding. Scroll with the wheel to interrupt — the subtitle then stays until you press **Esc**.
 
-The target language is chosen in the top bar (default: English).
+The target language is chosen in the top bar — default **Auto**: mostly-CJK text is translated to English, everything else to 中文（简体）. Pick a specific language to override. `⌘/Ctrl+Shift+D` on desktop re-triggers a capture manually.
 
 ## Built-in providers
 
@@ -50,7 +50,7 @@ The API key you enter stays in your browser (localStorage) and is sent only with
 
 ## Desktop app (Electron)
 
-The same app runs as a desktop app (macOS / Windows / Linux). It opens the reader window and additionally monitors text selections system-wide: select text in **any** app and the translation appears as a subtitle at the bottom of your screen in a transparent, click-through overlay. `⌘/Ctrl+Shift+D` re-triggers a capture manually (useful when selection monitoring is unavailable).
+The same app runs as a desktop app (macOS / Windows / Linux). It opens the reader window and additionally monitors text selections system-wide: select text in **any** app and the translation appears as a subtitle at the bottom of your screen in a transparent, click-through overlay. Long translations scroll like a teleprompter; hovering over the subtitle makes it interactive (wheel to interrupt auto-scroll), and while it is waiting for dismissal the overlay arms a global **Esc**. `⌘/Ctrl+Shift+D` re-triggers a capture manually (useful when selection monitoring is unavailable).
 
 ```bash
 npm run desktop        # build + launch the desktop app

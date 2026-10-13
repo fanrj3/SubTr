@@ -210,6 +210,42 @@ export function SettingsModal({ settings, onChange, onClose }: SettingsModalProp
             />
           </div>
 
+          <div className="flex items-start gap-3 rounded-xl border border-card-border bg-background/50 p-3">
+            <input
+              id="fastMode"
+              type="checkbox"
+              checked={settings.fastModeEnabled !== false}
+              onChange={(e) => update({ fastModeEnabled: e.target.checked })}
+              className="mt-0.5 h-4 w-4 rounded border-card-border text-accent focus-visible:ring-2 focus-visible:ring-accent"
+            />
+            <div className="flex-1">
+              <label htmlFor="fastMode" className="block text-sm font-medium">
+                Fast mode for short text
+              </label>
+              <p className="text-xs text-muted">
+                Use provider quick-reply params when the selection is short.
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <label htmlFor="fastModeLimit" className="text-sm text-muted">
+                  Under
+                </label>
+                <input
+                  id="fastModeLimit"
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={settings.fastModeWordLimit ?? 20}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value, 10);
+                    update({ fastModeWordLimit: Number.isNaN(value) ? 20 : value });
+                  }}
+                  className="w-20 rounded-lg border border-card-border bg-background px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                />
+                <span className="text-sm text-muted">words</span>
+              </div>
+            </div>
+          </div>
+
           <div className="flex flex-wrap items-center gap-3 pt-1">
             <button
               type="button"

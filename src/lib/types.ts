@@ -29,6 +29,11 @@ export type TranslateRequest = {
   config: LlmConfig;
   /** Default true → 200 body is a plain-text stream of the translation. false → 200 JSON {translation}. */
   stream?: boolean;
+  /**
+   * Extra JSON fields merged into the upstream request body (e.g. reasoning-effort
+   * controls for short-text fast mode). Cannot override model/messages/stream.
+   */
+  bodyOverrides?: Record<string, unknown>;
 };
 
 /** 200 response body for stream=false. */
@@ -64,4 +69,9 @@ export type ProviderPreset = {
   note?: string;
   /** True for local servers that need no API key. */
   keyless?: boolean;
+  /**
+   * Params merged into the request body when short-text fast mode is used
+   * (e.g. { reasoning_effort: "low" } or { thinking: { type: "disabled" } }).
+   */
+  fastModeParams?: Record<string, unknown>;
 };

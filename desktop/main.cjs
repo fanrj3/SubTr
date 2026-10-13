@@ -21,11 +21,12 @@ const {
   dialog,
   shell,
   screen,
+  ipcMain,
   utilityProcess,
 } = require("electron");
 
 const APP_ROOT = path.resolve(__dirname, "..");
-const OVERLAY_HEIGHT = 220;
+const OVERLAY_HEIGHT = 280;
 const DUPLICATE_WINDOW_MS = 1200;
 const MANUAL_DEBOUNCE_MS = 400;
 const CLIPBOARD_POLL_ATTEMPTS = 20;
@@ -44,6 +45,7 @@ let lastCapture = { text: "", at: 0 };
 let lastManualAt = 0;
 let manualBusy = false;
 let quitting = false;
+let escArmed = false;
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -306,6 +308,85 @@ function registerGlobalShortcut() {
 }
 
 // ---------------------------------------------------------------------------
+// Overlay interaction bridge (click-through toggle + one-shot global Escape)
+// ---------------------------------------------------------------------------
+
+/** True when an IPC event came from the overlay window. */
+function isFromOverlay(event) {
+  return (
+    !!overlayWindow &&
+    !overlayWindow.isDestroyed() &&
+    event.sender === overlayWindow.webContents
+  );
+}
+
+/** Toggle the overlay between click-through (default) and interactive. */
+function setOverlayInteractive(on) {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  overlayWindow.setIgnoreMouseEvents(!on, { forward: true });
+}
+
+/** One-shot global Escape handler fired while armed. */
+function onEscFired() {
+  disarmEsc();
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.webContents.send("subtr:esc");
+  }
+}
+
+/** Register a global Escape (idempotent). */
+function armEsc() {
+  if (escArmed) return;
+  try {
+    const ok = globalShortcut.register("Escape", onEscFired);
+    if (!ok) {
+      console.warn("[esc] failed to register global Escape");
+      return;
+    }
+    escArmed = true;
+  } catch (error) {
+    console.warn("[esc] registration error:", error && error.message ? error.message : error);
+  }
+}
+
+/** Unregister the global Escape. */
+function disarmEsc() {
+  if (!escArmed) return;
+  try {
+    globalShortcut.unregister("Escape");
+  } catch {
+    // ignore
+  }
+  escArmed = false;
+}
+
+/** Reset transient overlay state (used on overlay reload/close). */
+function resetOverlayState() {
+  disarmEsc();
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.setIgnoreMouseEvents(true, { forward: true });
+  }
+}
+
+function registerOverlayIpc() {
+  ipcMain.on("subtr:overlay-interactive", (event, on) => {
+    if (!isFromOverlay(event)) return;
+    if (typeof on !== "boolean") return;
+    setOverlayInteractive(on);
+  });
+
+  ipcMain.on("subtr:esc-armed", (event, on) => {
+    if (!isFromOverlay(event)) return;
+    if (typeof on !== "boolean") return;
+    if (on) {
+      armEsc();
+    } else {
+      disarmEsc();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Windows
 // ---------------------------------------------------------------------------
 
@@ -313,10 +394,11 @@ const preloadPath = path.join(__dirname, "preload.cjs");
 
 function createMainWindow(baseUrl) {
   mainWindow = new BrowserWindow({
-    width: 1100,
-    height: 820,
-    minWidth: 720,
-    minHeight: 520,
+    width: 900,
+    height: 660,
+    minWidth: 640,
+    minHeight: 480,
+    center: true,
     show: false,
     title: "SubTr",
     webPreferences: {
@@ -364,10 +446,15 @@ function createOverlayWindow(baseUrl) {
   });
   overlayWindow.setAlwaysOnTop(true, "screen-saver");
   overlayWindow.setIgnoreMouseEvents(true, { forward: true });
+  overlayWindow.webContents.on("did-start-navigation", () => {
+    // Overlay reloading: drop any armed Esc and restore click-through.
+    resetOverlayState();
+  });
   overlayWindow.once("ready-to-show", () => {
     if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive();
   });
   overlayWindow.on("closed", () => {
+    resetOverlayState();
     overlayWindow = null;
   });
   void overlayWindow.loadURL(`${baseUrl}/overlay`);
@@ -445,6 +532,8 @@ async function start() {
       capture: (text) => handleCapture({ text }),
     };
   }
+
+  registerOverlayIpc();
 
   let baseUrl;
   try {

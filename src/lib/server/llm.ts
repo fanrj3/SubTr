@@ -127,6 +127,47 @@ export function parseLlmConfig(
   return { ok: true, config };
 }
 
+/** Keys that user-supplied bodyOverrides may never replace. */
+const PROTECTED_BODY_KEYS = ["model", "messages", "stream"] as const;
+
+/**
+ * Validate optional `bodyOverrides` from the request. Must be a plain object
+ * when present (arrays, primitives and null are rejected).
+ */
+export function parseBodyOverrides(
+  value: unknown,
+): { ok: true; value: Record<string, unknown> | undefined } | { ok: false; error: string } {
+  if (value === undefined) {
+    return { ok: true, value: undefined };
+  }
+  if (!isRecord(value) || Array.isArray(value)) {
+    return { ok: false, error: "bodyOverrides must be an object" };
+  }
+  return { ok: true, value };
+}
+
+/**
+ * Merge `bodyOverrides` into the upstream body. Protected keys
+ * (`model`, `messages`, `stream`) are always taken from the base body and can
+ * never be overridden by the client.
+ */
+export function applyBodyOverrides(
+  base: Record<string, unknown>,
+  overrides?: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!overrides) return base;
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(overrides)) {
+    if ((PROTECTED_BODY_KEYS as readonly string[]).includes(key)) continue;
+    merged[key] = value;
+  }
+  // Defensive re-apply in case future protected keys are added.
+  for (const key of PROTECTED_BODY_KEYS) {
+    if (key in base) merged[key] = base[key];
+  }
+  return merged;
+}
+
 /** Read a response body as text without throwing. */
 export async function readTextSafe(res: Response): Promise<string> {
   try {

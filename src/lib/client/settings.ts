@@ -11,6 +11,10 @@ export type PersistedSettings = {
   model: string;
   maxTokens?: number;
   extraHeaders?: Record<string, string>;
+  /** Use provider-specific fast-mode params for short text translations. */
+  fastModeEnabled?: boolean;
+  /** Word-count threshold for short-text fast mode. */
+  fastModeWordLimit?: number;
 };
 
 const DEFAULT_PRESET = PROVIDER_PRESETS.find((p) => p.id === "openai") ?? PROVIDER_PRESETS[0];
@@ -22,6 +26,8 @@ export const DEFAULT_SETTINGS: PersistedSettings = {
   model: DEFAULT_PRESET.defaultModel,
   maxTokens: DEFAULT_PRESET.maxTokens,
   extraHeaders: DEFAULT_PRESET.extraHeaders,
+  fastModeEnabled: true,
+  fastModeWordLimit: 20,
 };
 
 export function readSettings(): PersistedSettings {

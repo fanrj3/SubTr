@@ -2,15 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLocalStorage } from "@/lib/client";
-import { EditIcon, XIcon } from "./icons";
+import { isDesktopMode } from "@/lib/client/desktop";
+import { EditIcon, CheckIcon } from "./icons";
 
 const TEXT_KEY = "subtr.text.v1";
 
 type ReaderProps = {
   onSelect: (text: string) => void;
+  mode?: boolean;
 };
 
-export function Reader({ onSelect }: ReaderProps) {
+export function Reader({ onSelect, mode }: ReaderProps) {
   const [text, setText] = useLocalStorage(TEXT_KEY, "");
   const [isEditing, setIsEditing] = useState(false);
   const readerRef = useRef<HTMLDivElement>(null);
@@ -72,14 +74,14 @@ export function Reader({ onSelect }: ReaderProps) {
 
   if (isEditing) {
     return (
-      <main className="mx-auto w-full max-w-[65ch] flex-1 px-6 py-12 sm:py-16">
+      <main className="mx-auto w-full max-w-[65ch] flex-1 px-6 py-6 sm:py-8">
         <div className="mb-3 flex justify-end">
           <button
             type="button"
             onClick={() => setIsEditing(false)}
             className="inline-flex items-center gap-1.5 rounded-lg border border-card-border bg-background px-3 py-1.5 text-sm font-medium shadow-sm transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
           >
-            <XIcon className="h-4 w-4" />
+            <CheckIcon className="h-4 w-4" />
             Done
           </button>
         </div>
@@ -87,8 +89,8 @@ export function Reader({ onSelect }: ReaderProps) {
           ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Paste text here to read..."
-          className="min-h-[60vh] w-full resize-none rounded-2xl border border-card-border bg-card p-6 text-lg leading-relaxed outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-accent"
+          placeholder="Paste text to read and translate..."
+          className="min-h-[50vh] w-full resize-none rounded-2xl border border-card-border bg-card p-5 text-lg leading-relaxed outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-accent"
           aria-label="Edit text"
         />
       </main>
@@ -97,21 +99,28 @@ export function Reader({ onSelect }: ReaderProps) {
 
   if (!text.trim()) {
     return (
-      <main className="mx-auto flex w-full max-w-[65ch] flex-1 flex-col items-center justify-center px-6 py-12 text-center sm:py-16">
+      <main className="mx-auto flex w-full max-w-[65ch] flex-1 flex-col items-center justify-start px-6 py-10 text-center sm:py-12">
         <button
           type="button"
           onClick={() => setIsEditing(true)}
-          className="group w-full rounded-2xl border-2 border-dashed border-card-border bg-transparent p-10 transition-colors hover:border-accent/40 hover:bg-accent-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="group w-full rounded-2xl border-2 border-dashed border-card-border bg-transparent p-8 transition-colors hover:border-accent/40 hover:bg-accent-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
-          <p className="text-lg text-foreground">Paste text here to read</p>
-          <p className="mt-2 text-sm text-muted">Click to add your first passage</p>
+          <p className="text-lg text-foreground">Paste text to read and translate</p>
+          <p className="mt-2 text-sm text-muted">
+            Select any passage to translate — the translation appears as a subtitle.
+          </p>
+          {isDesktopMode() && (
+            <p className="mt-2 text-xs text-muted">
+              On desktop, select text in any app and the subtitle appears at the bottom of your screen.
+            </p>
+          )}
         </button>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto w-full max-w-[65ch] flex-1 px-6 py-12 sm:py-16">
+    <main className="mx-auto w-full max-w-[65ch] flex-1 px-6 py-6 sm:py-8">
       <div className="mb-3 flex justify-end">
         <button
           type="button"
@@ -130,6 +139,11 @@ export function Reader({ onSelect }: ReaderProps) {
       >
         {text}
       </div>
+      <p className="mt-4 text-center text-xs text-muted">
+        {mode
+          ? "Select any passage to translate."
+          : "Turn on Translate, then select a passage to see the subtitle."}
+      </p>
     </main>
   );
 }

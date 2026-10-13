@@ -22,4 +22,41 @@ contextBridge.exposeInMainWorld("subtrDesktop", {
     ipcRenderer.on("subtr:capture", listener);
     return () => ipcRenderer.removeListener("subtr:capture", listener);
   },
+
+  /**
+   * Overlay window only: toggle between click-through and interactive
+   * (pointer over the card).
+   * @param {boolean} on
+   */
+  setOverlayInteractive(on) {
+    if (typeof on !== "boolean") return;
+    ipcRenderer.send("subtr:overlay-interactive", on);
+  },
+
+  /**
+   * Overlay window only: temporarily arm a one-shot global Escape.
+   * @param {boolean} on
+   */
+  setEscArmed(on) {
+    if (typeof on !== "boolean") return;
+    ipcRenderer.send("subtr:esc-armed", on);
+  },
+
+  /**
+   * Overlay window only: notified when the armed global Escape fired.
+   * @param {() => void} callback
+   * @returns {() => void} unsubscribe
+   */
+  onEsc(callback) {
+    if (typeof callback !== "function") return () => {};
+    const listener = () => {
+      try {
+        callback();
+      } catch (error) {
+        console.error("[subtrDesktop] onEsc callback failed", error);
+      }
+    };
+    ipcRenderer.on("subtr:esc", listener);
+    return () => ipcRenderer.removeListener("subtr:esc", listener);
+  },
 });

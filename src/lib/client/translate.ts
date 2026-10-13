@@ -11,7 +11,8 @@ export async function streamTranslate(
   targetLang: string,
   config: LlmConfig,
   signal: AbortSignal,
-  callbacks: TranslateCallbacks
+  callbacks: TranslateCallbacks,
+  bodyOverrides?: Record<string, unknown>
 ): Promise<void> {
   const body: TranslateRequest = {
     text,
@@ -19,6 +20,9 @@ export async function streamTranslate(
     config,
     stream: true,
   };
+  if (bodyOverrides) {
+    body.bodyOverrides = bodyOverrides;
+  }
 
   let res: Response;
   try {

@@ -3,6 +3,7 @@
 import { SubTrLogo, SettingsIcon } from "./icons";
 
 const TARGET_LANGUAGES = [
+  "auto",
   "中文（简体）",
   "中文（繁體）",
   "English",
@@ -12,6 +13,10 @@ const TARGET_LANGUAGES = [
   "Français",
   "Deutsch",
 ];
+
+function formatTargetLang(value: string): string {
+  return value === "auto" ? "Auto" : value;
+}
 
 type TopBarProps = {
   mode: boolean;
@@ -65,19 +70,22 @@ export function TopBar({
             </span>
           </div>
 
-          <select
-            value={targetLang}
-            onChange={(e) => onTargetLangChange(e.target.value)}
-            aria-label="Target language"
-            className="h-9 rounded-xl border border-card-border bg-card px-2.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent sm:px-3"
-            suppressHydrationWarning
-          >
-            {TARGET_LANGUAGES.map((lang) => (
-              <option key={lang} value={lang}>
-                {lang}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2 rounded-xl border border-card-border bg-card p-1 shadow-sm">
+            <span className="hidden pl-2 text-sm text-muted sm:inline">Translate to</span>
+            <select
+              value={targetLang}
+              onChange={(e) => onTargetLangChange(e.target.value)}
+              aria-label="Target language"
+              className="h-7 rounded-lg border-0 bg-transparent px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent sm:px-3"
+              suppressHydrationWarning
+            >
+              {TARGET_LANGUAGES.map((lang) => (
+                <option key={lang} value={lang}>
+                  {formatTargetLang(lang)}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <button
             type="button"

@@ -1,6 +1,9 @@
 export type DesktopBridge = {
   isDesktop: true;
   onCapture(cb: (payload: { text: string }) => void): () => void;
+  setOverlayInteractive?(on: boolean): void;
+  setEscArmed?(on: boolean): void;
+  onEsc?(cb: () => void): () => void;
 };
 
 declare global {

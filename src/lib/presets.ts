@@ -11,12 +11,14 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "OpenAI",
     baseURL: "https://api.openai.com/v1",
     defaultModel: "gpt-5-mini",
+    fastModeParams: { reasoning_effort: "low" },
   },
   {
     id: "opencode-go",
     label: "OpenCode Go",
     baseURL: "https://opencode.ai/inference/go/v1",
     defaultModel: "deepseek-v4.1-flash",
+    fastModeParams: { reasoning_effort: "low" },
     extraHeaders: {
       "x-opencode-session": "subtr",
       "User-Agent": "SubTr/0.1",
@@ -35,6 +37,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "Google Gemini",
     baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
     defaultModel: "gemini-3.8-flash",
+    fastModeParams: { reasoning_effort: "low" },
   },
   {
     id: "deepseek",
@@ -53,6 +56,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "Groq",
     baseURL: "https://api.groq.com/openai/v1",
     defaultModel: "openai/gpt-oss-20b",
+    fastModeParams: { reasoning_effort: "low" },
   },
   {
     id: "xai",
@@ -78,6 +82,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "Zhipu (GLM)",
     baseURL: "https://open.bigmodel.cn/api/paas/v4",
     defaultModel: "glm-5.3-flash",
+    fastModeParams: { reasoning_effort: "low" },
   },
   {
     id: "dashscope",

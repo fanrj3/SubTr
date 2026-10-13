@@ -12,7 +12,17 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Desktop packaging output (electron-builder) and local artifacts:
+    "dist/**",
+    ".opencode/**",
   ]),
+  {
+    // Electron main/preload/dev scripts are intentionally CommonJS.
+    files: ["desktop/**/*.cjs"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

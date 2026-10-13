@@ -4,12 +4,24 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { MAX_SELECTION_CHARS } from "@/lib/types";
 import { PROVIDER_PRESETS } from "@/lib/presets";
-import { readSettings, readStorage, toLlmConfig, streamTranslate } from "@/lib/client";
+import {
+  readSettings,
+  readStorage,
+  toLlmConfig,
+  streamTranslate,
+  resolveTargetLang,
+  countWords,
+} from "@/lib/client";
 import { isDesktopMode } from "@/lib/client/desktop";
 import { SubtitleOverlay, type SubtitleState } from "@/components/subtitle-overlay";
 
+const MODE_KEY = "subtr.mode.v1";
 const TARGET_LANG_KEY = "subtr.targetLang.v1";
-const DEFAULT_TARGET_LANG = "English";
+const DEFAULT_TARGET_LANG = "auto";
+
+function readMode(): boolean {
+  return readStorage(MODE_KEY, false);
+}
 
 function readTargetLang(): string {
   return readStorage(TARGET_LANG_KEY, DEFAULT_TARGET_LANG);
@@ -24,9 +36,19 @@ function Overlay() {
     setSubtitle({ kind: "idle" });
   }, []);
 
+  const handleRequestEscArmed = useCallback((armed: boolean) => {
+    window.subtrDesktop?.setEscArmed?.(armed);
+  }, []);
+
+  const handleRequestInteractive = useCallback((interactive: boolean) => {
+    window.subtrDesktop?.setOverlayInteractive?.(interactive);
+  }, []);
+
   const handleCapture = useCallback((text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
+
+    if (!readMode()) return;
 
     const original = trimmed.slice(0, 80) + (trimmed.length > 80 ? "…" : "");
 
@@ -57,11 +79,19 @@ function Overlay() {
     const controller = new AbortController();
     abortRef.current = controller;
 
+    const resolvedTargetLang = resolveTargetLang(trimmed, readTargetLang());
+    const wordCount = countWords(trimmed);
+    const fastModeLimit = settings.fastModeWordLimit ?? 20;
+    const useFastMode =
+      settings.fastModeEnabled !== false &&
+      wordCount <= fastModeLimit &&
+      preset?.fastModeParams != null;
+
     setSubtitle({ kind: "loading", original });
 
     streamTranslate(
       trimmed,
-      readTargetLang(),
+      resolvedTargetLang,
       config,
       controller.signal,
       {
@@ -82,7 +112,8 @@ function Overlay() {
         onError: (message) => {
           setSubtitle({ kind: "error", original, message });
         },
-      }
+      },
+      useFastMode ? preset.fastModeParams : undefined
     );
   }, []);
 
@@ -114,12 +145,30 @@ function Overlay() {
   }, [handleCapture, searchParams]);
 
   useEffect(() => {
+    const bridge = window.subtrDesktop;
+    if (!bridge?.onEsc) return;
+
+    const unsubscribe = bridge.onEsc(() => {
+      dismissSubtitle();
+    });
+    return unsubscribe;
+  }, [dismissSubtitle]);
+
+  useEffect(() => {
     return () => {
       abortRef.current?.abort();
     };
   }, []);
 
-  return <SubtitleOverlay state={subtitle} onDismiss={dismissSubtitle} />;
+  return (
+    <SubtitleOverlay
+      key={subtitle.kind === "idle" ? "idle" : subtitle.original}
+      state={subtitle}
+      onDismiss={dismissSubtitle}
+      onRequestEscArmed={handleRequestEscArmed}
+      onRequestInteractive={handleRequestInteractive}
+    />
+  );
 }
 
 export default function OverlayPage() {
