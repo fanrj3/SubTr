@@ -1,8 +1,8 @@
 # SubTr
 
-Subtitle-style translation for anything you read in the browser. Paste text, turn translation mode on, select a passage, and the translation appears at the bottom of the screen like a video subtitle.
+Subtitle-style translation for anything you read in the browser — and on your whole desktop. Paste text, turn translation mode on, select a passage, and the translation appears at the bottom of the screen like a video subtitle.
 
-Simple, light, cross-platform: runs anywhere Node.js runs (macOS, Windows, Linux, or any server). No build tools beyond npm.
+Simple, light, cross-platform: runs anywhere Node.js runs (macOS, Windows, Linux, or any server), as a web app or as an Electron desktop app. No build tools beyond npm.
 
 ## Requirements
 
@@ -31,10 +31,11 @@ The target language is chosen in the top bar (default: English).
 
 All presets are OpenAI-compatible endpoints (models verified Oct 2026):
 
-OpenAI, Anthropic (Claude), Google Gemini, DeepSeek, OpenRouter, Groq, xAI (Grok), Mistral, Moonshot (Kimi), Zhipu (GLM), Alibaba Qwen (DashScope), SiliconFlow — plus local **Ollama** (`http://localhost:11434/v1`) and **LM Studio** (`http://localhost:1234/v1`), which need no API key. **Custom** accepts any OpenAI-compatible endpoint.
+OpenAI, OpenCode Go, Anthropic (Claude), Google Gemini, DeepSeek, OpenRouter, Groq, xAI (Grok), Mistral, Moonshot (Kimi), Zhipu (GLM), Alibaba Qwen (DashScope), SiliconFlow — plus local **Ollama** (`http://localhost:11434/v1`) and **LM Studio** (`http://localhost:1234/v1`), which need no API key. **Custom** accepts any OpenAI-compatible endpoint.
 
 Notes:
 
+- OpenCode Go: uses your OpenCode Go subscription key; the required `x-opencode-session` header and an app User-Agent are sent automatically.
 - Moonshot: CN keys use `api.moonshot.cn`, international keys use `api.moonshot.ai`.
 - DashScope: CN keys use `dashscope.aliyuncs.com`, international keys use `dashscope-intl.aliyuncs.com`.
 - Local servers: pull the model first (Ollama); LM Studio accepts any model id string for the loaded model.
@@ -46,6 +47,26 @@ browser ── POST /api/translate ──▶ local Next.js route ──▶ your 
 ```
 
 The API key you enter stays in your browser (localStorage) and is sent only with the request you configure, forwarded through the app's own server route (which also avoids CORS and mixed-content limits, including for `http://localhost` LLM servers).
+
+## Desktop app (Electron)
+
+The same app runs as a desktop app (macOS / Windows / Linux). It opens the reader window and additionally monitors text selections system-wide: select text in **any** app and the translation appears as a subtitle at the bottom of your screen in a transparent, click-through overlay. `⌘/Ctrl+Shift+D` re-triggers a capture manually (useful when selection monitoring is unavailable).
+
+```bash
+npm run desktop        # build + launch the desktop app
+npm run desktop:dev    # dev mode (Next dev server + Electron)
+npm run dist:mac       # package a macOS .dmg (arm64) → dist/
+npm run dist:win       # Windows NSIS installer (build via Docker/Windows on Apple Silicon)
+npm run dist:linux     # Linux AppImage (Docker recommended)
+```
+
+Notes:
+
+- macOS: the first launch asks for **Accessibility** permission (System Settings → Privacy & Security → Accessibility) — required to read selections from other apps.
+- The Windows installer and Linux AppImage are configured but not built/tested from this macOS machine; electron-builder's Wine path is unreliable on Apple Silicon — use Docker (`electronuserland/builder:wine`) or build on those platforms.
+- Builds are unsigned. macOS: if Gatekeeper blocks the app, run `xattr -dr com.apple.quarantine /Applications/SubTr.app` or use System Settings → Privacy & Security → "Open Anyway". Windows: SmartScreen → "More info → Run anyway". Linux: `chmod +x SubTr-*.AppImage`.
+- Linux: selection monitoring works on X11; Wayland support is limited (always-on-top and global shortcuts depend on the compositor).
+- Closing the app window quits the app (v1 behavior).
 
 ## Security notes
 

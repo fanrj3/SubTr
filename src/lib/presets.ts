@@ -13,6 +13,17 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     defaultModel: "gpt-5-mini",
   },
   {
+    id: "opencode-go",
+    label: "OpenCode Go",
+    baseURL: "https://opencode.ai/inference/go/v1",
+    defaultModel: "deepseek-v4.1-flash",
+    extraHeaders: {
+      "x-opencode-session": "subtr",
+      "User-Agent": "SubTr/0.1",
+    },
+    note: "OpenCode Go key · required session header added automatically",
+  },
+  {
     id: "anthropic",
     label: "Anthropic (Claude)",
     baseURL: "https://api.anthropic.com/v1",

@@ -1,0 +1,48 @@
+# electron-builder configuration for SubTr.
+# asar is disabled so the Next.js standalone output works without path rewrites.
+# Builds are UNSIGNED by design (no signing/notarization).
+appId: com.subtr.desktop
+productName: SubTr
+asar: false
+npmRebuild: false
+directories:
+  output: dist
+# App files (main process + preload) live at the app root; the standalone server
+# is added under `app/` via extraResources so resourcesPath/app/server.js exists.
+files:
+  - desktop/**/*
+  - package.json
+  - node_modules/selection-hook/**/*
+  - node_modules/node-gyp-build/**/*
+extraResources:
+  - from: .next/standalone
+    to: app
+    filter:
+      - "**/*"
+      - "!package.json"
+  - from: .next/static
+    to: app/.next/static
+    filter:
+      - "**/*"
+  - from: public
+    to: app/public
+    filter:
+      - "**/*"
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  category: public.app-category.productivity
+  identity: null
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+linux:
+  target:
+    - AppImage
+  category: Utility
+artifactName: SubTr-${version}-${arch}.${ext}
+publish: null

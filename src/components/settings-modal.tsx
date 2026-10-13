@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { PROVIDER_PRESETS } from "@/lib/presets";
 import type { PersistedSettings } from "@/lib/client";
 import { applyPreset, toLlmConfig, testConnection } from "@/lib/client";
+import { isDesktopMode } from "@/lib/client/desktop";
 import { XIcon, EyeIcon, EyeOffIcon, CheckIcon, AlertIcon, LoaderIcon } from "./icons";
 
 type TestStatus =
@@ -237,6 +238,12 @@ export function SettingsModal({ settings, onChange, onClose }: SettingsModalProp
           <p className="text-xs leading-relaxed text-muted">
             Your key is stored locally in this browser and is sent only to your chosen endpoint
             through this app&apos;s own server route.
+            {isDesktopMode() && (
+              <>
+                <br />
+                On desktop, select text in any app and press ⌘/Ctrl+Shift+D to show the subtitle.
+              </>
+            )}
           </p>
         </div>
       </div>

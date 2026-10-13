@@ -2,22 +2,33 @@
   "name": "subtr",
   "version": "0.1.0",
   "private": true,
+  "main": "desktop/main.cjs",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "desktop:prepare": "node desktop/prepare-standalone.cjs",
+    "desktop:build": "next build && node desktop/prepare-standalone.cjs",
+    "desktop": "next build && node desktop/prepare-standalone.cjs && electron .",
+    "desktop:dev": "node desktop/dev.cjs",
+    "dist:mac": "electron-builder --mac dmg --arm64",
+    "dist:win": "electron-builder --win nsis --x64",
+    "dist:linux": "electron-builder --linux AppImage"
   },
   "dependencies": {
     "next": "16.4.0",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "selection-hook": "^2.1.1"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "electron": "^44.7.0",
+    "electron-builder": "26.17.0",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
     "tailwindcss": "^4",
