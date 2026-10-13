@@ -73,24 +73,24 @@ export function Reader({ onSelect }: ReaderProps) {
   if (isEditing) {
     return (
       <main className="mx-auto w-full max-w-[65ch] flex-1 px-6 py-12 sm:py-16">
-        <div className="relative">
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Paste text here to read..."
-            className="min-h-[60vh] w-full resize-none rounded-2xl border border-card-border bg-card p-6 text-lg leading-relaxed outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-accent"
-            aria-label="Edit text"
-          />
+        <div className="mb-3 flex justify-end">
           <button
             type="button"
             onClick={() => setIsEditing(false)}
-            className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg border border-card-border bg-background px-3 py-1.5 text-sm font-medium shadow-sm transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-card-border bg-background px-3 py-1.5 text-sm font-medium shadow-sm transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
           >
             <XIcon className="h-4 w-4" />
             Done
           </button>
         </div>
+        <textarea
+          ref={textareaRef}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Paste text here to read..."
+          className="min-h-[60vh] w-full resize-none rounded-2xl border border-card-border bg-card p-6 text-lg leading-relaxed outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-accent"
+          aria-label="Edit text"
+        />
       </main>
     );
   }
@@ -112,23 +112,23 @@ export function Reader({ onSelect }: ReaderProps) {
 
   return (
     <main className="mx-auto w-full max-w-[65ch] flex-1 px-6 py-12 sm:py-16">
-      <div className="relative">
+      <div className="mb-3 flex justify-end">
         <button
           type="button"
           onClick={() => setIsEditing(true)}
-          className="absolute -right-2 -top-2 inline-flex items-center gap-1.5 rounded-lg border border-card-border bg-card px-3 py-1.5 text-sm font-medium shadow-sm transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5 sm:-right-12"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-card-border bg-card px-3 py-1.5 text-sm font-medium shadow-sm transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
           aria-label="Edit text"
         >
           <EditIcon className="h-4 w-4" />
           Edit
         </button>
-        <div
-          ref={readerRef}
-          className="whitespace-pre-wrap text-lg leading-[1.8] tracking-[-0.01em] text-foreground selection:bg-accent selection:text-white"
-          aria-label="Reading text. Select any passage to translate."
-        >
-          {text}
-        </div>
+      </div>
+      <div
+        ref={readerRef}
+        className="whitespace-pre-wrap text-lg leading-[1.8] tracking-[-0.01em] text-foreground selection:bg-accent selection:text-white"
+        aria-label="Reading text. Select any passage to translate."
+      >
+        {text}
       </div>
     </main>
   );
