@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useLocalStorage } from "@/lib/client";
+import { useLocalStorage, useT } from "@/lib/client";
 import { isDesktopMode } from "@/lib/client/desktop";
 import { EditIcon, CheckIcon } from "./icons";
 
@@ -13,6 +13,7 @@ type ReaderProps = {
 };
 
 export function Reader({ onSelect, mode }: ReaderProps) {
+  const { t } = useT();
   const [text, setText] = useLocalStorage(TEXT_KEY, "");
   const [isEditing, setIsEditing] = useState(false);
   const readerRef = useRef<HTMLDivElement>(null);
@@ -82,16 +83,16 @@ export function Reader({ onSelect, mode }: ReaderProps) {
             className="inline-flex items-center gap-1.5 rounded-lg border border-card-border bg-background px-3 py-1.5 text-sm font-medium shadow-sm transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
           >
             <CheckIcon className="h-4 w-4" />
-            Done
+            {t("reader.done")}
           </button>
         </div>
         <textarea
           ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Paste text to read and translate..."
+          placeholder={t("reader.placeholder")}
           className="min-h-[50vh] w-full resize-none rounded-2xl border border-card-border bg-card p-5 text-lg leading-relaxed outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-accent"
-          aria-label="Edit text"
+          aria-label={t("reader.aria.edit")}
         />
       </main>
     );
@@ -105,13 +106,13 @@ export function Reader({ onSelect, mode }: ReaderProps) {
           onClick={() => setIsEditing(true)}
           className="group w-full rounded-2xl border-2 border-dashed border-card-border bg-transparent p-8 transition-colors hover:border-accent/40 hover:bg-accent-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
-          <p className="text-lg text-foreground">Paste text to read and translate</p>
+          <p className="text-lg text-foreground">{t("reader.empty.title")}</p>
           <p className="mt-2 text-sm text-muted">
-            Select any passage to translate — the translation appears as a subtitle.
+            {t("reader.empty.subtitle")}
           </p>
           {isDesktopMode() && (
             <p className="mt-2 text-xs text-muted">
-              On desktop, select text in any app and the subtitle appears at the bottom of your screen.
+              {t("reader.empty.desktop")}
             </p>
           )}
         </button>
@@ -126,23 +127,21 @@ export function Reader({ onSelect, mode }: ReaderProps) {
           type="button"
           onClick={() => setIsEditing(true)}
           className="inline-flex items-center gap-1.5 rounded-lg border border-card-border bg-card px-3 py-1.5 text-sm font-medium shadow-sm transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
-          aria-label="Edit text"
+          aria-label={t("reader.aria.edit")}
         >
           <EditIcon className="h-4 w-4" />
-          Edit
+          {t("reader.edit")}
         </button>
       </div>
       <div
         ref={readerRef}
         className="whitespace-pre-wrap text-lg leading-[1.8] tracking-[-0.01em] text-foreground selection:bg-accent selection:text-white"
-        aria-label="Reading text. Select any passage to translate."
+        aria-label={t("reader.aria.reading")}
       >
         {text}
       </div>
       <p className="mt-4 text-center text-xs text-muted">
-        {mode
-          ? "Select any passage to translate."
-          : "Turn on Translate, then select a passage to see the subtitle."}
+        {mode ? t("reader.hint.on") : t("reader.hint.off")}
       </p>
     </main>
   );

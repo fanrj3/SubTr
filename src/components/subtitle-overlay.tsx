@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { XIcon, LoaderIcon, AlertIcon } from "./icons";
-import { getTextMetrics } from "@/lib/client";
+import { getTextMetrics, useT } from "@/lib/client";
 import { isDesktopMode } from "@/lib/client/desktop";
 import {
   fontFamilyCss,
@@ -52,8 +52,18 @@ export function SubtitleOverlay({
   onRequestEscArmed,
   onRequestInteractive,
 }: SubtitleOverlayProps) {
+  const { t } = useT();
   const [showEscHint, setShowEscHint] = useState(false);
   const [style] = useState<SubtitleStyle>(() => readSubtitleStyle());
+
+  function translateError(message: string): string {
+    if (message === "No response body") return t("error.noResponseBody");
+    if (message === "Network error") return t("error.network");
+    if (message === "Stream error") return t("error.stream");
+    const serverMatch = /^Server error (\d+)$/.exec(message);
+    if (serverMatch) return t("error.server", { status: serverMatch[1] });
+    return message;
+  }
   const cardRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -341,10 +351,10 @@ export function SubtitleOverlay({
   const isLoading = state.kind === "loading";
 
   let rawText = "";
-  let fallbackText = "No translation returned";
+  let fallbackText = t("subtitle.noTranslation");
   if (state.kind === "error") {
-    rawText = state.message;
-    fallbackText = state.message;
+    rawText = translateError(state.message);
+    fallbackText = translateError(state.message);
   } else if (state.kind === "streaming" || state.kind === "success") {
     rawText = state.text;
   }
@@ -404,7 +414,7 @@ export function SubtitleOverlay({
       >
         {showEscHint && (
           <div className="absolute left-2 top-2 z-10 rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-white/70">
-            Esc
+            {t("subtitle.esc")}
           </div>
         )}
 
@@ -413,7 +423,7 @@ export function SubtitleOverlay({
           onClick={handleDismiss}
           className="absolute right-2 top-2 rounded-lg p-1.5 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
           style={{ color: dimmedColor }}
-          aria-label="Dismiss subtitle"
+          aria-label={t("subtitle.dismiss")}
         >
           <XIcon className="h-4 w-4" />
         </button>
@@ -432,9 +442,9 @@ export function SubtitleOverlay({
               style={{ animationDuration: "0.8s", color: style.textColor }}
             />
             <span className="subtr-thinking-swap text-base font-medium">
-              <span className="subtr-thinking-primary">Translating</span>
+              <span className="subtr-thinking-primary">{t("subtitle.translating")}</span>
               <span className="subtr-thinking-secondary">
-                Thinking
+                {t("subtitle.thinking")}
                 <span className="subtr-thinking-dots" aria-hidden="true">…</span>
               </span>
             </span>
@@ -456,7 +466,7 @@ export function SubtitleOverlay({
             <div ref={contentRef}>
               {state.kind === "streaming" && !hasText ? (
                 <p className="subtr-thinking text-base leading-snug tracking-wide">
-                  Thinking
+                  {t("subtitle.thinking")}
                   <span className="subtr-thinking-dots" aria-hidden="true">…</span>
                 </p>
               ) : (

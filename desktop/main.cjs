@@ -22,6 +22,7 @@ const {
   shell,
   screen,
   ipcMain,
+  desktopCapturer,
   utilityProcess,
 } = require("electron");
 
@@ -401,6 +402,59 @@ function registerOverlayIpc() {
       disarmEsc();
     }
   });
+
+  // Settings-page position canvas backdrop: primary-screen thumbnail data URL.
+  ipcMain.handle("subtr:capture-desktop", async () => captureDesktopThumbnail());
+}
+
+/**
+ * Capture the primary screen as a PNG data URL (thumbnail ~1000px wide).
+ * Returns null when unavailable: no Screen Recording permission (macOS),
+ * empty thumbnail, or any error. Called lazily by the settings page.
+ * @returns {Promise<string | null>}
+ */
+async function captureDesktopThumbnail() {
+  try {
+    if (process.platform === "darwin") {
+      try {
+        console.log(
+          "[desktop-thumbnail] screen access:",
+          systemPreferences.getMediaAccessStatus("screen"),
+        );
+      } catch {
+        // ignore
+      }
+    }
+
+    const sources = await desktopCapturer.getSources({
+      types: ["screen"],
+      thumbnailSize: { width: 1000, height: 625 },
+    });
+    if (!sources || sources.length === 0) return null;
+
+    // Best-effort match on the primary display; fall back to the first source.
+    const primaryId = screen.getPrimaryDisplay().id;
+    let source = null;
+    if (primaryId != null) {
+      source =
+        sources.find(
+          (s) =>
+            s.display_id != null && String(s.display_id) === String(primaryId),
+        ) ?? null;
+    }
+    if (!source) source = sources[0];
+
+    const thumbnail = source.thumbnail;
+    if (!thumbnail || thumbnail.isEmpty()) return null;
+    const dataUrl = thumbnail.toDataURL();
+    return dataUrl && dataUrl.length > 0 ? dataUrl : null;
+  } catch (error) {
+    console.warn(
+      "[desktop-thumbnail] capture failed:",
+      error && error.message ? error.message : error,
+    );
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -411,10 +465,10 @@ const preloadPath = path.join(__dirname, "preload.cjs");
 
 function createMainWindow(baseUrl) {
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 660,
+    width: 714,
+    height: 480,
     minWidth: 640,
-    minHeight: 480,
+    minHeight: 420,
     center: true,
     show: false,
     title: "SubTr",

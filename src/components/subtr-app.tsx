@@ -10,6 +10,7 @@ import {
   streamTranslate,
   resolveTargetLang,
   countWords,
+  useT,
 } from "@/lib/client";
 import { TopBar } from "./top-bar";
 import { Reader } from "./reader";
@@ -20,6 +21,7 @@ const TARGET_LANG_KEY = "subtr.targetLang.v1";
 const DEFAULT_TARGET_LANG = "auto";
 
 export function SubTrApp() {
+  const { t } = useT();
   const [mode, setMode] = useLocalStorage(MODE_KEY, false);
   const [targetLang, setTargetLang] = useLocalStorage(TARGET_LANG_KEY, DEFAULT_TARGET_LANG);
   const [subtitle, setSubtitle] = useState<SubtitleState>({ kind: "idle" });
@@ -63,7 +65,7 @@ export function SubTrApp() {
         setSubtitle({
           kind: "error",
           original: trimmed.slice(0, 80) + (trimmed.length > 80 ? "…" : ""),
-          message: `Selection too long · ${trimmed.length}/${MAX_SELECTION_CHARS} characters`,
+          message: t("error.selectionTooLong", { n: trimmed.length, max: MAX_SELECTION_CHARS }),
         });
         return;
       }
@@ -76,7 +78,7 @@ export function SubTrApp() {
         setSubtitle({
           kind: "error",
           original: trimmed.slice(0, 80) + (trimmed.length > 80 ? "…" : ""),
-          message: "Add your API key in Settings",
+          message: t("error.addApiKey"),
         });
         return;
       }
@@ -149,7 +151,7 @@ export function SubTrApp() {
           : undefined
       );
     },
-    [mode, targetLang, setSubtitle]
+    [mode, targetLang, setSubtitle, t]
   );
 
   useEffect(() => {

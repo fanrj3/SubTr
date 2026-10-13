@@ -50,7 +50,11 @@ export function fontFamilyCss(fontFamily: SubtitleStyle["fontFamily"]): string {
   }
 }
 
-export function dimmedColor(hex: string): string {
-  // Simple alpha overlay approach: return the same color at 55% opacity for CSS.
-  return hex;
+export function hexToRgba(hex: string, alphaPct: number): string {
+  const clean = hex.replace("#", "");
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  const a = Math.max(0, Math.min(100, alphaPct)) / 100;
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
 }

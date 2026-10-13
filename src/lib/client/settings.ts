@@ -1,6 +1,6 @@
 import type { LlmConfig } from "@/lib/types";
 import { PROVIDER_PRESETS } from "@/lib/presets";
-import { readStorage, writeStorage } from "./storage";
+import { writeStorage } from "./storage";
 
 export const LEGACY_SETTINGS_KEY = "subtr.settings.v1";
 export const SETTINGS_KEY = "subtr.settings.v2";
@@ -98,9 +98,18 @@ export function readSettingsStore(): SettingsStore {
     return DEFAULT_SETTINGS_STORE;
   }
 
-  const stored = readStorage<SettingsStore | null>(SETTINGS_KEY, null);
-  if (stored && stored.version === 2 && stored.profiles.length > 0) {
-    return stored;
+  // Check raw localStorage directly; readStorage may cache a fallback value
+  // (e.g. from useLocalStorage) and incorrectly hide a missing v2 store.
+  const rawV2 = window.localStorage.getItem(SETTINGS_KEY);
+  if (rawV2) {
+    try {
+      const stored = JSON.parse(rawV2) as SettingsStore;
+      if (stored && stored.version === 2 && stored.profiles.length > 0) {
+        return stored;
+      }
+    } catch {
+      // Ignore malformed v2.
+    }
   }
 
   const migrated = migrateLegacySettings();

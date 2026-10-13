@@ -59,4 +59,13 @@ contextBridge.exposeInMainWorld("subtrDesktop", {
     ipcRenderer.on("subtr:esc", listener);
     return () => ipcRenderer.removeListener("subtr:esc", listener);
   },
+
+  /**
+   * Capture a thumbnail of the primary desktop screen as a PNG data URL.
+   * Resolves to null when unavailable (e.g. no Screen Recording permission).
+   * @returns {Promise<string | null>}
+   */
+  captureDesktopThumbnail() {
+    return ipcRenderer.invoke("subtr:capture-desktop");
+  },
 });

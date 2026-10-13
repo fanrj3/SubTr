@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
+  color-scheme: light;
   --background: #fafaf9;
   --foreground: #1c1917;
   --muted: #a8a29e;
@@ -19,6 +22,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    color-scheme: dark;
     --background: #0c0a09;
     --foreground: #f5f5f4;
     --muted: #78716c;
@@ -34,6 +38,42 @@
     --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.4), 0 2px 6px -1px rgba(0, 0, 0, 0.2);
     --shadow-lg: 0 24px 48px -12px rgba(0, 0, 0, 0.5);
   }
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #0c0a09;
+  --foreground: #f5f5f4;
+  --muted: #78716c;
+  --accent: #818cf8;
+  --accent-dim: rgba(129, 140, 248, 0.14);
+  --card: rgba(28, 25, 23, 0.72);
+  --card-border: rgba(255, 255, 255, 0.08);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.12);
+  --success: #4ade80;
+  --success-soft: rgba(74, 222, 128, 0.12);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.4), 0 2px 6px -1px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 24px 48px -12px rgba(0, 0, 0, 0.5);
+}
+
+.light {
+  color-scheme: light;
+  --background: #fafaf9;
+  --foreground: #1c1917;
+  --muted: #a8a29e;
+  --accent: #4f46e5;
+  --accent-dim: #e0e7ff;
+  --card: rgba(255, 255, 255, 0.78);
+  --card-border: rgba(28, 25, 23, 0.08);
+  --danger: #dc2626;
+  --danger-soft: #fee2e2;
+  --success: #16a34a;
+  --success-soft: #dcfce7;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 24px 48px -12px rgba(0, 0, 0, 0.18);
 }
 
 @theme inline {
@@ -54,6 +94,30 @@
 
 html {
   scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted) 30%, transparent) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 30%, transparent);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted) 50%, transparent);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 body {
@@ -80,6 +144,27 @@ body {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.4rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-transition {
+  animation: page-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-transition {
+    animation: none;
   }
 }
 

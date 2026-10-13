@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { PROVIDER_PRESETS } from "@/lib/presets";
 import type {
@@ -11,7 +11,6 @@ import type {
 } from "@/lib/client";
 import {
   applyPreset,
-  fontFamilyCss,
   paceFromScale,
   DEFAULT_SETTINGS_STORE,
   DEFAULT_SUBTITLE_STYLE,
@@ -20,11 +19,27 @@ import {
   testConnection,
   READING_PACE_SCALE,
   useLocalStorage,
+  useT,
   SETTINGS_KEY,
   SUBTITLE_TIMING_KEY,
   SUBTITLE_STYLE_KEY,
+  DEFAULT_THEME,
+  applyTheme,
+  readTheme,
+  writeTheme,
+  subscribeTheme,
+  readSettingsStore,
+  DEFAULT_UI_LANG,
+  applyUILang,
+  readUILang,
+  writeUILang,
+  subscribeUILang,
+  type Theme,
+  type UILang,
 } from "@/lib/client";
 import { ArrowLeftIcon, CheckIcon, AlertIcon, LoaderIcon } from "@/components/icons";
+import { HelpTooltip } from "@/components/tooltip";
+import { PositionPlayer } from "@/components/position-player";
 
 type TestStatus =
   | { kind: "idle" }
@@ -32,12 +47,90 @@ type TestStatus =
   | { kind: "success"; latencyMs: number; reply?: string }
   | { kind: "error"; message: string };
 
-function useSettings() {
-  const [store, setStore] = useLocalStorage<SettingsStore>(SETTINGS_KEY, DEFAULT_SETTINGS_STORE);
-  const [timing, setTiming] = useLocalStorage<SubtitleTiming>(SUBTITLE_TIMING_KEY, DEFAULT_SUBTITLE_TIMING);
-  const [style, setStyle] = useLocalStorage<SubtitleStyle>(SUBTITLE_STYLE_KEY, DEFAULT_SUBTITLE_STYLE);
+function useThemeSetting(): [Theme, (theme: Theme) => void] {
+  const theme = useSyncExternalStore(
+    subscribeTheme,
+    () => readTheme(),
+    () => DEFAULT_THEME
+  );
 
-  return { store, timing, style, updateStore: setStore, updateTiming: setTiming, updateStyle: setStyle };
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
+
+  const setTheme = useCallback((next: Theme) => {
+    writeTheme(next);
+    applyTheme(next);
+  }, []);
+  return [theme, setTheme];
+}
+
+function useUILangSetting(): [UILang, (lang: UILang) => void] {
+  const lang = useSyncExternalStore(
+    subscribeUILang,
+    () => readUILang(),
+    () => DEFAULT_UI_LANG
+  );
+
+  useEffect(() => {
+    applyUILang(lang);
+  }, [lang]);
+
+  const setLang = useCallback((next: UILang) => {
+    writeUILang(next);
+    applyUILang(next);
+  }, []);
+  return [lang, setLang];
+}
+
+function mergeTiming(raw: Partial<SubtitleTiming>): SubtitleTiming {
+  return { ...DEFAULT_SUBTITLE_TIMING, ...raw };
+}
+
+function mergeStyle(raw: Partial<SubtitleStyle>): SubtitleStyle {
+  return { ...DEFAULT_SUBTITLE_STYLE, ...raw };
+}
+
+function normalizeStore(raw: SettingsStore | null): SettingsStore {
+  if (!raw || !Array.isArray(raw.profiles) || raw.profiles.length === 0) {
+    return DEFAULT_SETTINGS_STORE;
+  }
+  return raw;
+}
+
+function useSettings() {
+  const [rawStore, setStore] = useLocalStorage<SettingsStore>(SETTINGS_KEY, DEFAULT_SETTINGS_STORE);
+  const [rawTiming, setTiming] = useLocalStorage<Partial<SubtitleTiming>>(SUBTITLE_TIMING_KEY, {});
+  const [rawStyle, setStyle] = useLocalStorage<Partial<SubtitleStyle>>(SUBTITLE_STYLE_KEY, {});
+  const [theme, setTheme] = useThemeSetting();
+  const [uiLang, setUiLang] = useUILangSetting();
+
+  const store = useMemo(() => normalizeStore(rawStore), [rawStore]);
+  const timing = useMemo(() => mergeTiming(rawTiming), [rawTiming]);
+  const style = useMemo(() => mergeStyle(rawStyle), [rawStyle]);
+
+  useEffect(() => {
+    // Trigger v1 -> v2 migration when a legacy user lands directly on /settings,
+    // and sync the migrated store into state if it differs from the cached fallback.
+    const current = readSettingsStore();
+    if (JSON.stringify(current) !== JSON.stringify(store)) {
+      setStore(current);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return {
+    store,
+    timing,
+    style,
+    theme,
+    uiLang,
+    updateStore: setStore,
+    updateTiming: setTiming,
+    updateStyle: setStyle,
+    updateTheme: setTheme,
+    updateUiLang: setUiLang,
+  };
 }
 
 function updateActiveProfile(
@@ -53,11 +146,15 @@ function updateActiveProfile(
 }
 
 function activeProfile(store: SettingsStore): StoredProfile {
-  return store.profiles.find((p) => p.id === store.activeProfileId) ?? store.profiles[0];
+  const active = store.profiles.find((p) => p.id === store.activeProfileId);
+  if (active) return active;
+  if (store.profiles[0]) return store.profiles[0];
+  return DEFAULT_SETTINGS_STORE.profiles[0];
 }
 
 export default function SettingsPage() {
-  const { store, timing, style, updateStore, updateTiming, updateStyle } = useSettings();
+  const { t } = useT();
+  const { store, timing, style, theme, uiLang, updateStore, updateTiming, updateStyle, updateTheme, updateUiLang } = useSettings();
   const profile = activeProfile(store);
 
   const [test, setTest] = useState<TestStatus>({ kind: "idle" });
@@ -83,7 +180,7 @@ export default function SettingsPage() {
     const preset = PROVIDER_PRESETS.find((p) => p.id === "openai") ?? PROVIDER_PRESETS[0];
     const newProfile: StoredProfile = {
       id: crypto.randomUUID(),
-      name: `Profile ${store.profiles.length + 1}`,
+      name: t("settings.profiles.defaultName", { n: store.profiles.length + 1 }),
       presetId: preset.id,
       baseURL: preset.baseURL,
       apiKey: "",
@@ -98,7 +195,7 @@ export default function SettingsPage() {
       activeProfileId: newProfile.id,
     };
     updateStore(next);
-  }, [store, updateStore]);
+  }, [store, updateStore, t]);
 
   const handleDuplicateProfile = useCallback(() => {
     const newProfile: StoredProfile = {
@@ -150,7 +247,7 @@ export default function SettingsPage() {
     if (result.ok) {
       setTest({ kind: "success", latencyMs: result.latencyMs, reply: result.reply });
     } else {
-      setTest({ kind: "error", message: result.error ?? "Connection failed" });
+      setTest({ kind: "error", message: result.error ?? t("error.connectionFailed") });
     }
   }
 
@@ -165,9 +262,9 @@ export default function SettingsPage() {
             className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
           >
             <ArrowLeftIcon className="h-4 w-4" />
-            Back
+            {t("settings.back")}
           </Link>
-          <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
+          <h1 className="text-lg font-semibold tracking-tight">{t("settings.title")}</h1>
         </div>
       </header>
 
@@ -175,7 +272,7 @@ export default function SettingsPage() {
         <div className="space-y-6">
           {/* Profiles */}
           <section className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
-            <h2 className="mb-4 text-base font-semibold tracking-tight">Profiles</h2>
+            <h2 className="mb-4 text-base font-semibold tracking-tight">{t("settings.profiles.title")}</h2>
             <div className="space-y-2">
               {store.profiles.map((p) => {
                 const isActive = p.id === store.activeProfileId;
@@ -211,7 +308,7 @@ export default function SettingsPage() {
                         >
                           {p.name}
                           {isActive && (
-                            <span className="ml-2 text-xs text-accent">Active</span>
+                            <span className="ml-2 text-xs text-accent">{t("settings.profiles.active")}</span>
                           )}
                         </button>
                         <button
@@ -219,7 +316,7 @@ export default function SettingsPage() {
                           onClick={() => setEditingName(p.id)}
                           className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5"
                         >
-                          Rename
+                          {t("settings.profiles.rename")}
                         </button>
                         <button
                           type="button"
@@ -227,7 +324,7 @@ export default function SettingsPage() {
                           disabled={store.profiles.length <= 1}
                           className="rounded-md px-2 py-1 text-xs text-danger transition-colors hover:bg-danger-soft disabled:opacity-40"
                         >
-                          Delete
+                          {t("settings.profiles.delete")}
                         </button>
                       </>
                     )}
@@ -235,31 +332,31 @@ export default function SettingsPage() {
                 );
               })}
             </div>
-            <div className="mt-3 flex gap-2">
+            <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={handleDuplicateProfile}
                 className="rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
               >
-                Duplicate current
+                {t("settings.profiles.duplicate")}
               </button>
               <button
                 type="button"
                 onClick={handleCreateProfile}
                 className="rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
               >
-                New profile
+                {t("settings.profiles.new")}
               </button>
             </div>
           </section>
 
           {/* Provider */}
           <section className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
-            <h2 className="mb-4 text-base font-semibold tracking-tight">Provider</h2>
+            <h2 className="mb-4 text-base font-semibold tracking-tight">{t("settings.provider.title")}</h2>
             <div className="space-y-4">
               <div className="space-y-2">
                 <label htmlFor="preset" className="block text-sm font-medium">
-                  Provider
+                  {t("settings.provider.provider")}
                 </label>
                 <select
                   id="preset"
@@ -280,7 +377,7 @@ export default function SettingsPage() {
 
               <div className="space-y-2">
                 <label htmlFor="apiKey" className="block text-sm font-medium">
-                  API key
+                  {t("settings.provider.apiKey")}
                 </label>
                 <div className="relative">
                   <input
@@ -295,16 +392,16 @@ export default function SettingsPage() {
                     type="button"
                     onClick={() => setShowKey((s) => !s)}
                     className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
-                    aria-label={showKey ? "Hide API key" : "Show API key"}
+                    aria-label={showKey ? t("settings.provider.hide") : t("settings.provider.show")}
                   >
-                    {showKey ? "Hide" : "Show"}
+                    {showKey ? t("settings.provider.hide") : t("settings.provider.show")}
                   </button>
                 </div>
               </div>
 
               <div className="space-y-2">
                 <label htmlFor="baseURL" className="block text-sm font-medium">
-                  Base URL
+                  {t("settings.provider.baseUrl")}
                 </label>
                 <input
                   id="baseURL"
@@ -318,7 +415,7 @@ export default function SettingsPage() {
 
               <div className="space-y-2">
                 <label htmlFor="model" className="block text-sm font-medium">
-                  Model
+                  {t("settings.provider.model")}
                 </label>
                 <input
                   id="model"
@@ -332,7 +429,8 @@ export default function SettingsPage() {
 
               <div className="space-y-2">
                 <label htmlFor="thinking" className="block text-sm font-medium">
-                  Thinking
+                  {t("settings.provider.thinking")}
+                  <HelpTooltip>{t("settings.provider.thinking.help")}</HelpTooltip>
                 </label>
                 <select
                   id="thinking"
@@ -344,14 +442,14 @@ export default function SettingsPage() {
                   }
                   className="w-full rounded-xl border border-card-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
                 >
-                  <option value="preset">Preset default</option>
-                  <option value="off">Off</option>
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
+                  <option value="preset">{t("settings.provider.thinking.preset")}</option>
+                  <option value="off">{t("settings.provider.thinking.off")}</option>
+                  <option value="low">{t("settings.provider.thinking.low")}</option>
+                  <option value="medium">{t("settings.provider.thinking.medium")}</option>
+                  <option value="high">{t("settings.provider.thinking.high")}</option>
                 </select>
                 <p className="text-xs text-muted">
-                  Override the provider&apos;s reasoning mode. Preset default follows the selected provider.
+                  {t("settings.provider.thinking.help")}
                 </p>
                 <ThinkingNote preset={selectedPreset} mode={profile.thinkingMode} />
               </div>
@@ -364,13 +462,14 @@ export default function SettingsPage() {
                   className="inline-flex items-center gap-2 rounded-xl border border-card-border bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 dark:hover:bg-white/[0.03]"
                 >
                   {test.kind === "testing" && <LoaderIcon className="h-4 w-4" />}
-                  Test connection
+                  {t("settings.provider.testConnection")}
                 </button>
                 {test.kind === "success" && (
                   <span className="inline-flex items-center gap-1.5 text-sm text-success">
                     <CheckIcon className="h-4 w-4" />
-                    Valid · {test.latencyMs} ms
-                    {test.reply ? ` · ${test.reply}` : null}
+                    {test.reply
+                      ? t("settings.provider.reply", { n: test.latencyMs, reply: test.reply })
+                      : t("settings.provider.valid", { n: test.latencyMs })}
                   </span>
                 )}
                 {test.kind === "error" && (
@@ -382,22 +481,76 @@ export default function SettingsPage() {
               </div>
 
               <p className="text-xs leading-relaxed text-muted">
-                Your key is stored locally in this browser and is sent only to your chosen endpoint
-                through this app&apos;s own server route.
+                {t("settings.provider.securityNote")}
               </p>
+            </div>
+          </section>
+
+          {/* App */}
+          <section className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
+            <h2 className="mb-4 text-base font-semibold tracking-tight">{t("settings.app.title")}</h2>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">{t("settings.app.appearance")}</label>
+                <div className="flex flex-wrap gap-2 rounded-xl border border-card-border bg-background p-1">
+                  {([
+                    { value: "system", label: t("settings.app.theme.system") },
+                    { value: "light", label: t("settings.app.theme.light") },
+                    { value: "dark", label: t("settings.app.theme.dark") },
+                  ] as { value: Theme; label: string }[]).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => updateTheme(option.value)}
+                      className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                        theme === option.value
+                          ? "bg-accent text-white"
+                          : "hover:bg-black/5 dark:hover:bg-white/5"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">{t("settings.app.language")}</label>
+                <div className="flex flex-wrap gap-2 rounded-xl border border-card-border bg-background p-1">
+                  {([
+                    { value: "system", label: t("settings.app.language.system") },
+                    { value: "zh-CN", label: t("settings.app.language.zhCN") },
+                    { value: "en", label: t("settings.app.language.en") },
+                  ] as { value: UILang; label: string }[]).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => updateUiLang(option.value)}
+                      className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                        uiLang === option.value
+                          ? "bg-accent text-white"
+                          : "hover:bg-black/5 dark:hover:bg-white/5"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </section>
 
           {/* Subtitle */}
           <section className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
-            <h2 className="mb-4 text-base font-semibold tracking-tight">Subtitle</h2>
+            <h2 className="mb-4 text-base font-semibold tracking-tight">{t("settings.subtitle.title")}</h2>
 
             <div className="space-y-5">
-              <div className="space-y-3">
-                <h3 className="text-sm font-medium">Timing</h3>
+              <div className="space-y-4">
+                <h3 className="text-sm font-medium">{t("settings.subtitle.timing")}</h3>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                   <NumberField
-                    label="Initial hold"
+                    label={t("settings.subtitle.initialHold")}
+                    hint={t("settings.subtitle.initialHold.help")}
                     value={timing.initialHoldMs}
                     onChange={(v) => updateTiming({ ...timing, initialHoldMs: v })}
                     min={0}
@@ -406,7 +559,8 @@ export default function SettingsPage() {
                     unit="ms"
                   />
                   <NumberField
-                    label="Minimum display"
+                    label={t("settings.subtitle.minimumDisplay")}
+                    hint={t("settings.subtitle.minimumDisplay.help")}
                     value={timing.minDisplayMs}
                     onChange={(v) => updateTiming({ ...timing, minDisplayMs: v })}
                     min={1000}
@@ -415,7 +569,8 @@ export default function SettingsPage() {
                     unit="ms"
                   />
                   <NumberField
-                    label="Final hold"
+                    label={t("settings.subtitle.finalHold")}
+                    hint={t("settings.subtitle.finalHold.help")}
                     value={timing.finalHoldMs}
                     onChange={(v) => updateTiming({ ...timing, finalHoldMs: v })}
                     min={0}
@@ -425,39 +580,58 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium">Reading pace</label>
-                  <div className="flex gap-2">
-                    {(["slow", "normal", "fast"] as const).map((pace) => (
-                      <button
-                        key={pace}
-                        type="button"
-                        onClick={() =>
-                          updateTiming({ ...timing, textScale: READING_PACE_SCALE[pace] })
-                        }
-                        className={`rounded-lg px-3 py-1.5 text-sm font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-                          paceFromScale(timing.textScale) === pace
-                            ? "bg-accent text-white"
-                            : "border border-card-border bg-background hover:bg-black/5 dark:hover:bg-white/5"
-                        }`}
-                      >
-                        {pace}
-                      </button>
-                    ))}
+                  <label className="block text-sm font-medium">
+                    {t("settings.subtitle.readingPace")}
+                    <HelpTooltip>{t("settings.subtitle.readingPace.help")}</HelpTooltip>
+                  </label>
+                  <div className="flex flex-col gap-3 rounded-xl border border-card-border bg-background p-3 sm:flex-row sm:items-center">
+                    <input
+                      type="range"
+                      min={0.5}
+                      max={2}
+                      step={0.05}
+                      value={timing.textScale}
+                      onChange={(e) =>
+                        updateTiming({ ...timing, textScale: parseFloat(e.target.value) })
+                      }
+                      className="flex-1 accent-accent"
+                    />
+                    <span className="w-16 text-center text-sm font-medium tabular-nums">
+                      {timing.textScale.toFixed(2)}×
+                    </span>
+                    <div className="flex gap-2">
+                      {(["slow", "normal", "fast"] as const).map((pace) => (
+                        <button
+                          key={pace}
+                          type="button"
+                          onClick={() =>
+                            updateTiming({ ...timing, textScale: READING_PACE_SCALE[pace] })
+                          }
+                          className={`rounded-lg px-2.5 py-1 text-xs font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                            paceFromScale(timing.textScale) === pace
+                              ? "bg-accent text-white"
+                              : "border border-card-border bg-background hover:bg-black/5 dark:hover:bg-white/5"
+                          }`}
+                        >
+                          {t(`settings.subtitle.pace.${pace}`)}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
 
               <div className="space-y-3">
-                <h3 className="text-sm font-medium">Position</h3>
-                <PositionCanvas style={style} onChange={updateStyle} />
+                <h3 className="text-sm font-medium">{t("settings.subtitle.position")}</h3>
+                <PositionPlayer style={style} timing={timing} onChange={updateStyle} />
               </div>
 
               <div className="space-y-3">
-                <h3 className="text-sm font-medium">Appearance</h3>
+                <h3 className="text-sm font-medium">{t("settings.appearance.title")}</h3>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <label htmlFor="fontFamily" className="block text-sm font-medium">
-                      Font
+                      {t("settings.appearance.font")}
                     </label>
                     <select
                       id="fontFamily"
@@ -470,14 +644,14 @@ export default function SettingsPage() {
                       }
                       className="w-full rounded-xl border border-card-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
                     >
-                      <option value="system">System</option>
-                      <option value="serif">Serif</option>
-                      <option value="mono">Mono</option>
-                      <option value="geist">Geist</option>
+                      <option value="system">{t("settings.appearance.font.system")}</option>
+                      <option value="serif">{t("settings.appearance.font.serif")}</option>
+                      <option value="mono">{t("settings.appearance.font.mono")}</option>
+                      <option value="geist">{t("settings.appearance.font.geist")}</option>
                     </select>
                   </div>
                   <RangeField
-                    label="Size"
+                    label={t("settings.appearance.size")}
                     value={style.fontSizePx}
                     onChange={(v) => updateStyle({ ...style, fontSizePx: v })}
                     min={12}
@@ -485,25 +659,31 @@ export default function SettingsPage() {
                     unit="px"
                   />
                 </div>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <ColorField
-                    label="Text color"
-                    value={style.textColor}
-                    onChange={(v) => updateStyle({ ...style, textColor: v })}
-                  />
-                  <ColorField
-                    label="Background"
-                    value={style.bgColor}
-                    onChange={(v) => updateStyle({ ...style, bgColor: v })}
-                  />
-                  <RangeField
-                    label="Background opacity"
-                    value={style.bgOpacity}
-                    onChange={(v) => updateStyle({ ...style, bgOpacity: v })}
-                    min={0}
-                    max={100}
-                    unit="%"
-                  />
+                <div className="flex flex-wrap gap-4">
+                  <div className="min-w-[10rem] flex-1">
+                    <ColorField
+                      label={t("settings.appearance.textColor")}
+                      value={style.textColor}
+                      onChange={(v) => updateStyle({ ...style, textColor: v })}
+                    />
+                  </div>
+                  <div className="min-w-[10rem] flex-1">
+                    <ColorField
+                      label={t("settings.appearance.background")}
+                      value={style.bgColor}
+                      onChange={(v) => updateStyle({ ...style, bgColor: v })}
+                    />
+                  </div>
+                  <div className="min-w-[10rem] flex-1">
+                    <RangeField
+                      label={t("settings.appearance.backgroundOpacity")}
+                      value={style.bgOpacity}
+                      onChange={(v) => updateStyle({ ...style, bgOpacity: v })}
+                      min={0}
+                      max={100}
+                      unit="%"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -516,6 +696,7 @@ export default function SettingsPage() {
 
 function NumberField({
   label,
+  hint,
   value,
   onChange,
   min,
@@ -524,6 +705,7 @@ function NumberField({
   unit,
 }: {
   label: string;
+  hint?: string;
   value: number;
   onChange: (v: number) => void;
   min: number;
@@ -533,7 +715,10 @@ function NumberField({
 }) {
   return (
     <div className="space-y-1.5">
-      <label className="block text-sm font-medium">{label}</label>
+      <label className="block text-sm font-medium">
+        {label}
+        {hint && <HelpTooltip>{hint}</HelpTooltip>}
+      </label>
       <div className="flex items-center gap-2">
         <input
           type="number"
@@ -617,87 +802,6 @@ function ColorField({
       </div>
     </div>
   );
-}
-
-function PositionCanvas({
-  style,
-  onChange,
-}: {
-  style: SubtitleStyle;
-  onChange: (style: SubtitleStyle) => void;
-}) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const draggingRef = useRef(false);
-
-  const updateFromPointer = useCallback(
-    (clientX: number, clientY: number) => {
-      const container = containerRef.current;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
-      const xPct = Math.round(
-        Math.max(5, Math.min(95, ((clientX - rect.left) / rect.width) * 100))
-      );
-      const yPct = Math.round(
-        Math.max(5, Math.min(95, ((clientY - rect.top) / rect.height) * 100))
-      );
-      onChange({ ...style, xPct, yPct });
-    },
-    [style, onChange]
-  );
-
-  useEffect(() => {
-    function onMove(e: PointerEvent) {
-      if (!draggingRef.current) return;
-      updateFromPointer(e.clientX, e.clientY);
-    }
-    function onUp() {
-      draggingRef.current = false;
-    }
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-  }, [updateFromPointer]);
-
-  return (
-    <div
-      ref={containerRef}
-      className="relative h-48 w-full overflow-hidden rounded-xl border border-card-border bg-black/5 dark:bg-white/5"
-      onPointerDown={(e) => {
-        draggingRef.current = true;
-        updateFromPointer(e.clientX, e.clientY);
-      }}
-      role="application"
-      aria-label="Drag to position the subtitle"
-    >
-      <div
-        className="absolute -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-lg px-3 py-1.5 text-xs font-medium shadow-sm active:cursor-grabbing"
-        style={{
-          left: `${style.xPct}%`,
-          top: `${style.yPct}%`,
-          backgroundColor: style.bgColor + hexOpacity(style.bgOpacity),
-          color: style.textColor,
-          fontFamily: fontFamilyCss(style.fontFamily),
-          fontSize: Math.max(10, Math.min(16, style.fontSizePx * 0.6)),
-        }}
-      >
-        Subtitle
-      </div>
-      <p className="absolute bottom-2 left-2 text-[10px] text-muted">
-        Drag the box to set position
-      </p>
-    </div>
-  );
-}
-
-function hexOpacity(percent: number): string {
-  const value = Math.max(0, Math.min(100, Math.round(percent)));
-  const alpha = Math.round((value / 100) * 255)
-    .toString(16)
-    .padStart(2, "0");
-  return alpha;
 }
 
 const noopSubscribe = () => () => {};

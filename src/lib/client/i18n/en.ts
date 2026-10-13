@@ -1,0 +1,135 @@
+export const en = {
+  // Top bar
+  "topBar.translate": "Translate",
+  "topBar.translateOn": "Translation on",
+  "topBar.translateOff": "Translation off",
+  "topBar.on": "ON",
+  "topBar.off": "OFF",
+  "topBar.translateTo": "Translate to",
+  "topBar.auto": "Auto",
+  "topBar.settings": "Settings",
+
+  // Reader
+  "reader.empty.title": "Paste text to read and translate",
+  "reader.empty.subtitle": "Select any passage to translate — the translation appears as a subtitle.",
+  "reader.empty.desktop": "On desktop, select text in any app and the subtitle appears at the bottom of your screen.",
+  "reader.edit": "Edit",
+  "reader.done": "Done",
+  "reader.placeholder": "Paste text to read and translate...",
+  "reader.aria.edit": "Edit text",
+  "reader.aria.reading": "Reading text. Select any passage to translate.",
+  "reader.hint.on": "Select any passage to translate.",
+  "reader.hint.off": "Turn on Translate, then select a passage to see the subtitle.",
+
+  // Subtitle overlay
+  "subtitle.translating": "Translating",
+  "subtitle.thinking": "Thinking…",
+  "subtitle.noTranslation": "No translation returned",
+  "subtitle.esc": "Esc",
+  "subtitle.dismiss": "Dismiss subtitle",
+
+  // Errors / notices
+  "error.addApiKey": "Add your API key in Settings",
+  "error.selectionTooLong": "Selection too long · {n}/{max} characters",
+  "error.noResponseBody": "No response body",
+  "error.network": "Network error",
+  "error.stream": "Stream error",
+  "error.server": "Server error {status}",
+  "error.connectionFailed": "Connection failed",
+
+  // Settings chrome
+  "settings.back": "Back",
+  "settings.title": "Settings",
+  "settings.saveError": "Could not save settings",
+
+  // Profiles
+  "settings.profiles.title": "Profiles",
+  "settings.profiles.active": "Active",
+  "settings.profiles.rename": "Rename",
+  "settings.profiles.delete": "Delete",
+  "settings.profiles.duplicate": "Duplicate current",
+  "settings.profiles.new": "New profile",
+  "settings.profiles.defaultName": "Profile {n}",
+
+  // Provider
+  "settings.provider.title": "Provider",
+  "settings.provider.provider": "Provider",
+  "settings.provider.apiKey": "API key",
+  "settings.provider.show": "Show",
+  "settings.provider.hide": "Hide",
+  "settings.provider.baseUrl": "Base URL",
+  "settings.provider.model": "Model",
+  "settings.provider.thinking": "Thinking",
+  "settings.provider.thinking.preset": "Preset default",
+  "settings.provider.thinking.off": "Off",
+  "settings.provider.thinking.low": "Low",
+  "settings.provider.thinking.medium": "Medium",
+  "settings.provider.thinking.high": "High",
+  "settings.provider.thinking.help": "Controls the model's reasoning effort. Preset uses the provider's default.",
+  "settings.provider.fastMode": "Fast mode",
+  "settings.provider.testConnection": "Test connection",
+  "settings.provider.valid": "Valid · {n} ms",
+  "settings.provider.reply": "Valid · {n} ms · {reply}",
+  "settings.provider.connectionFailed": "Connection failed",
+  "settings.provider.securityNote": "Your key is stored locally in this browser and is sent only to your chosen endpoint through this app's own server route.",
+
+  // Subtitle
+  "settings.subtitle.title": "Subtitle",
+  "settings.subtitle.timing": "Timing",
+  "settings.subtitle.initialHold": "Initial hold",
+  "settings.subtitle.initialHold.help": "How long the subtitle stays pinned at the top before it starts scrolling.",
+  "settings.subtitle.minimumDisplay": "Minimum display",
+  "settings.subtitle.minimumDisplay.help": "The shortest time a short subtitle stays visible before it disappears.",
+  "settings.subtitle.finalHold": "Final hold",
+  "settings.subtitle.finalHold.help": "A short pause at the end so the last line can be read before hiding.",
+  "settings.subtitle.readingPace": "Reading pace",
+  "settings.subtitle.readingPace.help": "Multiplies the auto-scroll speed. Lower is faster; higher gives more time to read.",
+  "settings.subtitle.pace.slow": "Slow",
+  "settings.subtitle.pace.normal": "Normal",
+  "settings.subtitle.pace.fast": "Fast",
+  "settings.subtitle.position": "Position",
+  "settings.subtitle.position.drag": "Drag the box to set position",
+  "settings.subtitle.position.refresh": "Refresh background",
+  "settings.subtitle.position.capture": "Capture background",
+  "settings.subtitle.position.refreshing": "Refreshing…",
+  "settings.subtitle.position.placeholder": "Using a placeholder — desktop capture needs Screen Recording permission",
+
+  // Position player
+  "settings.position.testText": "Preview text",
+  "settings.position.play": "▶ Play",
+  "settings.position.pause": "⏸ Pause",
+  "settings.position.totalTime": "Total display time",
+  "settings.position.scrollSpeed": "Scroll speed",
+  "settings.position.readingSpeed": "Reading speed",
+  "settings.position.wpm": "{n} wpm",
+  "settings.position.cpm": "{n} cpm",
+  "settings.position.time": "{current} / {total}",
+
+  // Appearance
+  "settings.appearance.title": "Appearance",
+  "settings.appearance.font": "Font",
+  "settings.appearance.font.system": "System",
+  "settings.appearance.font.serif": "Serif",
+  "settings.appearance.font.mono": "Mono",
+  "settings.appearance.font.geist": "Geist",
+  "settings.appearance.size": "Size",
+  "settings.appearance.textColor": "Text color",
+  "settings.appearance.background": "Background",
+  "settings.appearance.backgroundOpacity": "Background opacity",
+
+  // App section
+  "settings.app.title": "App",
+  "settings.app.appearance": "Appearance",
+  "settings.app.theme.system": "Follow system",
+  "settings.app.theme.light": "Light",
+  "settings.app.theme.dark": "Dark",
+  "settings.app.language": "Language",
+  "settings.app.language.system": "Follow system",
+  "settings.app.language.zhCN": "中文（简体）",
+  "settings.app.language.en": "English",
+
+  // Tooltip
+  "tooltip.moreInfo": "More info",
+} as const;
+
+export type EnDictionary = typeof en;

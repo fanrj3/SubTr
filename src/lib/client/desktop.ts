@@ -4,6 +4,7 @@ export type DesktopBridge = {
   setOverlayInteractive?(on: boolean): void;
   setEscArmed?(on: boolean): void;
   onEsc?(cb: () => void): () => void;
+  captureDesktopThumbnail?: () => Promise<string | null>;
 };
 
 declare global {

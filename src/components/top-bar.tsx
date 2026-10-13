@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useT } from "@/lib/client";
 import { SubTrLogo, SettingsIcon } from "./icons";
 
 const TARGET_LANGUAGES = [
@@ -15,8 +16,8 @@ const TARGET_LANGUAGES = [
   "Deutsch",
 ];
 
-function formatTargetLang(value: string): string {
-  return value === "auto" ? "Auto" : value;
+function formatTargetLang(value: string, autoLabel: string): string {
+  return value === "auto" ? autoLabel : value;
 }
 
 type TopBarProps = {
@@ -32,17 +33,18 @@ export function TopBar({
   targetLang,
   onTargetLangChange,
 }: TopBarProps) {
+  const { t } = useT();
   return (
     <header className="sticky top-0 z-30 border-b border-card-border bg-background/80 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-[75rem] items-center justify-between px-4 sm:px-6">
+      <div className="mx-auto flex min-h-16 max-w-[75rem] flex-wrap items-center justify-between gap-y-2 px-4 py-2 sm:px-6">
         <div className="flex items-center gap-2.5">
           <SubTrLogo className="h-7 w-7 text-foreground" />
           <span className="text-xl font-semibold tracking-tight">SubTr</span>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-4">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <div className="flex items-center gap-2 rounded-xl border border-card-border bg-card p-1 shadow-sm">
-            <span className="hidden pl-2 text-sm text-muted sm:inline">Translate</span>
+            <span className="hidden pl-2 text-sm text-muted md:inline">{t("topBar.translate")}</span>
             <button
               type="button"
               onClick={() => onModeChange(!mode)}
@@ -50,7 +52,7 @@ export function TopBar({
               className={`relative inline-flex h-7 w-12 items-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                 mode ? "bg-accent" : "bg-muted/40"
               }`}
-              aria-label={mode ? "Translation on" : "Translation off"}
+              aria-label={mode ? t("topBar.translateOn") : t("topBar.translateOff")}
               suppressHydrationWarning
             >
               <span
@@ -65,22 +67,22 @@ export function TopBar({
               }`}
               suppressHydrationWarning
             >
-              {mode ? "ON" : "OFF"}
+              {mode ? t("topBar.on") : t("topBar.off")}
             </span>
           </div>
 
           <div className="flex items-center gap-2 rounded-xl border border-card-border bg-card p-1 shadow-sm">
-            <span className="hidden pl-2 text-sm text-muted sm:inline">Translate to</span>
+            <span className="hidden pl-2 text-sm text-muted md:inline">{t("topBar.translateTo")}</span>
             <select
               value={targetLang}
               onChange={(e) => onTargetLangChange(e.target.value)}
-              aria-label="Target language"
+              aria-label={t("topBar.translateTo")}
               className="h-7 rounded-lg border-0 bg-transparent px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent sm:px-3"
               suppressHydrationWarning
             >
               {TARGET_LANGUAGES.map((lang) => (
                 <option key={lang} value={lang}>
-                  {formatTargetLang(lang)}
+                  {formatTargetLang(lang, t("topBar.auto"))}
                 </option>
               ))}
             </select>
@@ -91,7 +93,7 @@ export function TopBar({
             className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-card-border bg-card px-3 text-sm font-medium shadow-sm transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
           >
             <SettingsIcon className="h-4 w-4" />
-            <span className="hidden sm:inline">Settings</span>
+            <span className="hidden sm:inline">{t("topBar.settings")}</span>
           </Link>
         </div>
       </div>

@@ -11,6 +11,7 @@ import {
   streamTranslate,
   resolveTargetLang,
   countWords,
+  useT,
 } from "@/lib/client";
 import { isDesktopMode } from "@/lib/client/desktop";
 import { SubtitleOverlay, type SubtitleState } from "@/components/subtitle-overlay";
@@ -28,6 +29,7 @@ function readTargetLang(): string {
 }
 
 function Overlay() {
+  const { t } = useT();
   const [subtitle, setSubtitle] = useState<SubtitleState>({ kind: "idle" });
   const abortRef = useRef<AbortController | null>(null);
   const searchParams = useSearchParams();
@@ -56,7 +58,7 @@ function Overlay() {
       setSubtitle({
         kind: "error",
         original,
-        message: `Selection too long · ${trimmed.length}/${MAX_SELECTION_CHARS} characters`,
+        message: t("error.selectionTooLong", { n: trimmed.length, max: MAX_SELECTION_CHARS }),
       });
       return;
     }
@@ -70,7 +72,7 @@ function Overlay() {
       setSubtitle({
         kind: "error",
         original,
-        message: "Add your API key in Settings",
+        message: t("error.addApiKey"),
       });
       return;
     }
@@ -137,7 +139,7 @@ function Overlay() {
         ? bodyOverrides
         : undefined
     );
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     document.body.style.background = "transparent";
