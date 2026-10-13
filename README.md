@@ -21,9 +21,9 @@ Open http://localhost:3000.
 ## Usage
 
 1. Paste or type text into the reader (click the empty area, or use **Edit** later).
-2. Open **Settings**, pick a provider, paste your API key, and hit **Test connection** to verify it works. The endpoint (**Base URL**), **Model**, and key are all editable; presets fill sensible defaults. **Fast mode for short text** requests reduced reasoning for short selections on providers that support it (e.g. OpenCode Go's `deepseek-v4.1-flash`), making short translations noticeably quicker.
+2. Open **Settings** (a full page). **Profiles** keeps multiple API setups — switch between them without losing the others. Pick a provider, paste your key, hit **Test connection**. **Thinking** controls the model's reasoning per profile (Preset default / Off / Low / Medium / High); translation usually wants **Off** — OpenCode Go and DeepSeek default to it — and where a provider cannot fully disable thinking, the note says what it falls back to. The **Subtitle** section tunes timing (initial hold, minimum display, reading pace, final hold) and appearance (drag the box on the mini display to reposition; font, size, text/background color, opacity).
 3. Toggle **Translate** on in the top bar.
-4. Select any passage in the reader — the translation streams into a subtitle card at the bottom center. Long translations scroll like a teleprompter: a short hold at the top, then a scroll paced to the text length and reading speed, then a brief hold before auto-hiding. Scroll with the wheel to interrupt — the subtitle then stays until you press **Esc**.
+4. Select any passage in the reader — the translation streams into a subtitle card. Long translations scroll like a teleprompter: a short hold at the top, then a scroll paced to the text length and reading speed, then a brief hold before auto-hiding. Scroll with the wheel to interrupt — the subtitle then stays until you press **Esc**. Translations render Markdown (lists, bold, code) when the model outputs it.
 
 The target language is chosen in the top bar — default **Auto**: mostly-CJK text is translated to English, everything else to 中文（简体）. Pick a specific language to override. `⌘/Ctrl+Shift+D` on desktop re-triggers a capture manually.
 

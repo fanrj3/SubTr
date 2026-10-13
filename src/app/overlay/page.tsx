@@ -81,11 +81,31 @@ function Overlay() {
 
     const resolvedTargetLang = resolveTargetLang(trimmed, readTargetLang());
     const wordCount = countWords(trimmed);
-    const fastModeLimit = settings.fastModeWordLimit ?? 20;
     const useFastMode =
-      settings.fastModeEnabled !== false &&
-      wordCount <= fastModeLimit &&
+      (settings.thinkingMode ?? "preset") === "preset" &&
+      wordCount <= 20 &&
       preset?.fastModeParams != null;
+
+    const explicitThinking =
+      (settings.thinkingMode ?? "preset") !== "preset" && preset
+        ? (preset as Record<string, unknown>).thinking
+        : undefined;
+    const thinkingOverrides =
+      explicitThinking &&
+      typeof explicitThinking === "object" &&
+      explicitThinking !== null
+        ? (explicitThinking as Record<string, unknown>)[settings.thinkingMode!]
+        : undefined;
+
+    const bodyOverrides: Record<string, unknown> | undefined =
+      thinkingOverrides && typeof thinkingOverrides === "object"
+        ? { ...(thinkingOverrides as Record<string, unknown>) }
+        : preset?.defaultParams || useFastMode
+          ? {
+              ...(preset?.defaultParams ?? {}),
+              ...(useFastMode ? (preset?.fastModeParams ?? {}) : {}),
+            }
+          : undefined;
 
     setSubtitle({ kind: "loading", original });
 
@@ -113,7 +133,9 @@ function Overlay() {
           setSubtitle({ kind: "error", original, message });
         },
       },
-      useFastMode ? preset.fastModeParams : undefined
+      bodyOverrides && Object.keys(bodyOverrides).length > 0
+        ? bodyOverrides
+        : undefined
     );
   }, []);
 

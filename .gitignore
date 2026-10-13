@@ -45,3 +45,6 @@ next-env.d.ts
 
 # Local agent session artifacts
 .opencode/
+
+# API keys
+*.key

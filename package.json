@@ -1,6 +1,6 @@
 {
   "name": "subtr",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "main": "desktop/main.cjs",
   "scripts": {
@@ -20,6 +20,8 @@
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "react-markdown": "^10",
+    "remark-gfm": "^4",
     "selection-hook": "^2.1.1"
   },
   "devDependencies": {

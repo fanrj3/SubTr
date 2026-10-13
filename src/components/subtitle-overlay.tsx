@@ -4,6 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { XIcon, LoaderIcon, AlertIcon } from "./icons";
 import { getTextMetrics } from "@/lib/client";
 import { isDesktopMode } from "@/lib/client/desktop";
+import {
+  fontFamilyCss,
+  readSubtitleStyle,
+  readSubtitleTiming,
+  type SubtitleStyle,
+} from "@/lib/client";
+import { MarkdownRenderer } from "./markdown-renderer";
 
 export type SubtitleState =
   | { kind: "idle" }
@@ -20,8 +27,6 @@ type SubtitleOverlayProps = {
 };
 
 const ERROR_HIDE_MS = 20000;
-const HOLD_MS = 5000;
-const FINAL_MS = 1200;
 const RECOMPUTE_MS = 400;
 const MIN_REMAINING_MS = 300;
 const SCROLL_EASE = 0.04; // per frame toward target velocity
@@ -32,6 +37,15 @@ function computeReadMs(text: string): number {
   return Math.max(minMs, latinWords * (60000 / 180) + cjkChars * (60000 / 330));
 }
 
+function hexToRgba(hex: string, alphaPct: number): string {
+  const clean = hex.replace("#", "");
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  const a = Math.max(0, Math.min(100, alphaPct)) / 100;
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
 export function SubtitleOverlay({
   state,
   onDismiss,
@@ -39,7 +53,8 @@ export function SubtitleOverlay({
   onRequestInteractive,
 }: SubtitleOverlayProps) {
   const [showEscHint, setShowEscHint] = useState(false);
-
+  const [style] = useState<SubtitleStyle>(() => readSubtitleStyle());
+  const cardRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -53,13 +68,44 @@ export function SubtitleOverlay({
     static?: ReturnType<typeof setTimeout>;
     error?: ReturnType<typeof setTimeout>;
   }>({});
+  const mountStartTimeRef = useRef<number>(0);
   const scrollStartTimeRef = useRef<number>(0);
   const lastRecomputeRef = useRef<number>(0);
   const velocityRef = useRef(0);
   const targetVelocityRef = useRef(0);
   const posRef = useRef(0);
   const textRef = useRef("");
+  const timingRef = useRef(readSubtitleTiming());
   const prefersReducedMotionRef = useRef(false);
+
+  // Measure card and viewport so we can clamp the center position to keep the card on-screen.
+  const [metrics, setMetrics] = useState({
+    cardWidth: 0,
+    cardHeight: 0,
+    viewportWidth: 0,
+    viewportHeight: 0,
+  });
+
+  useEffect(() => {
+    function update() {
+      setMetrics({
+        cardWidth: cardRef.current?.offsetWidth ?? 0,
+        cardHeight: cardRef.current?.offsetHeight ?? 0,
+        // CSS percentage left/top resolves against the layout viewport, which
+        // excludes a stable scrollbar gutter — use clientWidth/clientHeight to match.
+        viewportWidth: document.documentElement.clientWidth,
+        viewportHeight: document.documentElement.clientHeight,
+      });
+    }
+    update();
+    const ro = new ResizeObserver(update);
+    if (cardRef.current) ro.observe(cardRef.current);
+    window.addEventListener("resize", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, []);
 
   const startLoop = useCallback(() => {
     if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
@@ -73,15 +119,15 @@ export function SubtitleOverlay({
       }
 
       const maxScroll = content.scrollHeight - viewport.clientHeight;
+      const scaledReadMs = computeReadMs(textRef.current) * timingRef.current.textScale;
 
       if (phaseRef.current === "hold") {
         posRef.current = 0;
         viewport.scrollTop = 0;
       } else if (phaseRef.current === "scroll" && maxScroll > 0) {
         const remainingPx = maxScroll - posRef.current;
-        const readMs = computeReadMs(textRef.current);
         const elapsed = now - scrollStartTimeRef.current;
-        const remainingReadMs = Math.max(readMs - elapsed, MIN_REMAINING_MS);
+        const remainingReadMs = Math.max(scaledReadMs - elapsed, MIN_REMAINING_MS);
 
         if (
           lastRecomputeRef.current === 0 ||
@@ -102,7 +148,7 @@ export function SubtitleOverlay({
           viewport.scrollTop = maxScroll;
           if (streamEndedRef.current) {
             phaseRef.current = "final";
-            timersRef.current.final = setTimeout(onDismiss, FINAL_MS);
+            timersRef.current.final = setTimeout(onDismiss, timingRef.current.finalHoldMs);
           }
         } else {
           posRef.current = nextScroll;
@@ -113,9 +159,23 @@ export function SubtitleOverlay({
         maxScroll <= 0 &&
         streamEndedRef.current
       ) {
-        // No overflow and stream ended → final.
-        phaseRef.current = "final";
-        timersRef.current.final = setTimeout(onDismiss, FINAL_MS);
+        // Short content and stream ended → stay visible for the configured minimum/read time.
+        const totalStaticMs = Math.max(
+          timingRef.current.minDisplayMs,
+          computeReadMs(textRef.current) * timingRef.current.textScale
+        );
+        const elapsed = now - mountStartTimeRef.current;
+        const remainingStaticMs = Math.max(0, totalStaticMs - elapsed);
+        if (remainingStaticMs <= 0) {
+          phaseRef.current = "final";
+          timersRef.current.final = setTimeout(onDismiss, timingRef.current.finalHoldMs);
+        } else {
+          phaseRef.current = "static";
+          timersRef.current.static = setTimeout(() => {
+            phaseRef.current = "final";
+            timersRef.current.final = setTimeout(onDismiss, timingRef.current.finalHoldMs);
+          }, remainingStaticMs);
+        }
       } else if (phaseRef.current === "scroll" && maxScroll <= 0) {
         // No overflow but still streaming → keep viewport at top.
         posRef.current = 0;
@@ -130,7 +190,7 @@ export function SubtitleOverlay({
     rafIdRef.current = requestAnimationFrame(loop);
   }, [onDismiss]);
 
-  // Keep textRef current for the rAF loop.
+  // Keep textRef current for the rAF loop and thinking indicator.
   useEffect(() => {
     textRef.current =
       state.kind === "streaming" || state.kind === "success"
@@ -198,7 +258,10 @@ export function SubtitleOverlay({
     prefersReducedMotionRef.current = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     ).matches;
+    timingRef.current = readSubtitleTiming();
 
+    mountStartTimeRef.current = performance.now();
+    streamEndedRef.current = state.kind !== "streaming" && state.kind !== "loading";
     interruptedRef.current = false;
     velocityRef.current = 0;
     targetVelocityRef.current = 0;
@@ -227,10 +290,14 @@ export function SubtitleOverlay({
 
     if (prefersReducedMotionRef.current) {
       phaseRef.current = "static";
+      const staticMs = Math.max(
+        timingRef.current.minDisplayMs,
+        computeReadMs(textRef.current) * timingRef.current.textScale
+      );
       timersRef.current.static = setTimeout(() => {
         phaseRef.current = "final";
-        timersRef.current.final = setTimeout(onDismiss, FINAL_MS);
-      }, Math.max(2500, computeReadMs(textRef.current)));
+        timersRef.current.final = setTimeout(onDismiss, timingRef.current.finalHoldMs);
+      }, staticMs);
       return;
     }
 
@@ -239,7 +306,7 @@ export function SubtitleOverlay({
       phaseRef.current = "scroll";
       scrollStartTimeRef.current = performance.now();
       lastRecomputeRef.current = 0;
-    }, HOLD_MS);
+    }, timingRef.current.initialHoldMs);
 
     startLoop();
 
@@ -287,15 +354,50 @@ export function SubtitleOverlay({
 
   if (state.kind === "idle") return null;
 
+  const cardBackground = hexToRgba(style.bgColor, style.bgOpacity);
+  const dimmedColor = style.textColor + "99"; // ~60% opacity hex
+
+  // Position in pixels (percentage bases differ between CSS layout viewport and
+  // JS-reported widths when a scrollbar gutter is reserved, so percentages are
+  // ambiguous). The wrapper carries px-4 (32px total horizontal padding).
+  const MARGIN = 8;
+  const hasMetrics = metrics.viewportWidth > 0 && metrics.viewportHeight > 0;
+  const wrapperW = metrics.cardWidth + 32;
+  const wrapperH = metrics.cardHeight;
+  const clampPx = (v: number, min: number, max: number) =>
+    Math.max(min, Math.min(Math.max(min, max), v));
+  const leftPx = clampPx(
+    (style.xPct / 100) * metrics.viewportWidth,
+    wrapperW / 2 + MARGIN,
+    metrics.viewportWidth - wrapperW / 2 - MARGIN
+  );
+  const topPx = clampPx(
+    (style.yPct / 100) * metrics.viewportHeight,
+    wrapperH / 2 + MARGIN,
+    metrics.viewportHeight - wrapperH / 2 - MARGIN
+  );
+
   return (
     <div
       data-subtr-overlay
-      className="pointer-events-none fixed inset-x-0 bottom-[clamp(3rem,12vh,8rem)] z-40 mx-auto flex max-w-[min(920px,92vw)] justify-center px-4 animate-subtitle-in"
+      className="pointer-events-none fixed z-40 mx-auto flex max-w-[min(920px,92vw)] justify-center px-4"
+      style={{
+        left: hasMetrics ? `${leftPx}px` : `${style.xPct}%`,
+        top: hasMetrics ? `${topPx}px` : `${style.yPct}%`,
+        transform: "translate(-50%, -50%)",
+      }}
       aria-live="polite"
       aria-atomic="true"
     >
       <div
-        className="pointer-events-auto relative w-full rounded-2xl border border-white/10 bg-black/82 px-5 py-4 text-center text-white shadow-lg backdrop-blur-xl transition-all"
+        ref={cardRef}
+        className="pointer-events-auto relative w-full rounded-2xl border border-white/10 px-5 py-4 text-center shadow-lg backdrop-blur-xl transition-all animate-subtitle-in"
+        style={{
+          backgroundColor: cardBackground,
+          color: style.textColor,
+          fontFamily: fontFamilyCss(style.fontFamily),
+          fontSize: `${style.fontSizePx}px`,
+        }}
         onMouseEnter={() => onRequestInteractive?.(true)}
         onMouseLeave={() => onRequestInteractive?.(false)}
         onWheel={handleWheel}
@@ -309,28 +411,38 @@ export function SubtitleOverlay({
         <button
           type="button"
           onClick={handleDismiss}
-          className="absolute right-2 top-2 rounded-lg p-1.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+          className="absolute right-2 top-2 rounded-lg p-1.5 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+          style={{ color: dimmedColor }}
           aria-label="Dismiss subtitle"
         >
           <XIcon className="h-4 w-4" />
         </button>
 
-        <p className="mb-1 line-clamp-2 text-xs leading-relaxed text-white/55">
+        <p
+          className="mb-1 line-clamp-2 text-xs leading-relaxed"
+          style={{ color: dimmedColor }}
+        >
           {state.original}
         </p>
 
         {isLoading && (
-          <div className="flex items-center justify-center gap-2 py-1 text-white">
+          <div className="flex items-center justify-center gap-2 py-1">
             <LoaderIcon
-              className="h-5 w-5 animate-spin text-white"
-              style={{ animationDuration: "0.8s" }}
+              className="h-5 w-5 animate-spin"
+              style={{ animationDuration: "0.8s", color: style.textColor }}
             />
-            <span className="text-base font-medium">Translating</span>
+            <span className="subtr-thinking-swap text-base font-medium">
+              <span className="subtr-thinking-primary">Translating</span>
+              <span className="subtr-thinking-secondary">
+                Thinking
+                <span className="subtr-thinking-dots" aria-hidden="true">…</span>
+              </span>
+            </span>
           </div>
         )}
 
         {isError && (
-          <div className="flex items-center justify-center gap-2 py-1 text-danger">
+          <div className="flex items-center justify-center gap-2 py-1" style={{ color: "#f87171" }}>
             <AlertIcon className="h-5 w-5" />
             <span className="text-base">{mainText}</span>
           </div>
@@ -342,19 +454,23 @@ export function SubtitleOverlay({
             className="subtr-scroll max-h-[200px] overflow-y-auto pr-1 text-left"
           >
             <div ref={contentRef}>
-              <p
-                className={`text-lg leading-snug tracking-wide ${
-                  hasText ? "font-medium text-white" : "text-white/60"
-                }`}
-              >
-                {mainText}
-                {state.kind === "streaming" && hasText && (
-                  <span
-                    className="ml-0.5 inline-block h-[1em] w-0.5 align-middle bg-white/80 animate-caret-blink"
-                    aria-hidden="true"
-                  />
-                )}
-              </p>
+              {state.kind === "streaming" && !hasText ? (
+                <p className="subtr-thinking text-base leading-snug tracking-wide">
+                  Thinking
+                  <span className="subtr-thinking-dots" aria-hidden="true">…</span>
+                </p>
+              ) : (
+                <MarkdownRenderer className="leading-snug tracking-wide">
+                  {mainText}
+                </MarkdownRenderer>
+              )}
+              {state.kind === "streaming" && hasText && (
+                <span
+                  className="ml-0.5 inline-block h-[1em] w-0.5 align-middle animate-caret-blink"
+                  style={{ backgroundColor: style.textColor }}
+                  aria-hidden="true"
+                />
+              )}
             </div>
           </div>
         )}

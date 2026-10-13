@@ -70,8 +70,26 @@ export type ProviderPreset = {
   /** True for local servers that need no API key. */
   keyless?: boolean;
   /**
+   * Params merged into EVERY request body for this preset (e.g. {"thinking":{"type":"disabled"}}).
+   * Client-composed into TranslateRequest.bodyOverrides; unknown params are protected by
+   * the server-side retry-without-overrides fallback.
+   */
+  defaultParams?: Record<string, unknown>;
+  /**
    * Params merged into the request body when short-text fast mode is used
-   * (e.g. { reasoning_effort: "low" } or { thinking: { type: "disabled" } }).
+   * (e.g. { reasoning_effort: "low" }). Ignored when an explicit thinking mode is chosen.
    */
   fastModeParams?: Record<string, unknown>;
+  /**
+   * Per-mode thinking/reasoning control parameters (populated after provider research).
+   * null = the mode is unsupported for this preset (UI falls back to defaults + shows `note`).
+   */
+  thinking?: {
+    off?: Record<string, unknown> | null;
+    low?: Record<string, unknown> | null;
+    medium?: Record<string, unknown> | null;
+    high?: Record<string, unknown> | null;
+    /** UI hint, e.g. "GLM 5.3 cannot disable thinking — uses low effort". */
+    note?: string;
+  };
 };

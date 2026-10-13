@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MAX_SELECTION_CHARS } from "@/lib/types";
 import { PROVIDER_PRESETS } from "@/lib/presets";
-import type { PersistedSettings } from "@/lib/client";
 import {
   useLocalStorage,
   readSettings,
@@ -15,7 +14,6 @@ import {
 import { TopBar } from "./top-bar";
 import { Reader } from "./reader";
 import { SubtitleOverlay, type SubtitleState } from "./subtitle-overlay";
-import { SettingsModal } from "./settings-modal";
 
 const MODE_KEY = "subtr.mode.v1";
 const TARGET_LANG_KEY = "subtr.targetLang.v1";
@@ -24,11 +22,6 @@ const DEFAULT_TARGET_LANG = "auto";
 export function SubTrApp() {
   const [mode, setMode] = useLocalStorage(MODE_KEY, false);
   const [targetLang, setTargetLang] = useLocalStorage(TARGET_LANG_KEY, DEFAULT_TARGET_LANG);
-  const [settings, setSettings] = useLocalStorage<PersistedSettings>(
-    "subtr.settings.v1",
-    readSettings()
-  );
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [subtitle, setSubtitle] = useState<SubtitleState>({ kind: "idle" });
 
   const abortRef = useRef<AbortController | null>(null);
@@ -53,14 +46,6 @@ export function SubTrApp() {
     [setTargetLang]
   );
 
-  const handleSettingsChange = useCallback(
-    (next: PersistedSettings) => {
-      setSettings(next);
-      lastSelectionRef.current = "";
-    },
-    [setSettings]
-  );
-
   const dismissSubtitle = useCallback(() => {
     setSubtitle({ kind: "idle" });
     lastSelectionRef.current = "";
@@ -83,6 +68,7 @@ export function SubTrApp() {
         return;
       }
 
+      const settings = readSettings();
       const config = toLlmConfig(settings);
       const preset = PROVIDER_PRESETS.find((p) => p.id === settings.presetId);
       const needsKey = !config.apiKey && !preset?.keyless;
@@ -104,11 +90,32 @@ export function SubTrApp() {
 
       const resolvedTargetLang = resolveTargetLang(trimmed, targetLang);
       const wordCount = countWords(trimmed);
-      const fastModeLimit = settings.fastModeWordLimit ?? 20;
+      const fastModeLimit = 20; // fast mode threshold no longer stored per-profile in 0.2.1
       const useFastMode =
-        settings.fastModeEnabled !== false &&
+        (settings.thinkingMode ?? "preset") === "preset" &&
         wordCount <= fastModeLimit &&
         preset?.fastModeParams != null;
+
+      const explicitThinking =
+        (settings.thinkingMode ?? "preset") !== "preset" && preset
+          ? (preset as Record<string, unknown>).thinking
+          : undefined;
+      const thinkingOverrides =
+        explicitThinking &&
+        typeof explicitThinking === "object" &&
+        explicitThinking !== null
+          ? (explicitThinking as Record<string, unknown>)[settings.thinkingMode!]
+          : undefined;
+
+      const bodyOverrides: Record<string, unknown> | undefined =
+        thinkingOverrides && typeof thinkingOverrides === "object"
+          ? { ...(thinkingOverrides as Record<string, unknown>) }
+          : preset?.defaultParams || useFastMode
+            ? {
+                ...(preset?.defaultParams ?? {}),
+                ...(useFastMode ? (preset?.fastModeParams ?? {}) : {}),
+              }
+            : undefined;
 
       setSubtitle({ kind: "loading", original: trimmed });
 
@@ -137,19 +144,13 @@ export function SubTrApp() {
             lastSelectionRef.current = "";
           },
         },
-        useFastMode ? preset.fastModeParams : undefined
+        bodyOverrides && Object.keys(bodyOverrides).length > 0
+          ? bodyOverrides
+          : undefined
       );
     },
-    [mode, settings, targetLang, setSubtitle]
+    [mode, targetLang, setSubtitle]
   );
-
-  const handleOpenSettings = useCallback(() => {
-    setSettingsOpen(true);
-  }, []);
-
-  const handleCloseSettings = useCallback(() => {
-    setSettingsOpen(false);
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -164,7 +165,6 @@ export function SubTrApp() {
         onModeChange={handleModeChange}
         targetLang={targetLang}
         onTargetLangChange={handleTargetLangChange}
-        onOpenSettings={handleOpenSettings}
       />
       <Reader onSelect={handleSelect} mode={mode} />
       <SubtitleOverlay
@@ -172,13 +172,6 @@ export function SubTrApp() {
         state={subtitle}
         onDismiss={dismissSubtitle}
       />
-      {settingsOpen && (
-        <SettingsModal
-          settings={settings}
-          onChange={handleSettingsChange}
-          onClose={handleCloseSettings}
-        />
-      )}
     </div>
   );
 }

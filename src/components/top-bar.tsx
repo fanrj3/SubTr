@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { SubTrLogo, SettingsIcon } from "./icons";
 
 const TARGET_LANGUAGES = [
@@ -23,7 +24,6 @@ type TopBarProps = {
   onModeChange: (mode: boolean) => void;
   targetLang: string;
   onTargetLangChange: (lang: string) => void;
-  onOpenSettings: () => void;
 };
 
 export function TopBar({
@@ -31,7 +31,6 @@ export function TopBar({
   onModeChange,
   targetLang,
   onTargetLangChange,
-  onOpenSettings,
 }: TopBarProps) {
   return (
     <header className="sticky top-0 z-30 border-b border-card-border bg-background/80 backdrop-blur-md">
@@ -87,14 +86,13 @@ export function TopBar({
             </select>
           </div>
 
-          <button
-            type="button"
-            onClick={onOpenSettings}
+          <Link
+            href="/settings"
             className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-card-border bg-card px-3 text-sm font-medium shadow-sm transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
           >
             <SettingsIcon className="h-4 w-4" />
             <span className="hidden sm:inline">Settings</span>
-          </button>
+          </Link>
         </div>
       </div>
     </header>

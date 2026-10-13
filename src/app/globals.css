@@ -129,3 +129,184 @@ body {
 .subtr-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.4);
 }
+
+.subtr-markdown {
+  line-height: 1.5;
+}
+
+.subtr-markdown > *:first-child {
+  margin-top: 0;
+}
+
+.subtr-markdown > *:last-child {
+  margin-bottom: 0;
+}
+
+.subtr-markdown p {
+  margin: 0.35em 0;
+}
+
+.subtr-markdown h1,
+.subtr-markdown h2,
+.subtr-markdown h3,
+.subtr-markdown h4,
+.subtr-markdown h5,
+.subtr-markdown h6 {
+  margin: 0.6em 0 0.35em;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.subtr-markdown h1 {
+  font-size: 1.25em;
+}
+
+.subtr-markdown h2 {
+  font-size: 1.15em;
+}
+
+.subtr-markdown h3,
+.subtr-markdown h4,
+.subtr-markdown h5,
+.subtr-markdown h6 {
+  font-size: 1em;
+}
+
+.subtr-markdown ul,
+.subtr-markdown ol {
+  margin: 0.35em 0;
+  padding-left: 1.25em;
+}
+
+.subtr-markdown li {
+  margin: 0.15em 0;
+}
+
+.subtr-markdown code {
+  display: inline-block;
+  border-radius: 0.25rem;
+  background-color: rgba(255, 255, 255, 0.12);
+  padding: 0.1em 0.35em;
+  font-size: 0.85em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.subtr-markdown pre {
+  overflow-x: auto;
+  margin: 0.5em 0;
+  border-radius: 0.5rem;
+  background-color: rgba(255, 255, 255, 0.08);
+  padding: 0.6em 0.75em;
+}
+
+.subtr-markdown pre code {
+  display: block;
+  background-color: transparent;
+  padding: 0;
+  font-size: 0.8em;
+}
+
+.subtr-markdown blockquote {
+  margin: 0.5em 0;
+  border-left: 2px solid currentColor;
+  padding-left: 0.75em;
+  opacity: 0.8;
+}
+
+.subtr-markdown table {
+  display: block;
+  overflow-x: auto;
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  font-size: 0.9em;
+}
+
+.subtr-markdown th,
+.subtr-markdown td {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 0.35em 0.5em;
+  text-align: left;
+}
+
+.subtr-markdown th {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.subtr-markdown hr {
+  margin: 0.75em 0;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.subtr-markdown a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.subtr-thinking {
+  opacity: 0;
+  animation: thinking-fade-in 0.3s ease forwards;
+  animation-delay: 1.5s;
+}
+
+@keyframes thinking-fade-in {
+  to {
+    opacity: 0.6;
+  }
+}
+
+.subtr-thinking-dots {
+  display: inline-block;
+  animation: thinking-dots-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes thinking-dots-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.subtr-thinking-swap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15em;
+}
+
+.subtr-thinking-primary,
+.subtr-thinking-secondary {
+  transition: opacity 0.2s ease;
+}
+
+.subtr-thinking-secondary {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15em;
+  opacity: 0;
+  animation: thinking-swap-in 0s linear 1.5s forwards;
+}
+
+.subtr-thinking-primary {
+  opacity: 1;
+  animation: thinking-swap-out 0s linear 1.5s forwards;
+}
+
+@keyframes thinking-swap-in {
+  to {
+    opacity: 0.6;
+  }
+}
+
+@keyframes thinking-swap-out {
+  to {
+    opacity: 0;
+  }
+}

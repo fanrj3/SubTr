@@ -26,7 +26,6 @@ const {
 } = require("electron");
 
 const APP_ROOT = path.resolve(__dirname, "..");
-const OVERLAY_HEIGHT = 280;
 const DUPLICATE_WINDOW_MS = 1200;
 const MANUAL_DEBOUNCE_MS = 400;
 const CLIPBOARD_POLL_ATTEMPTS = 20;
@@ -368,6 +367,24 @@ function resetOverlayState() {
   }
 }
 
+/**
+ * Match the (full-screen transparent) overlay window to the primary display's
+ * work area and restore click-through. The overlay page positions its own card.
+ */
+function applyOverlayBounds() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  overlayWindow.setBounds(screen.getPrimaryDisplay().workArea);
+  overlayWindow.setIgnoreMouseEvents(true, { forward: true });
+}
+
+/** Re-apply overlay bounds whenever the display layout changes. */
+function registerDisplayListeners() {
+  const onChange = () => applyOverlayBounds();
+  screen.on("display-metrics-changed", onChange);
+  screen.on("display-added", onChange);
+  screen.on("display-removed", onChange);
+}
+
 function registerOverlayIpc() {
   ipcMain.on("subtr:overlay-interactive", (event, on) => {
     if (!isFromOverlay(event)) return;
@@ -417,17 +434,12 @@ function createMainWindow(baseUrl) {
 
 function createOverlayWindow(baseUrl) {
   const workArea = screen.getPrimaryDisplay().workArea;
-  const width = Math.min(1000, workArea.width - 80);
-  const height = OVERLAY_HEIGHT;
-  const x = workArea.x + Math.round((workArea.width - width) / 2);
-  const y =
-    workArea.y + workArea.height - height - Math.round(workArea.height * 0.08);
 
   overlayWindow = new BrowserWindow({
-    width,
-    height,
-    x,
-    y,
+    x: workArea.x,
+    y: workArea.y,
+    width: workArea.width,
+    height: workArea.height,
     show: false,
     transparent: true,
     frame: false,
@@ -552,6 +564,7 @@ async function start() {
 
   createMainWindow(baseUrl);
   createOverlayWindow(baseUrl);
+  registerDisplayListeners();
   registerGlobalShortcut();
   ensureAccessibilityPermission();
   initSelectionHook();
