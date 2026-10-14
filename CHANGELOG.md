@@ -16,7 +16,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | **0.2.1** | `66af67f` | Settings page, profiles v2, thinking control, subtitle customization |
 | **0.2.2** | `4c10810` · docs `0efc776` | Theme + UI language, compact window, position player |
 | **0.2.3** | `cb855ca` · docs `3650ab3` | Native theme, display-aspect preview, Test button, fade-out, caps, capture handshake |
-| **0.2.4** | *(in progress)* | Dictionary, hold progress bar, tray, global hotkey, position rework |
+| **0.2.4** | `f3cc2a3` | Dictionary, real-screen player, hotkey, tray |
 
 ---
 
@@ -47,13 +47,13 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | Fade-out on dismissal (all paths) | 0.2.3 | `cb855ca` | `src/components/subtitle-overlay.tsx` |
 | Capture delivery handshake + pending queue | 0.2.3 | `cb855ca` | `desktop/main.cjs`, `desktop/preload.cjs` |
 | Selection cap 10000 (server 12000) | 0.2.3 | `cb855ca` | `src/lib/types.ts` |
-| Single-word dictionary (ECDICT offline; phonetics + senses; no LLM) | 0.2.4 | *(release commit)* | `src/lib/client/dictionary.ts`, `public/dict/`, `scripts/build-dict.mjs` |
-| Subtitle hold-phase progress bar | 0.2.4 | *(release commit)* | `src/components/subtitle-overlay.tsx` |
-| Position board: presets + center-snap guides (position-only box) | 0.2.4 | *(release commit)* | `src/components/position-player.tsx` |
-| Real-screen player (Play drives the overlay; drag-pause; ✅ lock; resume) | 0.2.4 | *(release commit)* | `position-player.tsx`, `subtitle-overlay.tsx`, `src/app/overlay/page.tsx`, `desktop/main.cjs` |
-| Test-connection latency flavor text (tiers + emoji) | 0.2.4 | *(release commit)* | `src/app/settings/page.tsx` |
-| Customizable global hotkey (default ⌘⇧T; toggles translation mode) | 0.2.4 | *(release commit)* | `src/lib/client/hotkey.ts`, `src/components/hotkey-recorder.tsx`, `mode.ts`, `desktop/main.cjs` |
-| Tray icon (idle/active + burst animation; resident app) | 0.2.4 | *(release commit)* | `desktop/tray-icons.cjs`, `desktop/main.cjs` |
+| Single-word dictionary (ECDICT offline; phonetics + senses; no LLM) | 0.2.4 | `f3cc2a3` | `src/lib/client/dictionary.ts`, `public/dict/`, `scripts/build-dict.mjs` |
+| Subtitle hold-phase progress bar | 0.2.4 | `f3cc2a3` | `src/components/subtitle-overlay.tsx` |
+| Position board: presets + center-snap guides (position-only box) | 0.2.4 | `f3cc2a3` | `src/components/position-player.tsx` |
+| Real-screen player (Play drives the overlay; drag-pause; ✅ lock; resume) | 0.2.4 | `f3cc2a3` | `position-player.tsx`, `subtitle-overlay.tsx`, `src/app/overlay/page.tsx`, `desktop/main.cjs` |
+| Test-connection latency flavor text (tiers + emoji) | 0.2.4 | `f3cc2a3` | `src/app/settings/page.tsx` |
+| Customizable global hotkey (default ⌘⇧T; toggles translation mode) | 0.2.4 | `f3cc2a3` | `src/lib/client/hotkey.ts`, `src/components/hotkey-recorder.tsx`, `mode.ts`, `desktop/main.cjs` |
+| Tray icon (idle/active + burst animation; resident app) | 0.2.4 | `f3cc2a3` | `desktop/tray-icons.cjs`, `desktop/main.cjs` |
 
 ---
 
