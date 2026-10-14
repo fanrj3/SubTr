@@ -47,6 +47,13 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | Fade-out on dismissal (all paths) | 0.2.3 | `cb855ca` | `src/components/subtitle-overlay.tsx` |
 | Capture delivery handshake + pending queue | 0.2.3 | `cb855ca` | `desktop/main.cjs`, `desktop/preload.cjs` |
 | Selection cap 10000 (server 12000) | 0.2.3 | `cb855ca` | `src/lib/types.ts` |
+| Single-word dictionary (ECDICT offline; phonetics + senses; no LLM) | 0.2.4 | *(release commit)* | `src/lib/client/dictionary.ts`, `public/dict/`, `scripts/build-dict.mjs` |
+| Subtitle hold-phase progress bar | 0.2.4 | *(release commit)* | `src/components/subtitle-overlay.tsx` |
+| Position board: presets + center-snap guides (position-only box) | 0.2.4 | *(release commit)* | `src/components/position-player.tsx` |
+| Real-screen player (Play drives the overlay; drag-pause; ✅ lock; resume) | 0.2.4 | *(release commit)* | `position-player.tsx`, `subtitle-overlay.tsx`, `src/app/overlay/page.tsx`, `desktop/main.cjs` |
+| Test-connection latency flavor text (tiers + emoji) | 0.2.4 | *(release commit)* | `src/app/settings/page.tsx` |
+| Customizable global hotkey (default ⌘⇧T; toggles translation mode) | 0.2.4 | *(release commit)* | `src/lib/client/hotkey.ts`, `src/components/hotkey-recorder.tsx`, `mode.ts`, `desktop/main.cjs` |
+| Tray icon (idle/active + burst animation; resident app) | 0.2.4 | *(release commit)* | `desktop/tray-icons.cjs`, `desktop/main.cjs` |
 
 ---
 
@@ -75,5 +82,12 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 ### 0.2.3 (`cb855ca`) — native theme · preview rework · test · robustness
 - Title bar follows theme (`setNativeTheme`); canvas = real display aspect + double-click enlarge; drag without text selection; appearance row responsive; base pace 220 wpm / 400 cpm with 0.2–5.0× slider; **Test** button (real-screen playback with live style); fade-out on every dismissal; caps raised (10000/12000); capture delivery handshake + latest-wins pending queue; dismissal aborts in-flight translation.
 
-### 0.2.4 (in progress)
-- (planned) Single-word dictionary lookup (offline, no LLM), hold-phase progress bar, title-bar follow-system fix, position board rework (position-only box + snap guides + presets; Play drives the real screen; on-screen drag pauses + ✅ lock), test-connection latency flavor text, customizable global hotkey (default ⌘⇧T), tray icon with state animation.
+### 0.2.4 — dictionary · player rework · hotkey · tray
+- **Single-word dictionary**: ECDICT (MIT) top-30k bundled offline (`public/dict/`, ~3.9 MB, buildable via `npm run dict:build`); single Latin-word selections resolve locally with phonetics + senses — no LLM, works without an API key; misses fall through to the LLM flow.
+- **Hold-phase progress bar** at the card's bottom-right during the initial hold and the final hold.
+- **Title bar follow-system fix**: switching dark→Follow system now updates the macOS title bar (`setNativeTheme("system")` reaches the bridge).
+- **Test-connection flavor text**: <500 ms "Fast as lightning ⚡" / 500–1000 ms "traversing the worldwide web 🌐" / >1000 ms "geostationary space 🛰️" (en + zh).
+- **Position board rework**: canvas is position-only (no text in the box) with six presets and center-snap guides (vertical/horizontal) during drag; the separate Test button is gone — one **Play** drives a REAL subtitle on the overlay screen with play/pause/seek, live state readout and metrics; dragging the real card pauses playback, moves it with the same guides/snap, and a ✅ button locks the position and resumes playback; browser fallback plays in-window. Play after Pause resumes (no restart).
+- **Customizable global hotkey** (default `⌘⇧T`, macOS glyph display, `event.code` recording, reserved-combo blocklist, conflict handling with fallback suggestions, reset to default): toggles translation mode everywhere.
+- **Tray icon**: macOS template icon, idle/active states with a short burst animation on change; menu (Show / Toggle translation [checkbox] / Settings ⌘, / Quit); the app stays resident when all windows close.
+- Fixes: Esc-dismiss no longer re-triggers the selection lookup (Escape keyup ignored); reader empty-state hydration mismatch (mount-gated).

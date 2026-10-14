@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useLocalStorage, useT } from "@/lib/client";
 import { isDesktopMode } from "@/lib/client/desktop";
 import { EditIcon, CheckIcon } from "./icons";
 
 const TEXT_KEY = "subtr.text.v1";
+
+function useIsMounted(): boolean {
+  return useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+}
 
 type ReaderProps = {
   onSelect: (text: string) => void;
@@ -14,6 +22,7 @@ type ReaderProps = {
 
 export function Reader({ onSelect, mode }: ReaderProps) {
   const { t } = useT();
+  const mounted = useIsMounted();
   const [text, setText] = useLocalStorage(TEXT_KEY, "");
   const [isEditing, setIsEditing] = useState(false);
   const readerRef = useRef<HTMLDivElement>(null);
@@ -64,11 +73,17 @@ export function Reader({ onSelect, mode }: ReaderProps) {
       timer = setTimeout(handleSelection, 250);
     }
 
+    function onKeyUp(e: KeyboardEvent) {
+      // Esc dismisses the subtitle; don't let the debounce bring it back.
+      if (e.key === "Escape") return;
+      onFinish();
+    }
+
     document.addEventListener("mouseup", onFinish);
-    document.addEventListener("keyup", onFinish);
+    document.addEventListener("keyup", onKeyUp);
     return () => {
       document.removeEventListener("mouseup", onFinish);
-      document.removeEventListener("keyup", onFinish);
+      document.removeEventListener("keyup", onKeyUp);
       if (timer) clearTimeout(timer);
     };
   }, [onSelect]);
@@ -110,7 +125,7 @@ export function Reader({ onSelect, mode }: ReaderProps) {
           <p className="mt-2 text-sm text-muted">
             {t("reader.empty.subtitle")}
           </p>
-          {isDesktopMode() && (
+          {mounted && isDesktopMode() && (
             <p className="mt-2 text-xs text-muted">
               {t("reader.empty.desktop")}
             </p>

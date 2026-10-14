@@ -24,8 +24,13 @@ const {
   ipcMain,
   desktopCapturer,
   nativeTheme,
+  nativeImage,
+  Menu,
+  Tray,
   utilityProcess,
 } = require("electron");
+
+const { buildFrames } = require("./tray-icons.cjs");
 
 const APP_ROOT = path.resolve(__dirname, "..");
 const DUPLICATE_WINDOW_MS = 1200;
@@ -33,6 +38,9 @@ const MANUAL_DEBOUNCE_MS = 400;
 const CLIPBOARD_POLL_ATTEMPTS = 20;
 const CLIPBOARD_POLL_INTERVAL_MS = 25;
 const MAX_TEST_SUBTITLE_CHARS = 12000;
+const MAX_HOTKEY_CHARS = 64;
+const TRAY_FRAME_MS = 80;
+const TRAY_GUID = "5a2e7c94-3f1b-4d6e-8a0c-2b7d9e4f1a35"; // stable tray identity (Electron requires UUID form)
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -52,6 +60,21 @@ let escArmed = false;
 let overlayListenerReady = false;
 /** Latest capture that could not be delivered yet (single slot, latest wins). */
 let pendingCapture = null;
+
+/** @type {import("electron").Tray | null} */
+let tray = null;
+/** Lazily built tray frame set (resting + burst). */
+let trayFrames = null;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let trayAnimTimer = null;
+/** Currently registered translation-toggle hotkey (accelerator string). */
+let toggleHotkeyAccel = null;
+/** Latest translate-mode state reported by the renderer (tray idle vs active). */
+let currentTrayMode = false;
+/** Number of animation frames drawn (E2E introspection). */
+let animateCount = 0;
+/** Base URL of the running web app (for navigating the main window). */
+let appBaseUrl = "";
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -340,6 +363,209 @@ function registerGlobalShortcut() {
 }
 
 // ---------------------------------------------------------------------------
+// Translation-mode toggle hotkey (renderer-configurable via globalShortcut)
+// ---------------------------------------------------------------------------
+
+/** Tell the reader window to flip translate mode (hotkey / tray menu). */
+function sendToggleMode() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("subtr:toggle-mode");
+  }
+}
+
+/**
+ * Register the translation-toggle hotkey, replacing any previous one.
+ * Idempotent for the same accelerator; restores the previous binding when the
+ * new accelerator is invalid/unavailable so a bad value never leaves us unbound.
+ * @param {unknown} accel
+ * @returns {{ ok: boolean, error?: string }}
+ */
+function setToggleHotkey(accel) {
+  if (typeof accel !== "string") return { ok: false, error: "accelerator must be a string" };
+  const next = accel.trim();
+  if (!next) return { ok: false, error: "accelerator is empty" };
+  if (next.length > MAX_HOTKEY_CHARS) return { ok: false, error: "accelerator too long" };
+
+  if (next === toggleHotkeyAccel && globalShortcut.isRegistered(next)) {
+    return { ok: true };
+  }
+
+  const previous = toggleHotkeyAccel;
+  if (previous && globalShortcut.isRegistered(previous)) {
+    try {
+      globalShortcut.unregister(previous);
+    } catch {
+      // ignore
+    }
+  }
+
+  let ok = false;
+  let error;
+  try {
+    ok = globalShortcut.register(next, sendToggleMode);
+  } catch (err) {
+    error = err && err.message ? err.message : String(err);
+  }
+  if (!ok) {
+    if (previous && !globalShortcut.isRegistered(previous)) {
+      try {
+        globalShortcut.register(previous, sendToggleMode);
+      } catch {
+        // ignore
+      }
+    }
+    return { ok: false, error: error || "hotkey unavailable (already in use or invalid)" };
+  }
+  toggleHotkeyAccel = next;
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// System tray (idle vs active + short state-change animation)
+// ---------------------------------------------------------------------------
+
+/** Create the reader window if it was closed (tray-resident app keeps running). */
+function ensureMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
+  if (!appBaseUrl) return null;
+  createMainWindow(appBaseUrl);
+  return mainWindow;
+}
+
+/** Show and focus the reader window (recreating it when it was closed). */
+function showMainWindow() {
+  const win = ensureMainWindow();
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+/** Open the settings page in the reader window and bring it forward. */
+function openSettingsWindow() {
+  const win = ensureMainWindow();
+  if (!win || win.isDestroyed()) return;
+  if (appBaseUrl) void win.loadURL(`${appBaseUrl}/settings`);
+  showMainWindow();
+}
+
+/** Build a template nativeImage (16px base + 32px @2x) from a tray frame. */
+function buildTrayImage(frame) {
+  const image = nativeImage.createFromBitmap(frame[16].bgra, { width: 16, height: 16 });
+  try {
+    image.addRepresentation({ scaleFactor: 2, width: 32, height: 32, buffer: frame[32].bgra });
+  } catch {
+    // ignore — 16px base still renders
+  }
+  try {
+    image.setTemplateImage(true);
+  } catch {
+    // ignore
+  }
+  return image;
+}
+
+function restingTrayImage() {
+  if (!trayFrames) return null;
+  return buildTrayImage(currentTrayMode ? trayFrames.on : trayFrames.off);
+}
+
+function stopTrayAnimation() {
+  if (trayAnimTimer) {
+    clearTimeout(trayAnimTimer);
+    trayAnimTimer = null;
+  }
+}
+
+function updateTrayMenu() {
+  if (!tray) return;
+  const menu = Menu.buildFromTemplate([
+    { label: "Show SubTr", click: showMainWindow },
+    {
+      label: "Toggle translation",
+      type: "checkbox",
+      checked: currentTrayMode,
+      click: sendToggleMode,
+    },
+    { label: "Settings…", accelerator: "CmdOrCtrl+,", click: openSettingsWindow },
+    { type: "separator" },
+    { role: "quit" },
+  ]);
+  tray.setContextMenu(menu);
+}
+
+/**
+ * Update the tray to reflect translate mode, playing a short ~400ms burst.
+ * @param {boolean} enabled
+ */
+function setTrayState(enabled) {
+  currentTrayMode = !!enabled;
+  if (tray && !tray.isDestroyed()) updateTrayMenu();
+  if (!tray || tray.isDestroyed()) return;
+  stopTrayAnimation();
+
+  const burst = currentTrayMode ? trayFrames.burstOn : trayFrames.burstOff;
+  let index = 0;
+  const step = () => {
+    if (!tray || tray.isDestroyed()) {
+      trayAnimTimer = null;
+      return;
+    }
+    try {
+      tray.setImage(buildTrayImage(burst[index]));
+    } catch {
+      // ignore a single frame failure
+    }
+    try {
+      tray.setToolTip(currentTrayMode ? "SubTr — translating" : "SubTr");
+    } catch {
+      // ignore
+    }
+    animateCount++;
+    index++;
+    if (index < burst.length) {
+      trayAnimTimer = setTimeout(step, TRAY_FRAME_MS);
+    } else {
+      trayAnimTimer = null;
+    }
+  };
+  step();
+}
+
+function createTray() {
+  if (tray) return;
+  try {
+    trayFrames = buildFrames();
+    tray = new Tray(restingTrayImage(), TRAY_GUID);
+    tray.setToolTip("SubTr");
+    if (process.platform === "darwin") {
+      try {
+        tray.setIgnoreDoubleClickEvents(true);
+      } catch {
+        // ignore — not critical
+      }
+    }
+    updateTrayMenu();
+    tray.on("click", showMainWindow);
+  } catch (error) {
+    console.warn("[tray] init failed:", error && error.message ? error.message : error);
+    tray = null;
+  }
+}
+
+function destroyTray() {
+  stopTrayAnimation();
+  if (tray) {
+    try {
+      tray.destroy();
+    } catch {
+      // ignore
+    }
+    tray = null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Overlay interaction bridge (click-through toggle + one-shot global Escape)
 // ---------------------------------------------------------------------------
 
@@ -359,6 +585,56 @@ function isFromOurWindow(event) {
     !mainWindow.isDestroyed() &&
     event.sender === mainWindow.webContents;
   return fromMain || isFromOverlay(event);
+}
+
+/** True when an IPC event came from the main (reader) window. */
+function isFromMainWindow(event) {
+  return (
+    !!mainWindow &&
+    !mainWindow.isDestroyed() &&
+    event.sender === mainWindow.webContents
+  );
+}
+
+/**
+ * Validate a test-play transport control sent from the main window.
+ * action must be play|pause|seek; timeMs (optional) must be a finite number >= 0.
+ * @param {unknown} payload
+ * @returns {{ action: "play" | "pause" | "seek", timeMs?: number } | null}
+ */
+function validateTestPlayControl(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  const { action, timeMs } = /** @type {{ action?: unknown, timeMs?: unknown }} */ (payload);
+  if (action !== "play" && action !== "pause" && action !== "seek") return null;
+  /** @type {{ action: "play" | "pause" | "seek", timeMs?: number }} */
+  const control = { action };
+  if (timeMs !== undefined) {
+    if (typeof timeMs !== "number" || !Number.isFinite(timeMs) || timeMs < 0) return null;
+    control.timeMs = timeMs;
+  }
+  return control;
+}
+
+/** Clamp a value to a finite number >= 0, or null when not a number. */
+function toNonNegativeMs(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return Math.max(0, value);
+}
+
+/**
+ * Validate a playback-state report sent from the overlay window.
+ * Requires a boolean `playing` and finite, non-negative `timeMs`/`totalMs`.
+ * @param {unknown} payload
+ * @returns {{ playing: boolean, timeMs: number, totalMs: number } | null}
+ */
+function validateTestPlayState(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  const { playing, timeMs, totalMs } = /** @type {{ playing?: unknown, timeMs?: unknown, totalMs?: unknown }} */ (payload);
+  if (typeof playing !== "boolean") return null;
+  const ms = toNonNegativeMs(timeMs);
+  const total = toNonNegativeMs(totalMs);
+  if (ms === null || total === null) return null;
+  return { playing, timeMs: ms, totalMs: total };
 }
 
 /** Toggle the overlay between click-through (default) and interactive. */
@@ -470,6 +746,41 @@ function registerOverlayIpc() {
     if (!text.trim()) return;
     if (text.length > MAX_TEST_SUBTITLE_CHARS) return;
     deliverOverlayCapture({ text, source: "test" });
+  });
+
+  // Main window → overlay: transport control for the real-screen test player.
+  ipcMain.on("subtr:test-play-control", (event, payload) => {
+    if (!isFromMainWindow(event)) return;
+    const control = validateTestPlayControl(payload);
+    if (!control) return;
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send("subtr:test-play-control", control);
+    }
+  });
+
+  // Overlay → main window: playback-state report for the real-screen test player.
+  ipcMain.on("subtr:test-play-state", (event, payload) => {
+    if (!isFromOverlay(event)) return;
+    const state = validateTestPlayState(payload);
+    if (!state) return;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("subtr:test-play-state", state);
+    }
+  });
+
+  // Renderer-configurable translation-toggle hotkey (main window only).
+  ipcMain.handle("subtr:set-toggle-hotkey", (event, accel) => {
+    const fromMain =
+      !!mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents;
+    if (!fromMain) return { ok: false, error: "unauthorized" };
+    return setToggleHotkey(accel);
+  });
+
+  // Renderer reports translate-mode state so the tray reflects idle vs active.
+  ipcMain.on("subtr:set-tray-state", (event, enabled) => {
+    if (!isFromOurWindow(event)) return;
+    if (typeof enabled !== "boolean") return;
+    setTrayState(enabled);
   });
 
   // Settings-page position canvas backdrop: primary-screen thumbnail data URL.
@@ -671,6 +982,7 @@ async function start() {
     globalThis.__subtrTest = {
       capture: (text) => handleCapture({ text }),
     };
+    globalThis.__subtrTrayState = () => ({ mode: currentTrayMode, frames: animateCount });
   }
 
   registerOverlayIpc();
@@ -689,9 +1001,11 @@ async function start() {
     app.quit();
     return;
   }
+  appBaseUrl = baseUrl;
 
   createMainWindow(baseUrl);
   createOverlayWindow(baseUrl);
+  createTray();
   registerDisplayListeners();
   registerGlobalShortcut();
   ensureAccessibilityPermission();
@@ -703,11 +1017,7 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
+    showMainWindow();
   });
 
   app.whenReady().then(start).catch((error) => {
@@ -716,8 +1026,14 @@ if (!gotLock) {
   });
 }
 
+// Tray-resident app: keep running when all windows are closed (quit via tray
+// menu). Subscribing is required — without a listener Electron quits by default.
 app.on("window-all-closed", () => {
-  app.quit();
+  // Intentionally do nothing: the tray keeps the app alive on every platform.
+});
+
+app.on("activate", () => {
+  showMainWindow();
 });
 
 app.on("before-quit", () => {
@@ -726,6 +1042,7 @@ app.on("before-quit", () => {
 
 app.on("will-quit", () => {
   globalShortcut.unregisterAll();
+  destroyTray();
   releaseSelectionHook();
   stopServer();
 });

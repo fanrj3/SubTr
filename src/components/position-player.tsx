@@ -12,7 +12,6 @@ import {
   DEFAULT_POSITION_TEST_TEXT,
   computeTimeline,
   computeMetrics,
-  scrollOffsetAtTime,
   type PositionMetrics,
 } from "@/lib/client";
 import { SubtitleOverlay } from "./subtitle-overlay";
@@ -20,11 +19,20 @@ import { XIcon } from "./icons";
 
 const FALLBACK_SCREEN = { width: 16, height: 10 };
 const REFERENCE_WIDTH = 640;
+const MEASURE_WIDTH = 800;
+const CARD_MAX_HEIGHT = 200;
 
 type PositionPlayerProps = {
   style: SubtitleStyle;
   timing: SubtitleTiming;
   onChange: (style: SubtitleStyle) => void;
+};
+
+type PlayState = {
+  active: boolean;
+  playing: boolean;
+  timeMs: number;
+  totalMs: number;
 };
 
 function formatSeconds(ms: number): string {
@@ -55,84 +63,53 @@ function useDisplayAspect(): number {
 
 type PositionPreviewProps = {
   style: SubtitleStyle;
-  testText: string;
-  timeMs: number;
-  timing: SubtitleTiming;
+  onChange: (style: SubtitleStyle) => void;
   aspect: number;
   thumbnail: string | null;
-  onChange: (style: SubtitleStyle) => void;
   onDoubleClick?: () => void;
-  onMetricsChange?: (metrics: PositionMetrics) => void;
   className?: string;
 };
 
 function PositionPreview({
   style,
-  testText,
-  timeMs,
-  timing,
+  onChange,
   aspect,
   thumbnail,
-  onChange,
   onDoubleClick,
-  onMetricsChange,
   className = "",
 }: PositionPreviewProps) {
   const { t } = useT();
   const containerRef = useRef<HTMLDivElement>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [showGuides, setShowGuides] = useState({ x: false, y: false });
   const [layout, setLayout] = useState({
     containerWidth: 0,
     containerHeight: 0,
-    cardWidth: 0,
-    cardHeight: 0,
-    viewportHeight: 0,
-    contentHeight: 0,
+    boxWidth: 0,
+    boxHeight: 0,
   });
 
-  const timeline = useMemo(() => computeTimeline(testText, timing), [testText, timing]);
-  const maxScroll = Math.max(0, layout.contentHeight - layout.viewportHeight);
   const ratio = layout.containerWidth > 0 ? layout.containerWidth / REFERENCE_WIDTH : 1;
 
-  // Measure container, card, and content so the card can be sized and kept inside.
   useEffect(() => {
     function measure() {
       const container = containerRef.current;
-      const card = cardRef.current;
-      const viewport = viewportRef.current;
-      const content = contentRef.current;
+      const box = boxRef.current;
       setLayout({
         containerWidth: container?.clientWidth ?? 0,
         containerHeight: container?.clientHeight ?? 0,
-        cardWidth: card?.offsetWidth ?? 0,
-        cardHeight: card?.offsetHeight ?? 0,
-        viewportHeight: viewport?.clientHeight ?? 0,
-        contentHeight: content?.scrollHeight ?? 0,
+        boxWidth: box?.offsetWidth ?? 0,
+        boxHeight: box?.offsetHeight ?? 0,
       });
     }
     measure();
     const ro = new ResizeObserver(measure);
     if (containerRef.current) ro.observe(containerRef.current);
-    if (cardRef.current) ro.observe(cardRef.current);
-    if (viewportRef.current) ro.observe(viewportRef.current);
-    if (contentRef.current) ro.observe(contentRef.current);
+    if (boxRef.current) ro.observe(boxRef.current);
     return () => ro.disconnect();
-  }, [testText, style.fontSizePx, style.fontFamily]);
-
-  // Report live metrics back to the parent.
-  useEffect(() => {
-    onMetricsChange?.(computeMetrics(testText, timing, maxScroll));
-  }, [testText, timing, maxScroll, onMetricsChange]);
-
-  // Sync scroll offset to the current playhead time.
-  useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    viewport.scrollTop = scrollOffsetAtTime(timeMs, timing, timeline.scrollMs, maxScroll);
-  }, [timeMs, timing, timeline.scrollMs, maxScroll]);
+  }, [style.fontSizePx, style.fontFamily]);
 
   const updateFromPointer = useCallback(
     (clientX: number, clientY: number) => {
@@ -141,21 +118,32 @@ function PositionPreview({
       const rect = container.getBoundingClientRect();
       let xPct = ((clientX - rect.left) / rect.width) * 100;
       let yPct = ((clientY - rect.top) / rect.height) * 100;
+      const guides = { x: false, y: false };
 
-      if (layout.containerWidth > 0 && layout.cardWidth > 0) {
-        const halfW = (layout.cardWidth / (2 * layout.containerWidth)) * 100;
+      if (Math.abs(xPct - 50) <= 3) {
+        xPct = 50;
+        guides.x = true;
+      }
+      if (Math.abs(yPct - 50) <= 3) {
+        yPct = 50;
+        guides.y = true;
+      }
+
+      if (layout.containerWidth > 0 && layout.boxWidth > 0) {
+        const halfW = (layout.boxWidth / (2 * layout.containerWidth)) * 100;
         xPct = Math.max(halfW, Math.min(100 - halfW, xPct));
       } else {
         xPct = Math.max(5, Math.min(95, xPct));
       }
 
-      if (layout.containerHeight > 0 && layout.cardHeight > 0) {
-        const halfH = (layout.cardHeight / (2 * layout.containerHeight)) * 100;
+      if (layout.containerHeight > 0 && layout.boxHeight > 0) {
+        const halfH = (layout.boxHeight / (2 * layout.containerHeight)) * 100;
         yPct = Math.max(halfH, Math.min(100 - halfH, yPct));
       } else {
         yPct = Math.max(5, Math.min(95, yPct));
       }
 
+      setShowGuides(guides);
       onChange({ ...style, xPct: Math.round(xPct), yPct: Math.round(yPct) });
     },
     [style, onChange, layout]
@@ -168,6 +156,8 @@ function PositionPreview({
     }
     function onUp() {
       draggingRef.current = false;
+      setIsDragging(false);
+      setShowGuides({ x: false, y: false });
     }
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -188,16 +178,18 @@ function PositionPreview({
           "linear-gradient(135deg, rgba(120,113,108,0.25) 0%, rgba(68,64,60,0.35) 50%, rgba(41,37,36,0.45) 100%)",
       };
 
-  const cardStyle: React.CSSProperties = {
+  const boxWidth = Math.min(layout.containerWidth * 0.8, 360 * ratio);
+  const boxHeight = Math.max(48, 96 * ratio);
+  const boxStyle: React.CSSProperties = {
     left: `${style.xPct}%`,
     top: `${style.yPct}%`,
+    width: boxWidth,
+    height: boxHeight,
     maxWidth: layout.containerWidth * 0.9,
     backgroundColor: hexToRgba(style.bgColor, style.bgOpacity),
-    color: style.textColor,
-    fontFamily: fontFamilyCss(style.fontFamily),
-    fontSize: Math.max(8, Math.min(32, style.fontSizePx * ratio)),
+    borderRadius: Math.max(8, 16 * ratio),
+    border: "1px solid rgba(255,255,255,0.1)",
     transform: "translate(-50%, -50%)",
-    padding: "1em 1.25em",
   };
 
   return (
@@ -208,27 +200,24 @@ function PositionPreview({
       onPointerDown={(e) => {
         e.preventDefault();
         draggingRef.current = true;
+        setIsDragging(true);
         updateFromPointer(e.clientX, e.clientY);
       }}
       onDoubleClick={onDoubleClick}
       role="application"
       aria-label={t("settings.subtitle.position.drag")}
     >
+      {isDragging && showGuides.x && (
+        <div className="pointer-events-none absolute top-0 bottom-0 left-1/2 w-px -translate-x-1/2 bg-accent/60" />
+      )}
+      {isDragging && showGuides.y && (
+        <div className="pointer-events-none absolute left-0 right-0 top-1/2 h-px -translate-y-1/2 bg-accent/60" />
+      )}
       <div
-        ref={cardRef}
-        className="absolute cursor-grab rounded-2xl shadow-sm active:cursor-grabbing w-max overflow-hidden"
-        style={cardStyle}
-      >
-        <div
-          ref={viewportRef}
-          className="subtr-scroll overflow-y-auto pr-1 text-left"
-          style={{ maxHeight: Math.max(40, 200 * ratio) }}
-        >
-          <div ref={contentRef} className="whitespace-pre-wrap leading-snug">
-            {testText}
-          </div>
-        </div>
-      </div>
+        ref={boxRef}
+        className="absolute cursor-grab shadow-sm active:cursor-grabbing"
+        style={boxStyle}
+      />
     </div>
   );
 }
@@ -240,20 +229,32 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
     POSITION_TEST_TEXT_KEY,
     DEFAULT_POSITION_TEST_TEXT
   );
-  const [timeMs, setTimeMs] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [thumbnail, setThumbnail] = useState<string | null>(null);
   const [loadingThumbnail, setLoadingThumbnail] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [testOverlay, setTestOverlay] = useState(false);
-  const [metrics, setMetrics] = useState<PositionMetrics>(() =>
-    computeMetrics(testText, timing, 0)
+  const [playState, setPlayState] = useState<PlayState>({
+    active: false,
+    playing: false,
+    timeMs: 0,
+    totalMs: 0,
+  });
+  const [contentHeight, setContentHeight] = useState(0);
+
+  const measureRef = useRef<HTMLDivElement>(null);
+  const timeline = useMemo(() => computeTimeline(testText, timing), [testText, timing]);
+  const maxScroll = Math.max(0, contentHeight - CARD_MAX_HEIGHT);
+  const metrics: PositionMetrics = useMemo(
+    () => computeMetrics(testText, timing, maxScroll),
+    [testText, timing, maxScroll]
   );
 
-  const timeRef = useRef(0);
-  const timeline = useMemo(() => computeTimeline(testText, timing), [testText, timing]);
+  const mounted = useIsMounted();
+  const isDesktopPlayer =
+    mounted &&
+    typeof window !== "undefined" &&
+    !!window.subtrDesktop?.showTestSubtitle &&
+    !!window.subtrDesktop?.controlTestPlay;
 
-  // Background capture.
   const capture = useCallback(async () => {
     if (typeof window === "undefined") return;
     const bridge = window.subtrDesktop;
@@ -272,62 +273,117 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
     capture();
   }, [capture]);
 
+  // Measure the test text height for the scroll-speed metric.
   useEffect(() => {
-    timeRef.current = timeMs;
-  }, [timeMs]);
+    function measure() {
+      if (measureRef.current) {
+        setContentHeight(measureRef.current.scrollHeight);
+      }
+    }
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (measureRef.current) ro.observe(measureRef.current);
+    return () => ro.disconnect();
+  }, [testText, style.fontSizePx, style.fontFamily]);
 
-  const displayTimeMs = Math.min(timeMs, timeline.totalMs);
-
-  // Playback loop.
+  // Reflect desktop test playback state from the overlay.
   useEffect(() => {
-    if (!isPlaying) return;
+    const bridge = window.subtrDesktop;
+    if (!bridge?.onTestPlayState) return;
+    return bridge.onTestPlayState((state) => {
+      setPlayState({
+        active: true,
+        playing: state.playing,
+        timeMs: state.timeMs,
+        totalMs: state.totalMs,
+      });
+    });
+  }, []);
+
+  // Browser fallback clock.
+  useEffect(() => {
+    if (isDesktopPlayer || !playState.active || !playState.playing) return;
     let raf = 0;
     let last = performance.now();
     function step(now: number) {
       const delta = now - last;
       last = now;
-      const next = Math.min(timeline.totalMs, timeRef.current + delta);
-      timeRef.current = next;
-      setTimeMs(next);
-      if (next >= timeline.totalMs) {
-        setIsPlaying(false);
-        return;
-      }
+      setPlayState((prev) => {
+        if (!prev.active || !prev.playing) return prev;
+        const next = Math.min(prev.totalMs, prev.timeMs + delta);
+        if (next >= prev.totalMs) {
+          return { ...prev, timeMs: prev.totalMs, playing: false, active: false };
+        }
+        return { ...prev, timeMs: next };
+      });
       raf = requestAnimationFrame(step);
     }
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [isPlaying, timeline.totalMs]);
+  }, [isDesktopPlayer, playState.active, playState.playing]);
+
+  const totalMs = playState.active ? playState.totalMs : timeline.totalMs;
+  const displayTimeMs = Math.min(playState.timeMs, totalMs);
 
   function handlePlayPause() {
-    if (timeMs >= timeline.totalMs) {
-      setTimeMs(0);
-      setIsPlaying(true);
+    const trimmed = testText.trim();
+    if (!trimmed) return;
+
+    const ended = playState.timeMs >= playState.totalMs;
+    const hasSession = playState.active && !ended;
+
+    if (isDesktopPlayer) {
+      if (playState.playing) {
+        window.subtrDesktop?.controlTestPlay?.({ action: "pause" });
+      } else if (hasSession) {
+        window.subtrDesktop?.controlTestPlay?.({ action: "play" });
+      } else {
+        window.subtrDesktop?.showTestSubtitle?.(trimmed);
+        window.subtrDesktop?.controlTestPlay?.({ action: "play" });
+      }
+      return;
+    }
+
+    if (playState.playing) {
+      setPlayState((prev) => ({ ...prev, playing: false }));
+    } else if (hasSession) {
+      setPlayState((prev) => ({ ...prev, playing: true }));
     } else {
-      setIsPlaying((p) => !p);
+      setPlayState({
+        active: true,
+        playing: true,
+        timeMs: 0,
+        totalMs: timeline.totalMs,
+      });
     }
   }
 
   function handleScrub(value: number) {
-    setIsPlaying(false);
-    setTimeMs(Math.max(0, Math.min(timeline.totalMs, value)));
-  }
-
-  function handleScrubStart() {
-    setIsPlaying(false);
-  }
-
-  function handleTest() {
-    const trimmed = testText.trim();
-    if (!trimmed) return;
-    if (typeof window !== "undefined" && window.subtrDesktop?.showTestSubtitle) {
-      window.subtrDesktop.showTestSubtitle(trimmed);
-    } else {
-      setTestOverlay(true);
+    if (isDesktopPlayer) {
+      window.subtrDesktop?.controlTestPlay?.({ action: "pause" });
+      window.subtrDesktop?.controlTestPlay?.({ action: "seek", timeMs: value });
+      return;
     }
+    setPlayState({
+      active: true,
+      playing: false,
+      timeMs: Math.max(0, Math.min(timeline.totalMs, value)),
+      totalMs: timeline.totalMs,
+    });
   }
 
-  const mounted = useIsMounted();
+  const presets = useMemo(
+    () => [
+      { label: t("settings.position.preset.bottomCenter"), xPct: 50, yPct: 88 },
+      { label: t("settings.position.preset.topCenter"), xPct: 50, yPct: 12 },
+      { label: t("settings.position.preset.topLeft"), xPct: 12, yPct: 12 },
+      { label: t("settings.position.preset.topRight"), xPct: 88, yPct: 12 },
+      { label: t("settings.position.preset.bottomLeft"), xPct: 12, yPct: 88 },
+      { label: t("settings.position.preset.bottomRight"), xPct: 88, yPct: 88 },
+    ],
+    [t]
+  );
+
   const hasDesktopCapture =
     mounted &&
     typeof window !== "undefined" &&
@@ -335,23 +391,19 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="flex flex-col gap-4 md:flex-row">
         <PositionPreview
           style={style}
-          testText={testText}
-          timeMs={displayTimeMs}
-          timing={timing}
+          onChange={onChange}
           aspect={aspect}
           thumbnail={thumbnail}
-          onChange={onChange}
           onDoubleClick={() => {
             if (!isModalOpen) setIsModalOpen(true);
           }}
-          onMetricsChange={setMetrics}
-          className="cursor-pointer self-start"
+          className="cursor-pointer self-start md:flex-1"
         />
 
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 md:w-40">
           <div className="space-y-1.5">
             <label
               htmlFor="position-test-text"
@@ -368,26 +420,19 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handlePlayPause}
-              className="inline-flex min-w-[6.5rem] items-center justify-center gap-1.5 rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
-            >
-              {isPlaying ? t("settings.position.pause") : t("settings.position.play")}
-            </button>
-            <button
-              type="button"
-              onClick={handleTest}
               disabled={!testText.trim()}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 dark:hover:bg-white/5"
+              className="inline-flex min-w-[6.5rem] items-center justify-center gap-1.5 rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 dark:hover:bg-white/5"
             >
-              {t("settings.position.test")}
+              {playState.playing ? t("settings.position.pause") : t("settings.position.play")}
             </button>
             <span className="text-xs tabular-nums text-muted">
               {t("settings.position.time", {
                 current: formatSeconds(displayTimeMs),
-                total: formatSeconds(timeline.totalMs),
+                total: formatSeconds(totalMs),
               })}
             </span>
           </div>
@@ -395,15 +440,14 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
           <input
             type="range"
             min={0}
-            max={timeline.totalMs}
+            max={totalMs}
             step={10}
             value={displayTimeMs}
-            onPointerDown={handleScrubStart}
             onChange={(e) => handleScrub(parseFloat(e.target.value))}
             className="w-full accent-accent"
             aria-label={t("settings.position.time", {
               current: formatSeconds(displayTimeMs),
-              total: formatSeconds(timeline.totalMs),
+              total: formatSeconds(totalMs),
             })}
           />
 
@@ -429,6 +473,19 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
                 {metrics.wpm === 0 && metrics.cpm === 0 && "—"}
               </p>
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {presets.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => onChange({ ...style, xPct: preset.xPct, yPct: preset.yPct })}
+                className="rounded-lg border border-card-border bg-background px-2 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
+              >
+                {preset.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -457,30 +514,58 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
         )}
       </div>
 
+      {/* Hidden measurement for the scroll-speed metric. */}
+      <div
+        ref={measureRef}
+        aria-hidden="true"
+        style={{
+          position: "fixed",
+          left: -9999,
+          top: 0,
+          visibility: "hidden",
+          pointerEvents: "none",
+          width: MEASURE_WIDTH,
+          fontFamily: fontFamilyCss(style.fontFamily),
+          fontSize: `${style.fontSizePx}px`,
+          lineHeight: 1.375,
+          whiteSpace: "pre-wrap",
+        }}
+      >
+        {testText}
+      </div>
+
       {isModalOpen && (
         <ModalPreview
           aspect={aspect}
           style={style}
-          testText={testText}
-          timeMs={displayTimeMs}
-          timing={timing}
           thumbnail={thumbnail}
           onChange={onChange}
           onClose={() => setIsModalOpen(false)}
         />
       )}
 
-      {testOverlay && (
+      {!isDesktopPlayer && playState.active && (
         <SubtitleOverlay
-          state={{ kind: "success", original: testText.slice(0, 80), text: testText }}
-          onDismiss={() => setTestOverlay(false)}
+          state={{
+            kind: "success",
+            original: testText.slice(0, 80),
+            text: testText,
+          }}
+          onDismiss={() =>
+            setPlayState({ active: false, playing: false, timeMs: 0, totalMs: timeline.totalMs })
+          }
+          controlledPlay={{
+            timeMs: playState.timeMs,
+            totalMs: playState.totalMs,
+            playing: playState.playing,
+          }}
         />
       )}
     </div>
   );
 }
 
-type ModalPreviewProps = Omit<PositionPreviewProps, "onDoubleClick" | "onMetricsChange" | "className"> & {
+type ModalPreviewProps = Omit<PositionPreviewProps, "onDoubleClick" | "className"> & {
   onClose: () => void;
 };
 

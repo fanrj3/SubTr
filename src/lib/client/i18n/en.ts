@@ -27,6 +27,7 @@ export const en = {
   "subtitle.noTranslation": "No translation returned",
   "subtitle.esc": "Esc",
   "subtitle.dismiss": "Dismiss subtitle",
+  "subtitle.confirmPosition": "Lock position",
 
   // Errors / notices
   "error.addApiKey": "Add your API key in Settings",
@@ -70,6 +71,9 @@ export const en = {
   "settings.provider.testConnection": "Test connection",
   "settings.provider.valid": "Valid · {n} ms",
   "settings.provider.reply": "Valid · {n} ms · {reply}",
+  "settings.provider.latency.fast": "Fast as lightning ⚡",
+  "settings.provider.latency.medium": "Your text is traversing the worldwide web 🌐",
+  "settings.provider.latency.slow": "Maybe the server orbits in geostationary space 🛰️",
   "settings.provider.connectionFailed": "Connection failed",
   "settings.provider.securityNote": "Your key is stored locally in this browser and is sent only to your chosen endpoint through this app's own server route.",
 
@@ -99,6 +103,12 @@ export const en = {
   "settings.position.play": "▶ Play",
   "settings.position.pause": "⏸ Pause",
   "settings.position.test": "Test",
+  "settings.position.preset.bottomCenter": "Bottom center",
+  "settings.position.preset.topCenter": "Top center",
+  "settings.position.preset.topLeft": "Top left",
+  "settings.position.preset.topRight": "Top right",
+  "settings.position.preset.bottomLeft": "Bottom left",
+  "settings.position.preset.bottomRight": "Bottom right",
   "settings.position.totalTime": "Total display time",
   "settings.position.scrollSpeed": "Scroll speed",
   "settings.position.readingSpeed": "Reading speed",
@@ -128,6 +138,17 @@ export const en = {
   "settings.app.language.system": "Follow system",
   "settings.app.language.zhCN": "中文（简体）",
   "settings.app.language.en": "English",
+  "settings.app.hotkey": "Global hotkey",
+  "settings.app.hotkey.help": "Toggles translation mode from anywhere.",
+  "settings.app.hotkey.record": "Record",
+  "settings.app.hotkey.recording": "Recording…",
+  "settings.app.hotkey.press": "Press a shortcut…",
+  "settings.app.hotkey.reset": "Reset to default",
+  "settings.app.hotkey.error.reserved": "This shortcut is reserved by the system",
+  "settings.app.hotkey.error.modifier": "Include Ctrl, Alt, or ⌘ (Shift alone isn’t enough)",
+  "settings.app.hotkey.error.noKey": "Press a key together with a modifier",
+  "settings.app.hotkey.error.generic": "Couldn’t register this shortcut",
+  "settings.app.hotkey.suggestions": "Try one of these:",
 
   // Tooltip
   "tooltip.moreInfo": "More info",

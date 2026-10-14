@@ -41,6 +41,7 @@ import {
 import { ArrowLeftIcon, CheckIcon, AlertIcon, LoaderIcon } from "@/components/icons";
 import { HelpTooltip } from "@/components/tooltip";
 import { PositionPlayer } from "@/components/position-player";
+import { HotkeyRecorder } from "@/components/hotkey-recorder";
 
 type TestStatus =
   | { kind: "idle" }
@@ -57,6 +58,16 @@ function useThemeSetting(): [Theme, (theme: Theme) => void] {
 
   useEffect(() => {
     applyTheme(theme);
+  }, [theme]);
+
+  // Re-apply (and re-notify the desktop bridge) when the OS preference changes
+  // while the app is in Follow-system mode.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => applyTheme(theme);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
   }, [theme]);
 
   const setTheme = useCallback((next: Theme) => {
@@ -254,6 +265,12 @@ export default function SettingsPage() {
     } else {
       setTest({ kind: "error", message: result.error ?? t("error.connectionFailed") });
     }
+  }
+
+  function latencyFlavor(ms: number): string {
+    if (ms < 500) return t("settings.provider.latency.fast");
+    if (ms <= 1000) return t("settings.provider.latency.medium");
+    return t("settings.provider.latency.slow");
   }
 
   const selectedPreset = PROVIDER_PRESETS.find((p) => p.id === profile.presetId);
@@ -470,11 +487,12 @@ export default function SettingsPage() {
                   {t("settings.provider.testConnection")}
                 </button>
                 {test.kind === "success" && (
-                  <span className="inline-flex items-center gap-1.5 text-sm text-success">
+                  <span className="inline-flex flex-wrap items-center gap-x-1.5 text-sm text-success">
                     <CheckIcon className="h-4 w-4" />
                     {test.reply
                       ? t("settings.provider.reply", { n: test.latencyMs, reply: test.reply })
                       : t("settings.provider.valid", { n: test.latencyMs })}
+                    <span className="text-xs opacity-80">{latencyFlavor(test.latencyMs)}</span>
                   </span>
                 )}
                 {test.kind === "error" && (
@@ -542,6 +560,8 @@ export default function SettingsPage() {
                   ))}
                 </div>
               </div>
+
+              <HotkeyRecorder />
             </div>
           </section>
 

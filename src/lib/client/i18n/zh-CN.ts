@@ -27,6 +27,7 @@ export const zhCN = {
   "subtitle.noTranslation": "未返回翻译结果",
   "subtitle.esc": "Esc",
   "subtitle.dismiss": "关闭字幕",
+  "subtitle.confirmPosition": "锁定位置",
 
   // Errors / notices
   "error.addApiKey": "请在设置中填写 API 密钥",
@@ -70,6 +71,9 @@ export const zhCN = {
   "settings.provider.testConnection": "测试连接",
   "settings.provider.valid": "连接正常 · {n} ms",
   "settings.provider.reply": "连接正常 · {n} ms · {reply}",
+  "settings.provider.latency.fast": "快如闪电 ⚡",
+  "settings.provider.latency.medium": "您的文字正在万维空间转换 🌐",
+  "settings.provider.latency.slow": "也许服务器部署在地球同步轨道 🛰️",
   "settings.provider.connectionFailed": "连接失败",
   "settings.provider.securityNote": "你的密钥仅保存在本地浏览器中，只会通过本应用的服务端路由发送到你指定的接口。",
 
@@ -99,6 +103,12 @@ export const zhCN = {
   "settings.position.play": "▶ 播放",
   "settings.position.pause": "⏸ 暂停",
   "settings.position.test": "试运行",
+  "settings.position.preset.bottomCenter": "底部居中",
+  "settings.position.preset.topCenter": "顶部居中",
+  "settings.position.preset.topLeft": "左上",
+  "settings.position.preset.topRight": "右上",
+  "settings.position.preset.bottomLeft": "左下",
+  "settings.position.preset.bottomRight": "右下",
   "settings.position.totalTime": "总显示时长",
   "settings.position.scrollSpeed": "滚动速度",
   "settings.position.readingSpeed": "阅读速度",
@@ -128,6 +138,17 @@ export const zhCN = {
   "settings.app.language.system": "跟随系统",
   "settings.app.language.zhCN": "中文（简体）",
   "settings.app.language.en": "English",
+  "settings.app.hotkey": "全局快捷键",
+  "settings.app.hotkey.help": "在任意界面切换翻译模式。",
+  "settings.app.hotkey.record": "录制",
+  "settings.app.hotkey.recording": "录制中…",
+  "settings.app.hotkey.press": "请按下快捷键…",
+  "settings.app.hotkey.reset": "恢复默认",
+  "settings.app.hotkey.error.reserved": "该快捷键已被系统占用",
+  "settings.app.hotkey.error.modifier": "请包含 Ctrl、Alt 或 ⌘（仅 Shift 不够）",
+  "settings.app.hotkey.error.noKey": "请同时按下一个按键",
+  "settings.app.hotkey.error.generic": "无法注册该快捷键",
+  "settings.app.hotkey.suggestions": "试试这些：",
 
   // Tooltip
   "tooltip.moreInfo": "更多信息",

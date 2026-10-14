@@ -5,24 +5,28 @@ import { MAX_SELECTION_CHARS } from "@/lib/types";
 import { PROVIDER_PRESETS } from "@/lib/presets";
 import {
   useLocalStorage,
+  useMode,
+  useHotkeyBootstrap,
   readSettings,
   toLlmConfig,
   streamTranslate,
   resolveTargetLang,
   countWords,
   useT,
+  isSingleLatinWord,
+  lookupWord,
 } from "@/lib/client";
 import { TopBar } from "./top-bar";
 import { Reader } from "./reader";
 import { SubtitleOverlay, type SubtitleState } from "./subtitle-overlay";
 
-const MODE_KEY = "subtr.mode.v1";
 const TARGET_LANG_KEY = "subtr.targetLang.v1";
 const DEFAULT_TARGET_LANG = "auto";
 
 export function SubTrApp() {
   const { t } = useT();
-  const [mode, setMode] = useLocalStorage(MODE_KEY, false);
+  const [mode, setMode] = useMode();
+  useHotkeyBootstrap();
   const [targetLang, setTargetLang] = useLocalStorage(TARGET_LANG_KEY, DEFAULT_TARGET_LANG);
   const [subtitle, setSubtitle] = useState<SubtitleState>({ kind: "idle" });
 
@@ -56,12 +60,29 @@ export function SubTrApp() {
   }, [setSubtitle]);
 
   const handleSelect = useCallback(
-    (text: string) => {
+    async (text: string) => {
       if (!mode) return;
 
       const trimmed = text.trim();
       if (!trimmed) return;
       if (trimmed === lastSelectionRef.current) return;
+
+      // Single Latin words try the offline dictionary before any API-key check.
+      if (isSingleLatinWord(trimmed)) {
+        lastSelectionRef.current = trimmed;
+        const entry = await lookupWord(trimmed);
+        if (entry) {
+          abortRef.current?.abort();
+          abortRef.current = null;
+          setSubtitle({
+            kind: "dictionary",
+            original: trimmed,
+            phonetic: entry.phonetic,
+            senses: entry.senses,
+          });
+          return;
+        }
+      }
 
       if (trimmed.length > MAX_SELECTION_CHARS) {
         setSubtitle({

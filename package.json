@@ -1,6 +1,6 @@
 {
   "name": "subtr",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "main": "desktop/main.cjs",
   "scripts": {
@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "dict:build": "node scripts/build-dict.mjs",
     "desktop:prepare": "node desktop/prepare-standalone.cjs",
     "desktop:build": "next build && node desktop/prepare-standalone.cjs",
     "desktop": "next build && node desktop/prepare-standalone.cjs && electron .",

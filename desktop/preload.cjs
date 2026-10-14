@@ -93,4 +93,94 @@ contextBridge.exposeInMainWorld("subtrDesktop", {
     if (!text.trim()) return;
     ipcRenderer.send("subtr:test-subtitle", { text });
   },
+
+  /**
+   * Set the translation-toggle global hotkey (Electron accelerator).
+   * @param {string} accel
+   * @returns {Promise<{ ok: boolean, error?: string }>}
+   */
+  setToggleHotkey(accel) {
+    return ipcRenderer.invoke("subtr:set-toggle-hotkey", accel);
+  },
+
+  /**
+   * Subscribe to translation-mode toggle requests (hotkey / tray menu).
+   * @param {() => void} callback
+   * @returns {() => void} unsubscribe
+   */
+  onToggleMode(callback) {
+    if (typeof callback !== "function") return () => {};
+    const listener = () => {
+      try {
+        callback();
+      } catch (error) {
+        console.error("[subtrDesktop] onToggleMode callback failed", error);
+      }
+    };
+    ipcRenderer.on("subtr:toggle-mode", listener);
+    return () => ipcRenderer.removeListener("subtr:toggle-mode", listener);
+  },
+
+  /**
+   * Report the current translate-mode state so the tray can reflect it.
+   * @param {boolean} enabled
+   */
+  setTrayState(enabled) {
+    if (typeof enabled !== "boolean") return;
+    ipcRenderer.send("subtr:set-tray-state", enabled);
+  },
+
+  /**
+   * Main window → overlay: transport control for the real-screen test player.
+   * @param {{ action: "play" | "pause" | "seek", timeMs?: number }} payload
+   */
+  controlTestPlay(payload) {
+    if (!payload || typeof payload !== "object") return;
+    ipcRenderer.send("subtr:test-play-control", payload);
+  },
+
+  /**
+   * Overlay → main window: playback-state report for the real-screen test player.
+   * @param {{ playing: boolean, timeMs: number, totalMs: number }} payload
+   */
+  reportTestPlayState(payload) {
+    if (!payload || typeof payload !== "object") return;
+    ipcRenderer.send("subtr:test-play-state", payload);
+  },
+
+  /**
+   * Overlay window only: subscribe to test-play transport controls.
+   * @param {(payload: { action: "play" | "pause" | "seek", timeMs?: number }) => void} callback
+   * @returns {() => void} unsubscribe
+   */
+  onTestPlayControl(callback) {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, payload) => {
+      try {
+        callback(payload);
+      } catch (error) {
+        console.error("[subtrDesktop] onTestPlayControl callback failed", error);
+      }
+    };
+    ipcRenderer.on("subtr:test-play-control", listener);
+    return () => ipcRenderer.removeListener("subtr:test-play-control", listener);
+  },
+
+  /**
+   * Main window only: subscribe to test-play playback-state reports.
+   * @param {(payload: { playing: boolean, timeMs: number, totalMs: number }) => void} callback
+   * @returns {() => void} unsubscribe
+   */
+  onTestPlayState(callback) {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, payload) => {
+      try {
+        callback(payload);
+      } catch (error) {
+        console.error("[subtrDesktop] onTestPlayState callback failed", error);
+      }
+    };
+    ipcRenderer.on("subtr:test-play-state", listener);
+    return () => ipcRenderer.removeListener("subtr:test-play-state", listener);
+  },
 });

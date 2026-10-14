@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { XIcon, LoaderIcon, AlertIcon } from "./icons";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type MutableRefObject } from "react";
+import { XIcon, LoaderIcon, AlertIcon, CheckIcon } from "./icons";
 import { getTextMetrics, useT } from "@/lib/client";
 import { isDesktopMode } from "@/lib/client/desktop";
 import {
@@ -10,6 +10,9 @@ import {
   readSubtitleTiming,
   subscribeSubtitleStyle,
   DEFAULT_SUBTITLE_STYLE,
+  computeTimeline,
+  scrollOffsetAtTime,
+  type SubtitleTiming,
 } from "@/lib/client";
 import { MarkdownRenderer } from "./markdown-renderer";
 
@@ -18,13 +21,30 @@ export type SubtitleState =
   | { kind: "loading"; original: string }
   | { kind: "streaming"; original: string; text: string }
   | { kind: "error"; original: string; message: string }
-  | { kind: "success"; original: string; text: string };
+  | { kind: "success"; original: string; text: string }
+  | { kind: "dictionary"; original: string; phonetic?: string; senses: string[] };
+
+export type ControlledPlay = {
+  timeMs: number;
+  totalMs: number;
+  playing: boolean;
+};
+
+export type TestMode = {
+  enabled: boolean;
+  showConfirm: boolean;
+  onDragStart: () => void;
+  onCommit: (xPct: number, yPct: number) => void;
+  onConfirm: () => void;
+};
 
 type SubtitleOverlayProps = {
   state: SubtitleState;
   onDismiss: () => void;
   onRequestEscArmed?: (armed: boolean) => void;
   onRequestInteractive?: (interactive: boolean) => void;
+  controlledPlay?: ControlledPlay;
+  testMode?: TestMode;
 };
 
 const ERROR_HIDE_MS = 20000;
@@ -52,6 +72,8 @@ export function SubtitleOverlay({
   onDismiss,
   onRequestEscArmed,
   onRequestInteractive,
+  controlledPlay,
+  testMode,
 }: SubtitleOverlayProps) {
   const { t } = useT();
   const [showEscHint, setShowEscHint] = useState(false);
@@ -88,8 +110,10 @@ export function SubtitleOverlay({
   const prevKindRef = useRef(state.kind);
   const exitOriginalRef = useRef("");
   const original = state.kind !== "idle" ? state.original : "";
+  const isControlled = !!controlledPlay;
   const mountStartTimeRef = useRef<number>(0);
   const scrollStartTimeRef = useRef<number>(0);
+  const finalStartTimeRef = useRef<number>(0);
   const lastRecomputeRef = useRef<number>(0);
   const velocityRef = useRef(0);
   const targetVelocityRef = useRef(0);
@@ -97,6 +121,9 @@ export function SubtitleOverlay({
   const textRef = useRef("");
   const timingRef = useRef(readSubtitleTiming());
   const prefersReducedMotionRef = useRef(false);
+  const [dragPos, setDragPos] = useState<{ xPct: number; yPct: number } | null>(null);
+  const [showGuides, setShowGuides] = useState({ x: false, y: false });
+  const dragRef = useRef(false);
 
   // Measure card and viewport so we can clamp the center position to keep the card on-screen.
   const [metrics, setMetrics] = useState({
@@ -230,7 +257,9 @@ export function SubtitleOverlay({
         ? state.text
         : state.kind === "error"
           ? state.message
-          : "";
+          : state.kind === "dictionary"
+            ? [state.original, state.phonetic ?? "", ...state.senses].join(" ")
+            : "";
   }, [state]);
 
   // Plain-browser Esc listener (ignored in desktop mode; bridge handles Esc there).
@@ -299,9 +328,67 @@ export function SubtitleOverlay({
     prevKindRef.current = state.kind;
   }, [state.kind, original, isExiting, startExit]);
 
+  // Externally-controlled clock (desktop test playback / in-window fallback).
+  useEffect(() => {
+    if (!controlledPlay) return;
+    const viewport = viewportRef.current;
+    const content = contentRef.current;
+    if (!viewport || !content) return;
+    const timeline = computeTimeline(textRef.current, timingRef.current);
+    const maxScroll = Math.max(0, content.scrollHeight - viewport.clientHeight);
+    viewport.scrollTop = scrollOffsetAtTime(
+      controlledPlay.timeMs,
+      timingRef.current,
+      timeline.scrollMs,
+      maxScroll
+    );
+  }, [controlledPlay]);
+
+  // Test-mode drag: pause, move live, snap to center, commit on drop.
+  useEffect(() => {
+    if (!testMode?.enabled) return;
+
+    function onMove(e: PointerEvent) {
+      if (!dragRef.current) return;
+      const w = document.documentElement.clientWidth;
+      const h = document.documentElement.clientHeight;
+      let xPct = (e.clientX / w) * 100;
+      let yPct = (e.clientY / h) * 100;
+      const guides = { x: false, y: false };
+      if (Math.abs(xPct - 50) <= 3) {
+        xPct = 50;
+        guides.x = true;
+      }
+      if (Math.abs(yPct - 50) <= 3) {
+        yPct = 50;
+        guides.y = true;
+      }
+      setShowGuides(guides);
+      setDragPos({ xPct: Math.round(xPct), yPct: Math.round(yPct) });
+    }
+
+    function onUp() {
+      if (!dragRef.current) return;
+      dragRef.current = false;
+      setShowGuides({ x: false, y: false });
+      setDragPos((pos) => {
+        if (pos) testMode?.onCommit(pos.xPct, pos.yPct);
+        return null;
+      });
+    }
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [testMode]);
+
   // Initialize / reset on mount and whenever the displayed subtitle changes.
   useEffect(() => {
     if (state.kind === "idle") return;
+    if (controlledPlay) return;
 
     prefersReducedMotionRef.current = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
@@ -336,6 +423,21 @@ export function SubtitleOverlay({
       return;
     }
 
+    // Dictionary entries are short content: stay static for the read time,
+    // then run the final hold. Never enter the teleprompter scroll flow.
+    if (state.kind === "dictionary") {
+      phaseRef.current = "static";
+      const staticMs = Math.max(
+        timingRef.current.minDisplayMs,
+        computeReadMs(textRef.current) * timingRef.current.textScale
+      );
+      timersRef.current.static = window.setTimeout(() => {
+        phaseRef.current = "final";
+        timersRef.current.final = window.setTimeout(startExit, timingRef.current.finalHoldMs);
+      }, staticMs);
+      return;
+    }
+
     if (prefersReducedMotionRef.current) {
       phaseRef.current = "static";
       const staticMs = Math.max(
@@ -362,10 +464,10 @@ export function SubtitleOverlay({
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [original]);
+  }, [original, isControlled]);
 
   function handleWheel(e: React.WheelEvent) {
-    if (state.kind === "error" || state.kind === "loading") return;
+    if (state.kind === "error" || state.kind === "loading" || state.kind === "dictionary") return;
     if (e.deltaY === 0) return;
 
     if (!interruptedRef.current) {
@@ -388,6 +490,7 @@ export function SubtitleOverlay({
 
   const isError = state.kind === "error";
   const isLoading = state.kind === "loading";
+  const isDictionary = state.kind === "dictionary";
 
   let rawText = "";
   let fallbackText = t("subtitle.noTranslation");
@@ -415,26 +518,35 @@ export function SubtitleOverlay({
   const wrapperH = metrics.cardHeight;
   const clampPx = (v: number, min: number, max: number) =>
     Math.max(min, Math.min(Math.max(min, max), v));
+  const posX = dragPos?.xPct ?? style.xPct;
+  const posY = dragPos?.yPct ?? style.yPct;
   const leftPx = clampPx(
-    (style.xPct / 100) * metrics.viewportWidth,
+    (posX / 100) * metrics.viewportWidth,
     wrapperW / 2 + MARGIN,
     metrics.viewportWidth - wrapperW / 2 - MARGIN
   );
   const topPx = clampPx(
-    (style.yPct / 100) * metrics.viewportHeight,
+    (posY / 100) * metrics.viewportHeight,
     wrapperH / 2 + MARGIN,
     metrics.viewportHeight - wrapperH / 2 - MARGIN
   );
 
   return (
+    <>
+      {testMode?.enabled && showGuides.x && (
+        <div className="pointer-events-none fixed inset-y-0 left-1/2 z-40 w-px -translate-x-1/2 bg-accent/60" />
+      )}
+      {testMode?.enabled && showGuides.y && (
+        <div className="pointer-events-none fixed inset-x-0 top-1/2 z-40 h-px -translate-y-1/2 bg-accent/60" />
+      )}
     <div
       data-subtr-overlay
       className={`pointer-events-none fixed z-40 mx-auto flex max-w-[min(920px,92vw)] justify-center px-4 transition-all duration-200 ease-out motion-reduce:transition-none ${
         isExiting ? "pointer-events-none opacity-0 translate-y-2" : "opacity-100 translate-y-0"
       }`}
       style={{
-        left: hasMetrics ? `${leftPx}px` : `${style.xPct}%`,
-        top: hasMetrics ? `${topPx}px` : `${style.yPct}%`,
+        left: hasMetrics ? `${leftPx}px` : `${posX}%`,
+        top: hasMetrics ? `${topPx}px` : `${posY}%`,
         transform: "translate(-50%, -50%)",
       }}
       aria-live="polite"
@@ -442,12 +554,21 @@ export function SubtitleOverlay({
     >
       <div
         ref={cardRef}
-        className="pointer-events-auto relative w-full rounded-2xl border border-white/10 px-5 py-4 text-center shadow-lg backdrop-blur-xl transition-all animate-subtitle-in"
+        className={`pointer-events-auto relative w-full rounded-2xl border border-white/10 px-5 py-4 text-center shadow-lg backdrop-blur-xl transition-all animate-subtitle-in ${
+          testMode?.enabled ? "cursor-grab active:cursor-grabbing" : ""
+        }`}
         style={{
           backgroundColor: cardBackground,
           color: style.textColor,
           fontFamily: fontFamilyCss(style.fontFamily),
           fontSize: `${style.fontSizePx}px`,
+        }}
+        onPointerDown={(e) => {
+          if (!testMode?.enabled) return;
+          e.preventDefault();
+          dragRef.current = true;
+          testMode.onDragStart();
+          setDragPos({ xPct: style.xPct, yPct: style.yPct });
         }}
         onMouseEnter={() => onRequestInteractive?.(true)}
         onMouseLeave={() => onRequestInteractive?.(false)}
@@ -459,8 +580,22 @@ export function SubtitleOverlay({
           </div>
         )}
 
+        {testMode?.enabled && testMode.showConfirm && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={testMode.onConfirm}
+            className="absolute right-9 top-2 rounded-lg p-1.5 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+            style={{ color: dimmedColor }}
+            aria-label={t("subtitle.confirmPosition")}
+          >
+            <CheckIcon className="h-4 w-4" />
+          </button>
+        )}
+
         <button
           type="button"
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={handleDismiss}
           className="absolute right-2 top-2 rounded-lg p-1.5 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
           style={{ color: dimmedColor }}
@@ -499,7 +634,30 @@ export function SubtitleOverlay({
           </div>
         )}
 
-        {!isLoading && !isError && (
+        {isDictionary && state.kind === "dictionary" && (
+          <div
+            ref={viewportRef}
+            className="subtr-scroll max-h-[200px] overflow-y-auto pr-1 text-left"
+          >
+            <div ref={contentRef} className="space-y-1.5">
+              <p className="text-lg font-semibold leading-tight tracking-wide">
+                {state.original}
+              </p>
+              {state.phonetic && (
+                <p className="text-xs leading-snug" style={{ color: dimmedColor }}>
+                  {state.phonetic}
+                </p>
+              )}
+              <ol className="ml-4 list-decimal space-y-0.5 text-sm leading-snug">
+                {state.senses.map((sense, index) => (
+                  <li key={`${sense}-${index}`}>{sense}</li>
+                ))}
+              </ol>
+            </div>
+          </div>
+        )}
+
+        {!isLoading && !isError && !isDictionary && (
           <div
             ref={viewportRef}
             className="subtr-scroll max-h-[200px] overflow-y-auto pr-1 text-left"
@@ -525,7 +683,80 @@ export function SubtitleOverlay({
             </div>
           </div>
         )}
+
+        {!controlledPlay && (
+          <HoldProgress
+            phaseRef={phaseRef}
+            timingRef={timingRef}
+            mountStartTimeRef={mountStartTimeRef}
+            finalStartTimeRef={finalStartTimeRef}
+            textColor={style.textColor}
+          />
+        )}
       </div>
+    </div>
+    </>
+  );
+}
+
+type HoldProgressProps = {
+  phaseRef: MutableRefObject<
+    "hold" | "scroll" | "final" | "interrupted" | "static"
+  >;
+  timingRef: MutableRefObject<SubtitleTiming>;
+  mountStartTimeRef: MutableRefObject<number>;
+  finalStartTimeRef: MutableRefObject<number>;
+  textColor: string;
+};
+
+function HoldProgress({
+  phaseRef,
+  timingRef,
+  mountStartTimeRef,
+  finalStartTimeRef,
+  textColor,
+}: HoldProgressProps) {
+  const [progress, setProgress] = useState(0);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    let raf = 0;
+    function loop(now: number) {
+      const phase = phaseRef.current;
+      if (phase === "hold") {
+        const elapsed = now - mountStartTimeRef.current;
+        const total = timingRef.current.initialHoldMs;
+        setProgress(total > 0 ? Math.min(1, elapsed / total) : 1);
+        setVisible(true);
+      } else if (phase === "final") {
+        if (finalStartTimeRef.current === 0) {
+          finalStartTimeRef.current = now;
+        }
+        const elapsed = now - finalStartTimeRef.current;
+        const total = timingRef.current.finalHoldMs;
+        setProgress(total > 0 ? Math.min(1, elapsed / total) : 1);
+        setVisible(true);
+      } else {
+        finalStartTimeRef.current = 0;
+        setVisible(false);
+      }
+      raf = requestAnimationFrame(loop);
+    }
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [phaseRef, timingRef, mountStartTimeRef, finalStartTimeRef]);
+
+  if (!visible) return null;
+  return (
+    <div
+      className="pointer-events-none absolute bottom-2 right-2 h-1 w-16 overflow-hidden rounded-full opacity-30"
+      style={{ color: textColor }}
+      aria-hidden="true"
+    >
+      <div
+        className="h-full rounded-full bg-current"
+        style={{ width: `${progress * 100}%` }}
+      />
     </div>
   );
 }
