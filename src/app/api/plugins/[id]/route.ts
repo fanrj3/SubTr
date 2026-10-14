@@ -1,6 +1,6 @@
 import { connection } from "next/server";
 import { errorResponse } from "@/lib/server/llm";
-import { setPluginConsent } from "@/lib/server/plugins";
+import { setPluginConsent, uninstallPlugin } from "@/lib/server/plugins";
 
 /**
  * POST /api/plugins/:id — enable/disable a plugin and (re)grant capabilities.
@@ -23,5 +23,22 @@ export async function POST(
   }
   const result = await setPluginConsent(id, body);
   if (!result.ok) return errorResponse(result.error, 400);
+  return Response.json({ ok: true, revision: result.revision });
+}
+
+/**
+ * DELETE /api/plugins/:id — uninstall a plugin folder and clear its consent.
+ */
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  await connection();
+  const { id } = await params;
+  if (!id || !/^[a-z0-9-]+$/.test(id)) {
+    return errorResponse("unknown plugin", 404);
+  }
+  const result = await uninstallPlugin(id);
+  if (!result.ok) return errorResponse(result.error, result.status);
   return Response.json({ ok: true, revision: result.revision });
 }

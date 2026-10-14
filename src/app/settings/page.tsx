@@ -587,6 +587,7 @@ export default function SettingsPage() {
             theme={panelTheme}
             lang={panelLang}
             onToggle={plugins.toggle}
+            onRefresh={plugins.refresh}
           />
 
           {/* Subtitle */}

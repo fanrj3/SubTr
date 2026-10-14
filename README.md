@@ -70,7 +70,7 @@ Notes:
 
 ## Plugins
 
-SubTr loads local plugins from a folder (desktop: the app's data folder `plugins/`; development: `.subtr-plugins/`). Each plugin is a folder with a `manifest.json` and optionally an `index.cjs` entry. Capabilities are granted per plugin at enable time in **Settings → Plugins**:
+SubTr loads local plugins from a folder (desktop: the app's data folder `plugins/`; development: `.subtr-plugins/`) — or install them right in **Settings → Plugins → Import plugin…** (pick a `.zip` built from a plugin folder), with enable/disable and uninstall per plugin. Each plugin is a folder with a `manifest.json` and optionally an `index.cjs` entry. Capabilities are granted per plugin at enable time in **Settings → Plugins**:
 
 - **translate.transformInput / translate.transformOutput** — rewrite the selected text before translation, or the translation before it is shown
 - **dictionary.source** — provide dictionary lookups (used when the bundled dictionary misses)

@@ -70,6 +70,47 @@ export async function setPluginEnabled(
   }
 }
 
+export type ImportPluginResult =
+  | { ok: true; id: string; revision: number }
+  | { ok: false; status: number; error: string };
+
+export async function importPlugin(
+  file: File,
+  overwrite: boolean
+): Promise<ImportPluginResult> {
+  try {
+    const body = new FormData();
+    body.append("file", file);
+    body.append("overwrite", overwrite ? "true" : "false");
+    const res = await fetch("/api/plugins/import", { method: "POST", body });
+    if (res.ok) {
+      const data = (await res.json()) as { id?: string; revision?: number };
+      return { ok: true, id: data.id ?? "", revision: data.revision ?? 0 };
+    }
+    let error = "";
+    try {
+      const data = (await res.json()) as { error?: unknown };
+      error = typeof data.error === "string" ? data.error : "";
+    } catch {
+      // Ignore non-JSON error bodies.
+    }
+    return { ok: false, status: res.status, error };
+  } catch {
+    return { ok: false, status: 0, error: "" };
+  }
+}
+
+export async function uninstallPlugin(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/plugins/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export function hostFromBaseURL(baseURL: string): string {
   try {
     return new URL(baseURL).host;

@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "@/lib/client";
 import {
   hostFromBaseURL,
+  importPlugin,
   isPluginCapability,
+  uninstallPlugin,
   type PluginCapability,
   type PluginInfo,
   type PluginsResponse,
@@ -22,6 +24,7 @@ type PluginsSectionProps = {
     enabled: boolean,
     grantedCapabilities?: string[]
   ) => Promise<boolean>;
+  onRefresh: () => Promise<void>;
 };
 
 function isSafeApiUrl(url: unknown): url is string {
@@ -149,6 +152,7 @@ export function PluginsSection({
   theme,
   lang,
   onToggle,
+  onRefresh,
 }: PluginsSectionProps) {
   const { t } = useT();
   const [consentPlugin, setConsentPlugin] = useState<PluginInfo | null>(null);
@@ -156,6 +160,15 @@ export function PluginsSection({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [showOverwrite, setShowOverwrite] = useState(false);
+  const [importMessage, setImportMessage] = useState<
+    { kind: "success" | "error"; text: string } | null
+  >(null);
+  const [uninstallTarget, setUninstallTarget] = useState<PluginInfo | null>(null);
+  const [uninstalling, setUninstalling] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!consentPlugin) return;
@@ -207,11 +220,99 @@ export function PluginsSection({
     }
   }
 
+  function importErrorText(status: number, reason: string): string {
+    if (status === 413) return t("settings.plugins.importTooLarge");
+    if (status === 400) {
+      return reason
+        ? t("settings.plugins.importInvalid", { reason })
+        : t("settings.plugins.importFailed");
+    }
+    return t("settings.plugins.importFailed");
+  }
+
+  async function upload(file: File, overwrite: boolean) {
+    setImporting(true);
+    setImportMessage(null);
+    const result = await importPlugin(file, overwrite);
+    setImporting(false);
+
+    if (result.ok) {
+      setPendingFile(null);
+      setShowOverwrite(false);
+      setImportMessage({
+        kind: "success",
+        text: t("settings.plugins.importSuccess", { id: result.id }),
+      });
+      await onRefresh();
+      window.setTimeout(() => setImportMessage(null), 4000);
+      return;
+    }
+
+    if (result.status === 409) {
+      setPendingFile(file);
+      setShowOverwrite(true);
+      return;
+    }
+
+    setImportMessage({
+      kind: "error",
+      text: importErrorText(result.status, result.error),
+    });
+  }
+
+  async function confirmUninstall() {
+    if (!uninstallTarget) return;
+    setUninstalling(true);
+    const ok = await uninstallPlugin(uninstallTarget.id);
+    setUninstalling(false);
+    if (ok) {
+      setUninstallTarget(null);
+      await onRefresh();
+    } else {
+      setError(t("settings.plugins.uninstallFailed"));
+      setUninstallTarget(null);
+    }
+  }
+
   return (
     <section className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
-      <h2 className="mb-4 text-base font-semibold tracking-tight">
-        {t("settings.plugins.title")}
-      </h2>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-base font-semibold tracking-tight">
+          {t("settings.plugins.title")}
+        </h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted">{t("settings.plugins.importNote")}</span>
+          <button
+            type="button"
+            onClick={() => importInputRef.current?.click()}
+            disabled={importing}
+            className="rounded-xl border border-card-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 dark:hover:bg-white/5"
+          >
+            {importing ? t("settings.plugins.importing") : t("settings.plugins.import")}
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".zip"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void upload(file, false);
+            }}
+          />
+        </div>
+      </div>
+
+      {importMessage && (
+        <p
+          className={`mb-3 text-xs ${
+            importMessage.kind === "success" ? "text-success" : "text-danger"
+          }`}
+        >
+          {importMessage.text}
+        </p>
+      )}
 
       {loading && !data ? (
         <div className="flex items-center gap-2 text-sm text-muted">
@@ -278,27 +379,37 @@ export function PluginsSection({
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  disabled={
-                    busy ||
-                    plugin.status === "error" ||
-                    plugin.status === "incompatible"
-                  }
-                  onClick={() =>
-                    plugin.enabled ? void disable(plugin) : requestEnable(plugin)
-                  }
-                  aria-pressed={plugin.enabled}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
-                    plugin.enabled
-                      ? "bg-accent text-white hover:bg-accent/90"
-                      : "border border-card-border bg-background hover:bg-black/5 dark:hover:bg-white/5"
-                  }`}
-                >
-                  {plugin.enabled
-                    ? t("settings.plugins.disable")
-                    : t("settings.plugins.enable")}
-                </button>
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={
+                      busy ||
+                      plugin.status === "error" ||
+                      plugin.status === "incompatible"
+                    }
+                    onClick={() =>
+                      plugin.enabled ? void disable(plugin) : requestEnable(plugin)
+                    }
+                    aria-pressed={plugin.enabled}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
+                      plugin.enabled
+                        ? "bg-accent text-white hover:bg-accent/90"
+                        : "border border-card-border bg-background hover:bg-black/5 dark:hover:bg-white/5"
+                    }`}
+                  >
+                    {plugin.enabled
+                      ? t("settings.plugins.disable")
+                      : t("settings.plugins.enable")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || uninstalling}
+                    onClick={() => setUninstallTarget(plugin)}
+                    className="rounded-lg px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+                  >
+                    {t("settings.plugins.uninstall")}
+                  </button>
+                </div>
               </div>
 
               <p className="mt-2 text-xs leading-relaxed text-muted">
@@ -357,6 +468,94 @@ export function PluginsSection({
       )}
 
       {error && <p className="mt-3 text-xs text-danger">{error}</p>}
+
+      {showOverwrite && pendingFile && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => {
+            if (!importing) {
+              setShowOverwrite(false);
+              setPendingFile(null);
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-card-border bg-card p-5 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-2 text-base font-semibold tracking-tight">
+              {t("settings.plugins.importExistsTitle")}
+            </h3>
+            <p className="mb-4 text-sm leading-relaxed text-muted">
+              {t("settings.plugins.importExistsBody")}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOverwrite(false);
+                  setPendingFile(null);
+                }}
+                disabled={importing}
+                className="rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
+              >
+                {t("settings.plugins.cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={() => void upload(pendingFile, true)}
+                disabled={importing}
+                className="rounded-xl bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/90 disabled:opacity-50"
+              >
+                {importing
+                  ? t("settings.plugins.importing")
+                  : t("settings.plugins.overwrite")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {uninstallTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => {
+            if (!uninstalling) setUninstallTarget(null);
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-card-border bg-card p-5 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-2 text-base font-semibold tracking-tight">
+              {t("settings.plugins.uninstallTitle", { name: uninstallTarget.name })}
+            </h3>
+            <p className="mb-4 text-sm leading-relaxed text-muted">
+              {t("settings.plugins.uninstallBody")}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setUninstallTarget(null)}
+                disabled={uninstalling}
+                className="rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
+              >
+                {t("settings.plugins.cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmUninstall()}
+                disabled={uninstalling}
+                className="rounded-xl bg-danger px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-danger/90 disabled:opacity-50"
+              >
+                {uninstalling
+                  ? t("settings.plugins.uninstalling")
+                  : t("settings.plugins.uninstall")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {consentPlugin && (
         <div

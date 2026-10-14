@@ -984,6 +984,217 @@ export async function readPanelFile(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Import / uninstall
+// ---------------------------------------------------------------------------
+
+/** Max accepted .zip upload size. */
+export const MAX_PLUGIN_ZIP_BYTES = 20 * 1024 * 1024;
+/** Max total uncompressed size (zip-bomb guard). */
+const MAX_PLUGIN_EXTRACTED_BYTES = 100 * 1024 * 1024;
+
+/** Names that must never become a plugin folder id. */
+export const RESERVED_PLUGIN_IDS = new Set([
+  "subtr",
+  "api",
+  "plugins",
+  "state",
+  "admin",
+  "system",
+  "con",
+  "nul",
+  "aux",
+  "prn",
+  "com1",
+  "com2",
+  "lpt1",
+  "lpt2",
+]);
+
+export type ImportResult =
+  | { ok: true; id: string; revision: number }
+  | { ok: false; status: number; error: string };
+
+export type UninstallResult =
+  | { ok: true; revision: number }
+  | { ok: false; status: number; error: string };
+
+function isValidPluginId(value: unknown): value is string {
+  return typeof value === "string" && ID_RE.test(value) && !RESERVED_PLUGIN_IDS.has(value);
+}
+
+/** Reject absolute paths, drive letters, backslashes and `..` segments. */
+function isUnsafeEntry(name: string): boolean {
+  if (!name) return true;
+  if (name.startsWith("/") || name.startsWith("\\")) return true;
+  if (/^[a-zA-Z]:/.test(name)) return true;
+  if (name.includes("\\")) return true;
+  const parts = name.split("/");
+  if (parts.some((p) => p === ".." || p === "")) return true;
+  return false;
+}
+
+function randomSuffix(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Extract a plugin .zip and install it into the plugins dir. */
+export async function importPluginZip(
+  data: Uint8Array,
+  opts: { overwrite?: boolean } = {},
+): Promise<ImportResult> {
+  const { unzipSync } = await import("fflate");
+
+  let extracted = 0;
+  let tooBig = false;
+  let files: Record<string, Uint8Array>;
+  try {
+    files = unzipSync(data, {
+      filter: (file) => {
+        extracted += file.originalSize ?? 0;
+        if (extracted > MAX_PLUGIN_EXTRACTED_BYTES) {
+          tooBig = true;
+          return false;
+        }
+        return true;
+      },
+    });
+  } catch {
+    return { ok: false, status: 400, error: "invalid zip archive" };
+  }
+  if (tooBig) return { ok: false, status: 400, error: "archive expands to too much data" };
+
+  const entries = Object.entries(files).filter(([name]) => name && !name.endsWith("/"));
+  if (entries.length === 0) return { ok: false, status: 400, error: "empty archive" };
+
+  for (const [name] of entries) {
+    if (isUnsafeEntry(name)) {
+      return { ok: false, status: 400, error: "unsafe path in archive" };
+    }
+  }
+
+  const names = entries.map(([name]) => name);
+  let root = "";
+  if (!names.includes("manifest.json")) {
+    // Either a single top-level folder holding the manifest, or invalid.
+    const topLevels = new Set<string>();
+    for (const name of names) {
+      const idx = name.indexOf("/");
+      if (idx > 0) topLevels.add(name.slice(0, idx));
+    }
+    const candidates = [...topLevels].filter((dir) => names.includes(`${dir}/manifest.json`));
+    if (candidates.length !== 1) {
+      return { ok: false, status: 400, error: "missing manifest.json at the archive root" };
+    }
+    root = `${candidates[0]}/`;
+    const outside = names.filter((name) => !name.startsWith(root));
+    if (outside.length > 0) {
+      return { ok: false, status: 400, error: "entries outside the plugin folder" };
+    }
+  }
+
+  const manifestData = files[`${root}manifest.json`];
+  if (!manifestData) return { ok: false, status: 400, error: "missing manifest.json" };
+  let parsedManifest: unknown;
+  try {
+    parsedManifest = JSON.parse(new TextDecoder().decode(manifestData));
+  } catch {
+    return { ok: false, status: 400, error: "manifest.json is not valid JSON" };
+  }
+  if (!isRecord(parsedManifest)) {
+    return { ok: false, status: 400, error: "manifest.json must be an object" };
+  }
+  const id = parsedManifest.id;
+  if (!isValidPluginId(id)) {
+    return { ok: false, status: 400, error: "manifest id must match /^[a-z0-9-]+$/ and not be reserved" };
+  }
+
+  const dir = getPluginsDir();
+  const target = path.join(/* turbopackIgnore: true */ dir, id);
+  if (!opts.overwrite && existsSync(/* turbopackIgnore: true */ target)) {
+    return { ok: false, status: 409, error: "exists" };
+  }
+
+  const tmpDir = path.join(/* turbopackIgnore: true */ dir, `.import-${id}-${randomSuffix()}`);
+  try {
+    await fs.mkdir(/* turbopackIgnore: true */ tmpDir, { recursive: true });
+    for (const [name, bytes] of entries) {
+      const rel = root ? name.slice(root.length) : name;
+      if (!rel || isUnsafeEntry(rel)) {
+        return { ok: false, status: 400, error: "unsafe path in archive" };
+      }
+      const dest = path.resolve(/* turbopackIgnore: true */ tmpDir, rel);
+      if (!dest.startsWith(tmpDir + path.sep)) {
+        return { ok: false, status: 400, error: "unsafe path in archive" };
+      }
+      await fs.mkdir(/* turbopackIgnore: true */ path.dirname(dest), { recursive: true });
+      await fs.writeFile(/* turbopackIgnore: true */ dest, bytes);
+    }
+
+    const backup = path.join(/* turbopackIgnore: true */ dir, `.trash-${id}-${randomSuffix()}`);
+    if (existsSync(/* turbopackIgnore: true */ target)) {
+      await fs.rename(/* turbopackIgnore: true */ target, backup);
+      try {
+        await fs.rename(/* turbopackIgnore: true */ tmpDir, target);
+      } catch (error) {
+        await fs.rename(/* turbopackIgnore: true */ backup, target).catch(() => {});
+        throw error;
+      }
+      await fs.rm(/* turbopackIgnore: true */ backup, { recursive: true, force: true }).catch(() => {});
+    } else {
+      await fs.rename(/* turbopackIgnore: true */ tmpDir, target);
+    }
+  } catch (error) {
+    await fs.rm(/* turbopackIgnore: true */ tmpDir, { recursive: true, force: true }).catch(() => {});
+    return {
+      ok: false,
+      status: 400,
+      error: `install failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+
+  await reloadPlugins();
+  return { ok: true, id, revision: getPluginsRevision() };
+}
+
+/** Remove an installed plugin folder and its consent entry. */
+export async function uninstallPlugin(id: string): Promise<UninstallResult> {
+  if (!ID_RE.test(id)) return { ok: false, status: 404, error: "unknown plugin" };
+  const dir = getPluginsDir();
+  const target = path.resolve(/* turbopackIgnore: true */ dir, id);
+  if (!target.startsWith(dir + path.sep)) {
+    return { ok: false, status: 404, error: "unknown plugin" };
+  }
+
+  await ensureScanned();
+  const known = records.has(id) || existsSync(/* turbopackIgnore: true */ target);
+  if (!known) return { ok: false, status: 404, error: "unknown plugin" };
+
+  try {
+    await fs.rm(/* turbopackIgnore: true */ target, { recursive: true, force: true });
+  } catch (error) {
+    return {
+      ok: false,
+      status: 400,
+      error: `uninstall failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+
+  try {
+    const consent = await readConsent(true);
+    if (consent[id]) {
+      const next = { ...consent };
+      delete next[id];
+      await writeConsent(next);
+    }
+  } catch (error) {
+    console.warn(`[plugins] failed to clear consent for ${id}:`, error);
+  }
+
+  await reloadPlugins();
+  return { ok: true, revision: getPluginsRevision() };
+}
+
 /** Test-only: reset module state. */
 export async function __resetPlugins(): Promise<void> {
   for (const record of records.values()) await deactivateRecord(record);

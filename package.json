@@ -18,6 +18,7 @@
     "dist:linux": "electron-builder --linux AppImage"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
