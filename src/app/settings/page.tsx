@@ -23,6 +23,7 @@ import {
   SETTINGS_KEY,
   SUBTITLE_TIMING_KEY,
   SUBTITLE_STYLE_KEY,
+  notifySubtitleStyleChanged,
   DEFAULT_THEME,
   applyTheme,
   readTheme,
@@ -108,6 +109,10 @@ function useSettings() {
   const store = useMemo(() => normalizeStore(rawStore), [rawStore]);
   const timing = useMemo(() => mergeTiming(rawTiming), [rawTiming]);
   const style = useMemo(() => mergeStyle(rawStyle), [rawStyle]);
+
+  useEffect(() => {
+    notifySubtitleStyleChanged();
+  }, [style]);
 
   useEffect(() => {
     // Trigger v1 -> v2 migration when a legacy user lands directly on /settings,
@@ -587,8 +592,8 @@ export default function SettingsPage() {
                   <div className="flex flex-col gap-3 rounded-xl border border-card-border bg-background p-3 sm:flex-row sm:items-center">
                     <input
                       type="range"
-                      min={0.5}
-                      max={2}
+                      min={0.2}
+                      max={5}
                       step={0.05}
                       value={timing.textScale}
                       onChange={(e) =>
@@ -628,8 +633,8 @@ export default function SettingsPage() {
 
               <div className="space-y-3">
                 <h3 className="text-sm font-medium">{t("settings.appearance.title")}</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="min-w-0 space-y-2">
                     <label htmlFor="fontFamily" className="block text-sm font-medium">
                       {t("settings.appearance.font")}
                     </label>
@@ -659,22 +664,22 @@ export default function SettingsPage() {
                     unit="px"
                   />
                 </div>
-                <div className="flex flex-wrap gap-4">
-                  <div className="min-w-[10rem] flex-1">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div className="min-w-0">
                     <ColorField
                       label={t("settings.appearance.textColor")}
                       value={style.textColor}
                       onChange={(v) => updateStyle({ ...style, textColor: v })}
                     />
                   </div>
-                  <div className="min-w-[10rem] flex-1">
+                  <div className="min-w-0">
                     <ColorField
                       label={t("settings.appearance.background")}
                       value={style.bgColor}
                       onChange={(v) => updateStyle({ ...style, bgColor: v })}
                     />
                   </div>
-                  <div className="min-w-[10rem] flex-1">
+                  <div className="min-w-0">
                     <RangeField
                       label={t("settings.appearance.backgroundOpacity")}
                       value={style.bgOpacity}
@@ -784,20 +789,20 @@ function ColorField({
   onChange: (v: string) => void;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="min-w-0 space-y-1.5">
       <label className="block text-sm font-medium">{label}</label>
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         <input
           type="color"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="h-9 w-9 rounded-lg border border-card-border bg-transparent p-0.5"
+          className="h-9 w-9 shrink-0 rounded-lg border border-card-border bg-transparent p-0.5"
         />
         <input
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="flex-1 rounded-xl border border-card-border bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+          className="min-w-0 flex-1 rounded-xl border border-card-border bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
         />
       </div>
     </div>

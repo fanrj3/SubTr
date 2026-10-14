@@ -49,6 +49,8 @@ export function SubTrApp() {
   );
 
   const dismissSubtitle = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
     setSubtitle({ kind: "idle" });
     lastSelectionRef.current = "";
   }, [setSubtitle]);

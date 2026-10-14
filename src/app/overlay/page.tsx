@@ -35,6 +35,8 @@ function Overlay() {
   const searchParams = useSearchParams();
 
   const dismissSubtitle = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
     setSubtitle({ kind: "idle" });
   }, []);
 
@@ -46,13 +48,19 @@ function Overlay() {
     window.subtrDesktop?.setOverlayInteractive?.(interactive);
   }, []);
 
-  const handleCapture = useCallback((text: string) => {
+  const handleCapture = useCallback((text: string, source?: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
 
-    if (!readMode()) return;
+    const isTest = source === "test";
+    if (!isTest && !readMode()) return;
 
     const original = trimmed.slice(0, 80) + (trimmed.length > 80 ? "…" : "");
+
+    if (isTest) {
+      setSubtitle({ kind: "success", original, text: trimmed });
+      return;
+    }
 
     if (trimmed.length > MAX_SELECTION_CHARS) {
       setSubtitle({
@@ -154,7 +162,7 @@ function Overlay() {
       if (!bridge) return;
 
       const unsubscribe = bridge.onCapture((payload) => {
-        handleCapture(payload.text);
+        handleCapture(payload.text, payload.source);
       });
       return unsubscribe;
     }
@@ -186,7 +194,6 @@ function Overlay() {
 
   return (
     <SubtitleOverlay
-      key={subtitle.kind === "idle" ? "idle" : subtitle.original}
       state={subtitle}
       onDismiss={dismissSubtitle}
       onRequestEscArmed={handleRequestEscArmed}

@@ -4,10 +4,10 @@
  */
 
 /** Client-side cap; longer selections show a friendly message instead of translating. */
-export const MAX_SELECTION_CHARS = 1500;
+export const MAX_SELECTION_CHARS = 10000;
 
 /** Hard server-side cap; /api/translate rejects longer text with 400. */
-export const MAX_TEXT_CHARS = 2000;
+export const MAX_TEXT_CHARS = 12000;
 
 /** OpenAI-compatible connection settings, stored locally by the client. */
 export type LlmConfig = {

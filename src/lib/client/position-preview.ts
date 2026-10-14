@@ -18,7 +18,7 @@ export type PositionTimeline = {
 export function computeReadMs(text: string): number {
   const { latinWords, cjkChars } = getTextMetrics(text);
   const minMs = cjkChars === 0 ? 1000 : 1500;
-  return Math.max(minMs, latinWords * (60000 / 180) + cjkChars * (60000 / 330));
+  return Math.max(minMs, latinWords * (60000 / 220) + cjkChars * (60000 / 400));
 }
 
 export function computeTimeline(

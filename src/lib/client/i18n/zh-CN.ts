@@ -98,6 +98,7 @@ export const zhCN = {
   "settings.position.testText": "预览文本",
   "settings.position.play": "▶ 播放",
   "settings.position.pause": "⏸ 暂停",
+  "settings.position.test": "试运行",
   "settings.position.totalTime": "总显示时长",
   "settings.position.scrollSpeed": "滚动速度",
   "settings.position.readingSpeed": "阅读速度",

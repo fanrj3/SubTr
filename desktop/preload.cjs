@@ -20,6 +20,12 @@ contextBridge.exposeInMainWorld("subtrDesktop", {
       }
     };
     ipcRenderer.on("subtr:capture", listener);
+    // Ready handshake: main will flush any capture held while we were not subscribed.
+    try {
+      ipcRenderer.send("subtr:capture-listener-ready");
+    } catch (error) {
+      console.error("[subtrDesktop] capture-listener-ready failed", error);
+    }
     return () => ipcRenderer.removeListener("subtr:capture", listener);
   },
 
@@ -67,5 +73,24 @@ contextBridge.exposeInMainWorld("subtrDesktop", {
    */
   captureDesktopThumbnail() {
     return ipcRenderer.invoke("subtr:capture-desktop");
+  },
+
+  /**
+   * Sync the OS/native window chrome to the app theme.
+   * @param {"system" | "light" | "dark"} theme
+   */
+  setNativeTheme(theme) {
+    if (theme !== "system" && theme !== "light" && theme !== "dark") return;
+    ipcRenderer.send("subtr:set-native-theme", theme);
+  },
+
+  /**
+   * Play a subtitle on the real screen (overlay window). For the "Test" button.
+   * @param {string} text
+   */
+  showTestSubtitle(text) {
+    if (typeof text !== "string") return;
+    if (!text.trim()) return;
+    ipcRenderer.send("subtr:test-subtitle", { text });
   },
 });

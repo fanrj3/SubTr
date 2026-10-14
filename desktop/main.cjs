@@ -23,6 +23,7 @@ const {
   screen,
   ipcMain,
   desktopCapturer,
+  nativeTheme,
   utilityProcess,
 } = require("electron");
 
@@ -31,6 +32,7 @@ const DUPLICATE_WINDOW_MS = 1200;
 const MANUAL_DEBOUNCE_MS = 400;
 const CLIPBOARD_POLL_ATTEMPTS = 20;
 const CLIPBOARD_POLL_INTERVAL_MS = 25;
+const MAX_TEST_SUBTITLE_CHARS = 12000;
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -46,6 +48,10 @@ let lastManualAt = 0;
 let manualBusy = false;
 let quitting = false;
 let escArmed = false;
+/** True once the overlay renderer has subscribed via onCapture (ready handshake). */
+let overlayListenerReady = false;
+/** Latest capture that could not be delivered yet (single slot, latest wins). */
+let pendingCapture = null;
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -104,9 +110,35 @@ function handleCapture(payload) {
   }
   lastCapture = { text, at: now };
 
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    overlayWindow.webContents.send("subtr:capture", { text });
+  deliverOverlayCapture({ text });
+}
+
+/**
+ * Send a capture to the overlay window, or hold it as the latest pending
+ * capture when the overlay listener is not ready yet. Gated ONLY on the ready
+ * handshake + a live window (never on webContents.isLoading(), which stays true
+ * under next dev's persistent HMR connection).
+ * @param {Record<string, unknown>} payload
+ */
+function deliverOverlayCapture(payload) {
+  const canSend =
+    overlayListenerReady && !!overlayWindow && !overlayWindow.isDestroyed();
+  if (canSend) {
+    overlayWindow.webContents.send("subtr:capture", payload);
+    return;
   }
+  pendingCapture = payload;
+}
+
+/** Deliver a held capture once the overlay listener signals ready. */
+function flushPendingCapture() {
+  if (!pendingCapture) return;
+  if (!overlayListenerReady || !overlayWindow || overlayWindow.isDestroyed()) {
+    return;
+  }
+  const payload = pendingCapture;
+  pendingCapture = null;
+  overlayWindow.webContents.send("subtr:capture", payload);
 }
 
 /** True when a hook event originates from this app (never translate our own UI). */
@@ -320,6 +352,15 @@ function isFromOverlay(event) {
   );
 }
 
+/** True when an IPC event came from either of our windows (reader or overlay). */
+function isFromOurWindow(event) {
+  const fromMain =
+    !!mainWindow &&
+    !mainWindow.isDestroyed() &&
+    event.sender === mainWindow.webContents;
+  return fromMain || isFromOverlay(event);
+}
+
 /** Toggle the overlay between click-through (default) and interactive. */
 function setOverlayInteractive(on) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
@@ -363,6 +404,9 @@ function disarmEsc() {
 /** Reset transient overlay state (used on overlay reload/close). */
 function resetOverlayState() {
   disarmEsc();
+  // The renderer's onCapture subscription is gone after a reload; wait for the
+  // ready handshake again (any pending capture is kept and flushed on ready).
+  overlayListenerReady = false;
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.setIgnoreMouseEvents(true, { forward: true });
   }
@@ -401,6 +445,31 @@ function registerOverlayIpc() {
     } else {
       disarmEsc();
     }
+  });
+
+  // The overlay renderer subscribes to captures → mark ready and flush any held capture.
+  ipcMain.on("subtr:capture-listener-ready", (event) => {
+    if (!isFromOverlay(event)) return;
+    overlayListenerReady = true;
+    console.log("[capture] overlay listener ready");
+    flushPendingCapture();
+  });
+
+  // Native window chrome (macOS title bar) follows the app theme.
+  ipcMain.on("subtr:set-native-theme", (event, theme) => {
+    if (!isFromOurWindow(event)) return;
+    if (theme !== "system" && theme !== "light" && theme !== "dark") return;
+    nativeTheme.themeSource = theme;
+  });
+
+  // Play a subtitle on the real screen (overlay window) for the "Test" button.
+  ipcMain.on("subtr:test-subtitle", (event, payload) => {
+    if (!isFromOurWindow(event)) return;
+    if (!payload || typeof payload.text !== "string") return;
+    const text = payload.text;
+    if (!text.trim()) return;
+    if (text.length > MAX_TEST_SUBTITLE_CHARS) return;
+    deliverOverlayCapture({ text, source: "test" });
   });
 
   // Settings-page position canvas backdrop: primary-screen thumbnail data URL.
@@ -515,6 +584,11 @@ function createOverlayWindow(baseUrl) {
   overlayWindow.webContents.on("did-start-navigation", () => {
     // Overlay reloading: drop any armed Esc and restore click-through.
     resetOverlayState();
+  });
+  overlayWindow.webContents.on("did-finish-load", () => {
+    // Belt-and-braces flush; the ready handshake (from preload onCapture) is the
+    // primary trigger and the only thing that sets overlayListenerReady.
+    flushPendingCapture();
   });
   overlayWindow.once("ready-to-show", () => {
     if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive();

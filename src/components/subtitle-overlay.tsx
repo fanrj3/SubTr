@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { XIcon, LoaderIcon, AlertIcon } from "./icons";
 import { getTextMetrics, useT } from "@/lib/client";
 import { isDesktopMode } from "@/lib/client/desktop";
@@ -8,7 +8,8 @@ import {
   fontFamilyCss,
   readSubtitleStyle,
   readSubtitleTiming,
-  type SubtitleStyle,
+  subscribeSubtitleStyle,
+  DEFAULT_SUBTITLE_STYLE,
 } from "@/lib/client";
 import { MarkdownRenderer } from "./markdown-renderer";
 
@@ -34,7 +35,7 @@ const SCROLL_EASE = 0.04; // per frame toward target velocity
 function computeReadMs(text: string): number {
   const { latinWords, cjkChars } = getTextMetrics(text);
   const minMs = cjkChars === 0 ? 1000 : 1500;
-  return Math.max(minMs, latinWords * (60000 / 180) + cjkChars * (60000 / 330));
+  return Math.max(minMs, latinWords * (60000 / 220) + cjkChars * (60000 / 400));
 }
 
 function hexToRgba(hex: string, alphaPct: number): string {
@@ -54,7 +55,11 @@ export function SubtitleOverlay({
 }: SubtitleOverlayProps) {
   const { t } = useT();
   const [showEscHint, setShowEscHint] = useState(false);
-  const [style] = useState<SubtitleStyle>(() => readSubtitleStyle());
+  const style = useSyncExternalStore(
+    subscribeSubtitleStyle,
+    () => readSubtitleStyle(),
+    () => DEFAULT_SUBTITLE_STYLE
+  );
 
   function translateError(message: string): string {
     if (message === "No response body") return t("error.noResponseBody");
@@ -73,11 +78,16 @@ export function SubtitleOverlay({
   const interruptedRef = useRef(false);
   const rafIdRef = useRef<number | null>(null);
   const timersRef = useRef<{
-    hold?: ReturnType<typeof setTimeout>;
-    final?: ReturnType<typeof setTimeout>;
-    static?: ReturnType<typeof setTimeout>;
-    error?: ReturnType<typeof setTimeout>;
+    hold?: number;
+    final?: number;
+    static?: number;
+    error?: number;
+    exit?: number;
   }>({});
+  const [isExiting, setIsExiting] = useState(false);
+  const prevKindRef = useRef(state.kind);
+  const exitOriginalRef = useRef("");
+  const original = state.kind !== "idle" ? state.original : "";
   const mountStartTimeRef = useRef<number>(0);
   const scrollStartTimeRef = useRef<number>(0);
   const lastRecomputeRef = useRef<number>(0);
@@ -116,6 +126,19 @@ export function SubtitleOverlay({
       window.removeEventListener("resize", update);
     };
   }, []);
+
+  const startExit = useCallback(() => {
+    if (isExiting) return;
+    exitOriginalRef.current = original;
+    setIsExiting(true);
+    const duration = prefersReducedMotionRef.current ? 0 : 200;
+    timersRef.current.exit = window.setTimeout(() => {
+      onRequestEscArmed?.(false);
+      onRequestInteractive?.(false);
+      setIsExiting(false);
+      onDismiss();
+    }, duration);
+  }, [isExiting, onDismiss, onRequestEscArmed, onRequestInteractive, original]);
 
   const startLoop = useCallback(() => {
     if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
@@ -158,7 +181,7 @@ export function SubtitleOverlay({
           viewport.scrollTop = maxScroll;
           if (streamEndedRef.current) {
             phaseRef.current = "final";
-            timersRef.current.final = setTimeout(onDismiss, timingRef.current.finalHoldMs);
+            timersRef.current.final = window.setTimeout(startExit, timingRef.current.finalHoldMs);
           }
         } else {
           posRef.current = nextScroll;
@@ -178,12 +201,12 @@ export function SubtitleOverlay({
         const remainingStaticMs = Math.max(0, totalStaticMs - elapsed);
         if (remainingStaticMs <= 0) {
           phaseRef.current = "final";
-          timersRef.current.final = setTimeout(onDismiss, timingRef.current.finalHoldMs);
+          timersRef.current.final = window.setTimeout(startExit, timingRef.current.finalHoldMs);
         } else {
           phaseRef.current = "static";
-          timersRef.current.static = setTimeout(() => {
+          timersRef.current.static = window.setTimeout(() => {
             phaseRef.current = "final";
-            timersRef.current.final = setTimeout(onDismiss, timingRef.current.finalHoldMs);
+            timersRef.current.final = window.setTimeout(startExit, timingRef.current.finalHoldMs);
           }, remainingStaticMs);
         }
       } else if (phaseRef.current === "scroll" && maxScroll <= 0) {
@@ -198,7 +221,7 @@ export function SubtitleOverlay({
     }
 
     rafIdRef.current = requestAnimationFrame(loop);
-  }, [onDismiss]);
+  }, [startExit]);
 
   // Keep textRef current for the rAF loop and thinking indicator.
   useEffect(() => {
@@ -218,13 +241,13 @@ export function SubtitleOverlay({
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
-        onDismiss();
+        startExit();
       }
     }
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [state.kind, onDismiss]);
+  }, [state.kind, startExit]);
 
   // Cleanup on unmount and guard against stuck interactive state.
   useEffect(() => {
@@ -263,8 +286,23 @@ export function SubtitleOverlay({
     }
   }, [state.kind]);
 
-  // Initialize / reset once on mount (parent remounts per subtitle via key).
+  // Cancel an in-flight exit only when a genuinely NEW subtitle arrives during
+  // the exit; start exit when parent switches to idle.
   useEffect(() => {
+    if (state.kind !== "idle" && isExiting && original !== exitOriginalRef.current) {
+      if (timersRef.current.exit) clearTimeout(timersRef.current.exit);
+      setIsExiting(false);
+    }
+    if (state.kind === "idle" && prevKindRef.current !== "idle" && !isExiting) {
+      startExit();
+    }
+    prevKindRef.current = state.kind;
+  }, [state.kind, original, isExiting, startExit]);
+
+  // Initialize / reset on mount and whenever the displayed subtitle changes.
+  useEffect(() => {
+    if (state.kind === "idle") return;
+
     prefersReducedMotionRef.current = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     ).matches;
@@ -294,7 +332,7 @@ export function SubtitleOverlay({
 
     if (state.kind === "error") {
       phaseRef.current = "interrupted"; // no auto-scroll, just timer
-      timersRef.current.error = setTimeout(onDismiss, ERROR_HIDE_MS);
+      timersRef.current.error = window.setTimeout(startExit, ERROR_HIDE_MS);
       return;
     }
 
@@ -304,15 +342,15 @@ export function SubtitleOverlay({
         timingRef.current.minDisplayMs,
         computeReadMs(textRef.current) * timingRef.current.textScale
       );
-      timersRef.current.static = setTimeout(() => {
+      timersRef.current.static = window.setTimeout(() => {
         phaseRef.current = "final";
-        timersRef.current.final = setTimeout(onDismiss, timingRef.current.finalHoldMs);
+        timersRef.current.final = window.setTimeout(startExit, timingRef.current.finalHoldMs);
       }, staticMs);
       return;
     }
 
     phaseRef.current = "hold";
-    timersRef.current.hold = setTimeout(() => {
+    timersRef.current.hold = window.setTimeout(() => {
       phaseRef.current = "scroll";
       scrollStartTimeRef.current = performance.now();
       lastRecomputeRef.current = 0;
@@ -324,7 +362,7 @@ export function SubtitleOverlay({
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [original]);
 
   function handleWheel(e: React.WheelEvent) {
     if (state.kind === "error" || state.kind === "loading") return;
@@ -342,9 +380,10 @@ export function SubtitleOverlay({
   }
 
   function handleDismiss() {
+    if (isExiting) return;
     onRequestEscArmed?.(false);
     onRequestInteractive?.(false);
-    onDismiss();
+    startExit();
   }
 
   const isError = state.kind === "error";
@@ -362,7 +401,7 @@ export function SubtitleOverlay({
   const hasText = rawText.trim().length > 0;
   const mainText = hasText ? rawText : fallbackText;
 
-  if (state.kind === "idle") return null;
+  if (state.kind === "idle" && !isExiting) return null;
 
   const cardBackground = hexToRgba(style.bgColor, style.bgOpacity);
   const dimmedColor = style.textColor + "99"; // ~60% opacity hex
@@ -390,7 +429,9 @@ export function SubtitleOverlay({
   return (
     <div
       data-subtr-overlay
-      className="pointer-events-none fixed z-40 mx-auto flex max-w-[min(920px,92vw)] justify-center px-4"
+      className={`pointer-events-none fixed z-40 mx-auto flex max-w-[min(920px,92vw)] justify-center px-4 transition-all duration-200 ease-out motion-reduce:transition-none ${
+        isExiting ? "pointer-events-none opacity-0 translate-y-2" : "opacity-100 translate-y-0"
+      }`}
       style={{
         left: hasMetrics ? `${leftPx}px` : `${style.xPct}%`,
         top: hasMetrics ? `${topPx}px` : `${style.yPct}%`,
@@ -432,7 +473,7 @@ export function SubtitleOverlay({
           className="mb-1 line-clamp-2 text-xs leading-relaxed"
           style={{ color: dimmedColor }}
         >
-          {state.original}
+          {state.kind !== "idle" ? state.original : ""}
         </p>
 
         {isLoading && (

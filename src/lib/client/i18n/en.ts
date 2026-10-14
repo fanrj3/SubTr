@@ -98,6 +98,7 @@ export const en = {
   "settings.position.testText": "Preview text",
   "settings.position.play": "▶ Play",
   "settings.position.pause": "⏸ Pause",
+  "settings.position.test": "Test",
   "settings.position.totalTime": "Total display time",
   "settings.position.scrollSpeed": "Scroll speed",
   "settings.position.readingSpeed": "Reading speed",

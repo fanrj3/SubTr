@@ -55,6 +55,15 @@ export function isDarkTheme(theme: Theme): boolean {
   return theme === "dark" || (theme === "system" && isSystemDark());
 }
 
+function syncNativeTheme(theme: Theme): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.subtrDesktop?.setNativeTheme?.(theme);
+  } catch {
+    // No-op in plain browsers or older desktop builds.
+  }
+}
+
 export function applyTheme(theme: Theme): void {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
@@ -62,6 +71,7 @@ export function applyTheme(theme: Theme): void {
   root.classList.toggle("dark", dark);
   root.classList.toggle("light", theme === "light");
   root.style.colorScheme = dark ? "dark" : "light";
+  syncNativeTheme(theme);
 }
 
 export function getInitialThemeScript(): string {
@@ -84,6 +94,9 @@ export function getInitialThemeScript(): string {
         document.documentElement.classList.toggle("dark", isDark);
         document.documentElement.classList.toggle("light", theme === "light");
         document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+        if (window.subtrDesktop && window.subtrDesktop.setNativeTheme) {
+          try { window.subtrDesktop.setNativeTheme(theme); } catch (e) {}
+        }
       } catch (e) {}
     })();
   `;

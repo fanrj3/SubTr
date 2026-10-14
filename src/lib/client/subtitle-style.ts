@@ -2,6 +2,37 @@ import { readStorage, writeStorage } from "./storage";
 
 export const SUBTITLE_STYLE_KEY = "subtr.subtitleStyle.v1";
 
+const listeners = new Set<() => void>();
+
+export function subscribeSubtitleStyle(callback: () => void): () => void {
+  listeners.add(callback);
+  function onStorage(e: StorageEvent): void {
+    if (e.key === SUBTITLE_STYLE_KEY) callback();
+  }
+  if (typeof window !== "undefined") {
+    window.addEventListener("storage", onStorage);
+  }
+  return () => {
+    listeners.delete(callback);
+    if (typeof window !== "undefined") {
+      window.removeEventListener("storage", onStorage);
+    }
+  };
+}
+
+function notifySubtitleStyleListeners(): void {
+  listeners.forEach((cb) => cb());
+}
+
+export function writeSubtitleStyle(style: SubtitleStyle): void {
+  writeStorage(SUBTITLE_STYLE_KEY, style);
+  notifySubtitleStyleListeners();
+}
+
+export function notifySubtitleStyleChanged(): void {
+  notifySubtitleStyleListeners();
+}
+
 export type SubtitleStyle = {
   xPct: number;
   yPct: number;
@@ -29,12 +60,17 @@ export const FONT_FAMILY_LABELS: Record<SubtitleStyle["fontFamily"], string> = {
   geist: "Geist",
 };
 
-export function readSubtitleStyle(): SubtitleStyle {
-  return { ...DEFAULT_SUBTITLE_STYLE, ...readStorage<Partial<SubtitleStyle>>(SUBTITLE_STYLE_KEY, {}) };
-}
+let lastStoredStyle: Partial<SubtitleStyle> | undefined;
+let lastMergedStyle: SubtitleStyle | undefined;
 
-export function writeSubtitleStyle(style: SubtitleStyle): void {
-  writeStorage(SUBTITLE_STYLE_KEY, style);
+export function readSubtitleStyle(): SubtitleStyle {
+  const stored = readStorage<Partial<SubtitleStyle>>(SUBTITLE_STYLE_KEY, {});
+  if (stored === lastStoredStyle && lastMergedStyle) {
+    return lastMergedStyle;
+  }
+  lastStoredStyle = stored;
+  lastMergedStyle = { ...DEFAULT_SUBTITLE_STYLE, ...stored };
+  return lastMergedStyle;
 }
 
 export function fontFamilyCss(fontFamily: SubtitleStyle["fontFamily"]): string {
