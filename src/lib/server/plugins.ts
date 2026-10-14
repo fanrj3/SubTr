@@ -139,12 +139,12 @@ let watchTimer: NodeJS.Timeout | null = null;
 /** Resolve the plugins directory (env override, else ~/.subtr/plugins). */
 export function getPluginsDir(): string {
   const override = process.env.SUBTR_PLUGINS_DIR;
-  if (override && override.trim()) return path.resolve(override.trim());
-  return path.join(os.homedir(), ".subtr", "plugins");
+  if (override && override.trim()) return path.resolve(/* turbopackIgnore: true */ override.trim());
+  return path.join(/* turbopackIgnore: true */ os.homedir(), ".subtr", "plugins");
 }
 
 function statePath(): string {
-  return path.join(getPluginsDir(), ".state.json");
+  return path.join(/* turbopackIgnore: true */ getPluginsDir(), ".state.json");
 }
 
 // ---------------------------------------------------------------------------
@@ -158,7 +158,7 @@ async function readConsent(force = false): Promise<ConsentFile> {
   }
   let value: ConsentFile = {};
   try {
-    const raw = await fs.readFile(statePath(), "utf8");
+    const raw = await fs.readFile(/* turbopackIgnore: true */ statePath(), "utf8");
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       value = parsed as ConsentFile;
@@ -173,15 +173,15 @@ async function readConsent(force = false): Promise<ConsentFile> {
 async function writeConsent(next: ConsentFile): Promise<void> {
   const dir = getPluginsDir();
   const file = statePath();
-  await fs.mkdir(dir, { recursive: true });
+  await fs.mkdir(/* turbopackIgnore: true */ dir, { recursive: true });
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
   try {
-    await fs.writeFile(tmp, JSON.stringify(next, null, 2), "utf8");
-    await fs.rename(tmp, file);
+    await fs.writeFile(/* turbopackIgnore: true */ tmp, JSON.stringify(next, null, 2), "utf8");
+    await fs.rename(/* turbopackIgnore: true */ tmp, file);
     consentCache = { at: Date.now(), value: next };
   } catch (error) {
     try {
-      await fs.rm(tmp, { force: true });
+      await fs.rm(/* turbopackIgnore: true */ tmp, { force: true });
     } catch {
       // ignore
     }
@@ -315,8 +315,8 @@ function recordFromManifest(
   let entryPath: string | null = null;
   if (manifest.capabilities.length > 0) {
     const entryFile = manifest.entry ?? DEFAULT_ENTRY;
-    entryPath = path.join(dir, entryFile);
-    if (!existsSync(entryPath)) {
+    entryPath = path.join(/* turbopackIgnore: true */ dir, entryFile);
+    if (!existsSync(/* turbopackIgnore: true */ entryPath)) {
       return { ok: false, error: `entry file not found: ${entryFile}` };
     }
   }
@@ -384,8 +384,8 @@ async function importPlugin(href: string, entryPath: string): Promise<Record<str
   } catch (error) {
     try {
       const { createRequire } = await import("node:module");
-      const req = createRequire(entryPath);
-      const resolved = req.resolve(entryPath);
+      const req = createRequire(/* turbopackIgnore: true */ entryPath);
+      const resolved = req.resolve(/* turbopackIgnore: true */ entryPath);
       delete req.cache[resolved];
       return req(resolved) as Record<string, unknown>;
     } catch {
@@ -443,7 +443,7 @@ async function loadRecord(record: PluginRecord): Promise<void> {
   const runtime: Runtime = { input: [], output: [], lookup: [] };
   record.runtime = runtime;
   try {
-    const url = pathToFileURL(record.entryPath);
+    const url = pathToFileURL(/* turbopackIgnore: true */ record.entryPath);
     url.searchParams.set("v", `${record.info.version}-${Date.now()}`);
     const mod = await importPlugin(url.href, record.entryPath);
     const activate = (mod.activate ?? (mod.default as Record<string, unknown> | undefined)?.activate) as
@@ -477,7 +477,7 @@ async function doScan(): Promise<void> {
   const dir = getPluginsDir();
   let entries: string[] = [];
   try {
-    const dirents = await fs.readdir(dir, { withFileTypes: true });
+    const dirents = await fs.readdir(/* turbopackIgnore: true */ dir, { withFileTypes: true });
     entries = dirents.filter((d) => d.isDirectory()).map((d) => d.name).sort();
   } catch {
     entries = [];
@@ -485,14 +485,14 @@ async function doScan(): Promise<void> {
 
   const seen = new Set<string>();
   for (const folder of entries) {
-    const pluginDir = path.join(dir, folder);
-    const manifestPath = path.join(pluginDir, "manifest.json");
-    if (!existsSync(manifestPath)) continue;
+    const pluginDir = path.join(/* turbopackIgnore: true */ dir, folder);
+    const manifestPath = path.join(/* turbopackIgnore: true */ pluginDir, "manifest.json");
+    if (!existsSync(/* turbopackIgnore: true */ manifestPath)) continue;
     seen.add(folder);
 
     let raw: unknown;
     try {
-      raw = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+      raw = JSON.parse(await fs.readFile(/* turbopackIgnore: true */ manifestPath, "utf8"));
     } catch (error) {
       await replaceRecord(errorRecord(folder, pluginDir, `invalid manifest.json: ${error instanceof Error ? error.message : String(error)}`));
       continue;
@@ -618,10 +618,10 @@ function startWatching(): void {
     }, 150);
   };
   try {
-    watcher = watch(dir, { recursive: true }, schedule);
+    watcher = watch(/* turbopackIgnore: true */ dir, { recursive: true }, schedule);
   } catch {
     try {
-      watcher = watch(dir, schedule);
+      watcher = watch(/* turbopackIgnore: true */ dir, schedule);
     } catch {
       watcher = null;
     }
