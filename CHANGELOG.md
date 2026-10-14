@@ -16,7 +16,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | **0.2.1** | `66af67f` | Settings page, profiles v2, thinking control, subtitle customization |
 | **0.2.2** | `4c10810` · docs `0efc776` | Theme + UI language, compact window, position player |
 | **0.2.3** | `cb855ca` · docs `3650ab3` | Native theme, display-aspect preview, Test button, fade-out, caps, capture handshake |
-| **0.2.7** | *(release commit)* | Settings refactor (nav rail + setting rows), Base UI primitives, DESIGN.md |
+| **0.2.7** | `7fe1bf1` | Settings refactor (nav rail + setting rows), Base UI primitives, DESIGN.md |
 | **0.2.6** | `c4260d8` | Usage-stats plugin, panel capability, settings polish |
 | **0.2.5** | `34d13b5` | Plugins v1, cost meter + status bar, encrypted config export/import, player polish |
 | **0.2.4** | `f3cc2a3` | Dictionary, real-screen player, hotkey, tray |
@@ -65,8 +65,8 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | Usage-stats plugin (bar chart + calendar heatmap) | 0.2.6 | `c4260d8` | `examples/plugins/usage-stats/`, daily buckets in `src/lib/server/stats.ts` |
 | Plugin import/uninstall in Settings (zip upload, overwrite confirm, atomic swap) | 0.2.6 | `599c57a` | `src/app/api/plugins/import/`, DELETE in `src/app/api/plugins/[id]/route.ts`, `src/components/plugins-section.tsx` |
 | Plugin home widgets + `location` split (settings vs home) | 0.2.6 | `44de54e` | `src/components/home-widgets.tsx`, `src/components/plugin-panel-frame.tsx`, `location`/`visiblePanels` in `src/lib/server/plugins.ts` |
-| Settings shell refactor (grouped nav rail + row primitive + sticky pane) | 0.2.7 | *(release commit)* | `src/app/settings/page.tsx`, `src/components/settings-ui.tsx`, `DESIGN.md` |
-| Base UI primitives adopted (Tabs/Switch/Slider/Select/Dialog/Collapsible) | 0.2.7 | *(release commit)* | `package.json`, `src/components/settings-ui.tsx` |
+| Settings shell refactor (grouped nav rail + row primitive + sticky pane) | 0.2.7 | `7fe1bf1` | `src/app/settings/page.tsx`, `src/components/settings-ui.tsx`, `DESIGN.md` |
+| Base UI primitives adopted (Tabs/Switch/Slider/Select/Dialog/Collapsible) | 0.2.7 | `7fe1bf1` | `package.json`, `src/components/settings-ui.tsx` |
 
 ---
 
