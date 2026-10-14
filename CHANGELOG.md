@@ -16,6 +16,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | **0.2.1** | `66af67f` | Settings page, profiles v2, thinking control, subtitle customization |
 | **0.2.2** | `4c10810` · docs `0efc776` | Theme + UI language, compact window, position player |
 | **0.2.3** | `cb855ca` · docs `3650ab3` | Native theme, display-aspect preview, Test button, fade-out, caps, capture handshake |
+| **0.2.5** | *(release commit)* | Plugins v1, cost meter + status bar, encrypted config export/import, player polish |
 | **0.2.4** | `f3cc2a3` | Dictionary, real-screen player, hotkey, tray |
 
 ---
@@ -54,6 +55,10 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | Test-connection latency flavor text (tiers + emoji) | 0.2.4 | `f3cc2a3` | `src/app/settings/page.tsx` |
 | Customizable global hotkey (default ⌘⇧T; toggles translation mode) | 0.2.4 | `f3cc2a3` | `src/lib/client/hotkey.ts`, `src/components/hotkey-recorder.tsx`, `mode.ts`, `desktop/main.cjs` |
 | Tray icon (idle/active + burst animation; resident app) | 0.2.4 | `f3cc2a3` | `desktop/tray-icons.cjs`, `desktop/main.cjs` |
+| Plugins v1 (local loader + consent + hot reload + examples) | 0.2.5 | *(release commit)* | `src/lib/server/plugins.ts`, `src/app/api/plugins/`, `src/components/plugins-section.tsx`, `examples/plugins/` |
+| Cost meter (usage capture, stats store, `/api/stats`, home status bar) | 0.2.5 | *(release commit)* | `src/lib/server/stats.ts`, `src/lib/server/pricing.ts`, `src/app/api/stats/`, `src/components/status-bar.tsx` |
+| Encrypted config export/import (AES-GCM + PBKDF2) | 0.2.5 | *(release commit)* | `src/lib/client/config-transfer.ts`, `src/components/config-transfer.tsx` |
+| Pin-on-interaction + lock (click/wheel pins; bottom-right lock) | 0.2.5 | *(release commit)* | `src/components/subtitle-overlay.tsx` |
 
 ---
 
@@ -81,6 +86,14 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 
 ### 0.2.3 (`cb855ca`) — native theme · preview rework · test · robustness
 - Title bar follows theme (`setNativeTheme`); canvas = real display aspect + double-click enlarge; drag without text selection; appearance row responsive; base pace 220 wpm / 400 cpm with 0.2–5.0× slider; **Test** button (real-screen playback with live style); fade-out on every dismissal; caps raised (10000/12000); capture delivery handshake + latest-wins pending queue; dismissal aborts in-flight translation.
+
+### 0.2.5 — plugins v1 · cost meter · encrypted config transfer · player polish
+- **Player polish**: longer default preview text (with gentle migration); editing the preview text applies on the next Play (unchanged text still resumes); short/dictionary cards reserve space so ✕/Esc never overlap the word.
+- **Pin-on-interaction**: clicking or wheeling the subtitle pins it (no auto-hide) — the bottom-right slot shows a lock instead of the progress bar; Esc/✕ dismiss; test-mode ✅ never pins.
+- **Plugins v1** (approved design): local plugins under `<userData>/plugins` (dev `.subtr-plugins/`) — manifest (`apiVersion`, `minAppVersion`, `capabilities`, `contributes`), capability-scoped API (`translate.transformInput` / `transformOutput` / `dictionary.source` + declarative provider presets), per-capability consent dialog, 2 s hook timeout with auto-disable after two consecutive failures, dev hot reload, `GET /api/plugins` + `POST /api/plugins/:id` + `GET /api/dictionary`; sample plugins in `examples/plugins/` (uppercase pre/post-processor, declarative Acme provider).
+- **Cost meter**: token-usage capture (`stream_options.include_usage` + extended retry chain + chars/4 estimate fallback), `~/.subtr/stats.json` store, `/api/stats`, and a bottom **status bar** on the home page (cost / calls / translations / tokens, `~` estimate marker); per-preset pricing from models.dev (Moonshot default → `kimi-k3`; OpenCode Go carries a subscription note).
+- **Config export/import**: passphrase-protected file `subtr-config-<date>.json`; API keys encrypted (AES-GCM 256, PBKDF2-SHA256 310k iterations, per-value IV) and never in plaintext; import is atomic and refreshes the settings UI live; legacy bare-envelope files remain importable.
+- Also: the client dictionary falls back to plugin dictionary sources (`/api/dictionary`) on a bundled-dictionary miss.
 
 ### 0.2.4 — dictionary · player rework · hotkey · tray
 - **Single-word dictionary**: ECDICT (MIT) top-30k bundled offline (`public/dict/`, ~3.9 MB, buildable via `npm run dict:build`); single Latin-word selections resolve locally with phonetics + senses — no LLM, works without an API key; misses fall through to the LLM flow.

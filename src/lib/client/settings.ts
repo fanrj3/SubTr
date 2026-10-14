@@ -1,6 +1,7 @@
-import type { LlmConfig } from "@/lib/types";
+import type { LlmConfig, ProviderPreset } from "@/lib/types";
 import { PROVIDER_PRESETS } from "@/lib/presets";
 import { writeStorage } from "./storage";
+import { notifyStorageKey } from "./use-local-storage";
 
 export const LEGACY_SETTINGS_KEY = "subtr.settings.v1";
 export const SETTINGS_KEY = "subtr.settings.v2";
@@ -121,6 +122,8 @@ export function readSettingsStore(): SettingsStore {
 
 export function writeSettingsStore(store: SettingsStore): void {
   writeStorage(SETTINGS_KEY, store);
+  // Keep mounted settings views in sync after out-of-band writes (e.g. import).
+  notifyStorageKey(SETTINGS_KEY);
 }
 
 export function getActiveProfile(store: SettingsStore): StoredProfile {
@@ -135,9 +138,10 @@ export function readSettings(): PersistedSettings {
 
 export function applyPreset(
   presetId: string,
-  current: StoredProfile
+  current: StoredProfile,
+  presets: ProviderPreset[] = PROVIDER_PRESETS
 ): StoredProfile {
-  const preset = PROVIDER_PRESETS.find((p) => p.id === presetId);
+  const preset = presets.find((p) => p.id === presetId);
   if (!preset) return { ...current, presetId };
   return {
     ...current,

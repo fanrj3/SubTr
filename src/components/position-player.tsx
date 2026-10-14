@@ -6,10 +6,12 @@ import {
   useT,
   hexToRgba,
   fontFamilyCss,
+  readStorage,
   type SubtitleStyle,
   type SubtitleTiming,
   POSITION_TEST_TEXT_KEY,
   DEFAULT_POSITION_TEST_TEXT,
+  OLD_POSITION_TEST_TEXT,
   computeTimeline,
   computeMetrics,
   type PositionMetrics,
@@ -229,6 +231,16 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
     POSITION_TEST_TEXT_KEY,
     DEFAULT_POSITION_TEST_TEXT
   );
+  const sessionTextRef = useRef("");
+
+  // Adopt the longer default when the stored value is absent or is the old default.
+  useEffect(() => {
+    const stored = readStorage<string | null>(POSITION_TEST_TEXT_KEY, null);
+    if (stored === null || stored === OLD_POSITION_TEST_TEXT) {
+      setTestText(DEFAULT_POSITION_TEST_TEXT);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [thumbnail, setThumbnail] = useState<string | null>(null);
   const [loadingThumbnail, setLoadingThumbnail] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -330,7 +342,8 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
     if (!trimmed) return;
 
     const ended = playState.timeMs >= playState.totalMs;
-    const hasSession = playState.active && !ended;
+    const textChanged = trimmed !== sessionTextRef.current;
+    const hasSession = playState.active && !ended && !textChanged;
 
     if (isDesktopPlayer) {
       if (playState.playing) {
@@ -338,6 +351,7 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
       } else if (hasSession) {
         window.subtrDesktop?.controlTestPlay?.({ action: "play" });
       } else {
+        sessionTextRef.current = trimmed;
         window.subtrDesktop?.showTestSubtitle?.(trimmed);
         window.subtrDesktop?.controlTestPlay?.({ action: "play" });
       }
@@ -349,6 +363,7 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
     } else if (hasSession) {
       setPlayState((prev) => ({ ...prev, playing: true }));
     } else {
+      sessionTextRef.current = trimmed;
       setPlayState({
         active: true,
         playing: true,

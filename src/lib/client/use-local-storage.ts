@@ -9,6 +9,11 @@ function notify(key: string): void {
   listeners.get(key)?.forEach((cb) => cb());
 }
 
+/** Notify `useLocalStorage` subscribers for a key after an out-of-band write. */
+export function notifyStorageKey(key: string): void {
+  notify(key);
+}
+
 function subscribe(key: string, callback: () => void): () => void {
   if (!listeners.has(key)) {
     listeners.set(key, new Set());

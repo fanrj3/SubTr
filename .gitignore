@@ -46,5 +46,8 @@ next-env.d.ts
 # Local agent session artifacts
 .opencode/
 
+# Dev-mode server-side plugins (see desktop/dev.cjs)
+.subtr-plugins/
+
 # API keys
 *.key

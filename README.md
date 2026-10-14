@@ -21,7 +21,7 @@ Open http://localhost:3000.
 ## Usage
 
 1. Paste or type text into the reader (click the empty area, or use **Edit** later).
-2. Open **Settings** (a full page). **Profiles** keeps multiple API setups — switch between them without losing the others. Pick a provider, paste your key, hit **Test connection**. **Thinking** controls the model's reasoning per profile (Preset default / Off / Low / Medium / High); translation usually wants **Off** — OpenCode Go and DeepSeek default to it — and where a provider cannot fully disable thinking, the note says what it falls back to. The **Subtitle** section tunes timing (initial hold, minimum display, reading pace from 0.2× to 5×, final hold) and appearance (drag the box on the mini display to reposition; font, size, text/background color, opacity) — with a **Play/Pause preview player**, a scrubber, editable test text, live metrics (total display time, scroll speed, reading speed), and a **Test** button that plays the subtitle on your real screen (desktop: the system overlay) with live style updates. The **App** section switches the **theme** (Follow system / Light / Dark) and the **UI language** (Follow system / 中文（简体）/ English).
+2. Open **Settings** (a full page). **Profiles** keeps multiple API setups — switch between them without losing the others. Pick a provider, paste your key, hit **Test connection**. **Thinking** controls the model's reasoning per profile (Preset default / Off / Low / Medium / High); translation usually wants **Off** — OpenCode Go and DeepSeek default to it — and where a provider cannot fully disable thinking, the note says what it falls back to. The **Subtitle** section tunes timing (initial hold, minimum display, reading pace from 0.2× to 5×, final hold) and appearance (drag the box on the mini display to reposition; font, size, text/background color, opacity) — with a **Play** that plays the subtitle on your real screen (desktop: the system overlay) with live style updates, plus a scrubber, editable test text and live metrics. The **App** section switches the **theme** and the **UI language**, records the **global hotkey**, and offers **Export config / Import config** — API keys are encrypted with a passphrase (AES-GCM) and never exported in plaintext. The home page shows a bottom **status bar** with your estimated LLM spend (cost, calls, translations, tokens).
 3. Toggle **Translate** on in the top bar.
 4. Select any passage in the reader — the translation streams into a subtitle card. Long translations scroll like a teleprompter: a short hold at the top, then a scroll paced to the text length and reading speed, then a brief hold before auto-hiding. Scroll with the wheel to interrupt — the subtitle then stays until you press **Esc**. Translations render Markdown (lists, bold, code) when the model outputs it.
 
@@ -67,6 +67,16 @@ Notes:
 - Builds are unsigned. macOS: if Gatekeeper blocks the app, run `xattr -dr com.apple.quarantine /Applications/SubTr.app` or use System Settings → Privacy & Security → "Open Anyway". Windows: SmartScreen → "More info → Run anyway". Linux: `chmod +x SubTr-*.AppImage`.
 - Linux: selection monitoring works on X11; Wayland support is limited (always-on-top and global shortcuts depend on the compositor).
 - Closing the app window quits the app (v1 behavior).
+
+## Plugins
+
+SubTr loads local plugins from a folder (desktop: the app's data folder `plugins/`; development: `.subtr-plugins/`). Each plugin is a folder with a `manifest.json` and optionally an `index.cjs` entry. Capabilities are granted per plugin at enable time in **Settings → Plugins**:
+
+- **translate.transformInput / translate.transformOutput** — rewrite the selected text before translation, or the translation before it is shown
+- **dictionary.source** — provide dictionary lookups (used when the bundled dictionary misses)
+- **Provider presets** — a plugin can contribute a provider declaratively (no code)
+
+Plugins run as local Node code with full access to your machine — only enable plugins you trust. See `examples/plugins/` for a starter (uppercase) and a declarative provider example.
 
 ## Security notes
 

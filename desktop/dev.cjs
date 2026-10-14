@@ -7,15 +7,28 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const npmCmd = process.platform === "win32" ? "npx.cmd" : "npx";
 
+// Dev server-side plugins: a repo-local dir with hot reload enabled.
+const pluginsDir = path.join(root, ".subtr-plugins");
+
 const next = spawn(npmCmd, ["next", "dev", "-p", "3311"], {
   cwd: root,
   stdio: "inherit",
+  env: {
+    ...process.env,
+    SUBTR_PLUGINS_DIR: pluginsDir,
+    SUBTR_PLUGIN_WATCH: "1",
+  },
 });
 
 const electron = spawn(npmCmd, ["electron", "."], {
   cwd: root,
   stdio: "inherit",
-  env: { ...process.env, SUBTR_DEV_URL: "http://localhost:3311" },
+  env: {
+    ...process.env,
+    SUBTR_DEV_URL: "http://localhost:3311",
+    SUBTR_PLUGINS_DIR: pluginsDir,
+    SUBTR_PLUGIN_WATCH: "1",
+  },
 });
 
 let shuttingDown = false;

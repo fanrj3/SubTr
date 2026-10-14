@@ -243,27 +243,78 @@ export function extractMessageContent(value: unknown): string | null {
   return typeof content === "string" ? content : null;
 }
 
+/** Token usage reported by an OpenAI-compatible upstream. */
+export type UpstreamUsage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+};
+
+/** Extract `usage.prompt_tokens` / `usage.completion_tokens` when present. */
+export function extractUsage(value: unknown): UpstreamUsage | null {
+  if (!isRecord(value)) return null;
+  const usage = value.usage;
+  if (!isRecord(usage)) return null;
+  const prompt = usage.prompt_tokens;
+  const completion = usage.completion_tokens;
+  const result: UpstreamUsage = {};
+  if (typeof prompt === "number" && Number.isFinite(prompt)) {
+    result.prompt_tokens = prompt;
+  }
+  if (typeof completion === "number" && Number.isFinite(completion)) {
+    result.completion_tokens = completion;
+  }
+  return result.prompt_tokens === undefined && result.completion_tokens === undefined
+    ? null
+    : result;
+}
+
+/** Estimate tokens from a character count (chars/4). */
+export function estimateTokens(chars: number): number {
+  return Math.max(0, Math.ceil(chars / 4));
+}
+
 /**
- * Parse one SSE line into incremental text, or null if it carries nothing.
- * Malformed mid-stream lines are skipped so streaming continues.
+ * Parse one SSE line into incremental text and/or usage. A final chunk may carry
+ * `usage` with an empty/absent `choices` array, so usage is checked first.
  */
-function parseSseLine(rawLine: string): string | null {
+function parseSseLine(rawLine: string): {
+  text: string | null;
+  usage: UpstreamUsage | null;
+} {
   const line = rawLine.trim();
-  if (!line.startsWith("data:")) return null;
+  if (!line.startsWith("data:")) return { text: null, usage: null };
   const data = line.slice("data:".length).trim();
-  if (!data || data === "[DONE]") return null;
+  if (!data || data === "[DONE]") return { text: null, usage: null };
   const parsed = parseJsonSafe(data);
-  if (!isRecord(parsed)) return null;
+  if (!isRecord(parsed)) return { text: null, usage: null };
+
+  const usage = extractUsage(parsed);
   const { choices } = parsed;
-  if (!Array.isArray(choices) || choices.length === 0) return null;
+  if (!Array.isArray(choices) || choices.length === 0) return { text: null, usage };
   const first = choices[0];
-  if (!isRecord(first)) return null;
+  if (!isRecord(first)) return { text: null, usage };
   const { delta } = first;
-  if (!isRecord(delta)) return null;
+  if (!isRecord(delta)) return { text: null, usage };
   const { content } = delta;
   // Only delta.content is forwarded; reasoning_content is intentionally ignored.
-  return typeof content === "string" && content.length > 0 ? content : null;
+  return {
+    text: typeof content === "string" && content.length > 0 ? content : null,
+    usage,
+  };
 }
+
+/** Hooks for observing an in-progress SSE translation stream. */
+export type SseStreamHooks = {
+  /** Called for the last usage block seen in the stream. */
+  onUsage?: (usage: UpstreamUsage) => void;
+  /**
+   * Optional per-chunk output transform. Receives the decoded chunk text and
+   * returns the text to forward. Errors leave the chunk unchanged.
+   */
+  transformChunk?: (text: string) => string | Promise<string>;
+  /** Called once the stream ends with the full (untransformed) composed text. */
+  onComplete?: (text: string) => void | Promise<void>;
+};
 
 /**
  * Convert an upstream SSE byte stream into a plain-text stream of translation
@@ -274,10 +325,25 @@ function parseSseLine(rawLine: string): string | null {
 export function createSseTextStream(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal,
+  hooks?: SseStreamHooks,
 ): ReadableStream<Uint8Array> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let composed = "";
+
+  const emit = async (controller: ReadableStreamDefaultController<Uint8Array>, text: string) => {
+    composed += text;
+    let out = text;
+    if (hooks?.transformChunk) {
+      try {
+        out = await hooks.transformChunk(text);
+      } catch {
+        out = text;
+      }
+    }
+    if (out) controller.enqueue(encoder.encode(out));
+  };
 
   return new ReadableStream<Uint8Array>({
     start(controller) {
@@ -292,20 +358,27 @@ export function createSseTextStream(
             while (newlineIndex !== -1) {
               const line = buffer.slice(0, newlineIndex).replace(/\r$/, "");
               buffer = buffer.slice(newlineIndex + 1);
-              const text = parseSseLine(line);
-              if (text) controller.enqueue(encoder.encode(text));
+              const { text, usage } = parseSseLine(line);
+              if (usage) hooks?.onUsage?.(usage);
+              if (text) await emit(controller, text);
               newlineIndex = buffer.indexOf("\n");
             }
           }
           // Flush a trailing line that never got its newline.
           const tail = buffer.replace(/\r$/, "");
           if (tail) {
-            const text = parseSseLine(tail);
-            if (text) controller.enqueue(encoder.encode(text));
+            const { text, usage } = parseSseLine(tail);
+            if (usage) hooks?.onUsage?.(usage);
+            if (text) await emit(controller, text);
           }
         } catch {
           // Upstream/abort error: end quietly with whatever was emitted.
         } finally {
+          try {
+            await hooks?.onComplete?.(composed);
+          } catch {
+            // Never let a hook failure break the stream teardown.
+          }
           try {
             controller.close();
           } catch {

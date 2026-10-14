@@ -11,6 +11,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "OpenAI",
     baseURL: "https://api.openai.com/v1",
     defaultModel: "gpt-5-mini",
+    pricing: { inPerM: 0.25, outPerM: 2.0 },
     fastModeParams: { reasoning_effort: "low" },
     thinking: {
       off: { reasoning_effort: "minimal" },
@@ -25,6 +26,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "OpenCode Go",
     baseURL: "https://opencode.ai/inference/go/v1",
     defaultModel: "deepseek-v4.1-flash",
+    pricing: { inPerM: 0.15, outPerM: 0.6, note: "Subscription plan — per-token equivalent for reference only" },
     defaultParams: { thinking: { type: "disabled" } },
     thinking: {
       off: { thinking: { type: "disabled" } },
@@ -44,6 +46,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "Anthropic (Claude)",
     baseURL: "https://api.anthropic.com/v1",
     defaultModel: "claude-haiku-4-5",
+    pricing: { inPerM: 1.0, outPerM: 5.0 },
     maxTokens: 16384,
     thinking: {
       off: { thinking: { type: "disabled" } },
@@ -58,6 +61,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "Google Gemini",
     baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
     defaultModel: "gemini-3.8-flash",
+    pricing: { inPerM: 0.75, outPerM: 3.75 },
     fastModeParams: { reasoning_effort: "low" },
     thinking: {
       off: null,
@@ -72,6 +76,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "DeepSeek",
     baseURL: "https://api.deepseek.com",
     defaultModel: "deepseek-flash",
+    pricing: { inPerM: 0.15, outPerM: 0.6 },
     defaultParams: { thinking: { type: "disabled" } },
     thinking: {
       off: { thinking: { type: "disabled" } },
@@ -86,6 +91,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "OpenRouter",
     baseURL: "https://openrouter.ai/api/v1",
     defaultModel: "openai/gpt-4.1-mini",
+    pricing: { inPerM: 0.4, outPerM: 1.6 },
     thinking: {
       off: { reasoning: { effort: "none" } },
       low: { reasoning: { effort: "low" } },
@@ -99,6 +105,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "Groq",
     baseURL: "https://api.groq.com/openai/v1",
     defaultModel: "openai/gpt-oss-20b",
+    pricing: { inPerM: 0.075, outPerM: 0.3 },
     fastModeParams: { reasoning_effort: "low" },
     thinking: {
       off: null,
@@ -113,6 +120,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "xAI (Grok)",
     baseURL: "https://api.x.ai/v1",
     defaultModel: "grok-4.3",
+    pricing: { inPerM: 1.25, outPerM: 2.5, note: ">200k context: 2.50 / 5.00" },
     thinking: {
       off: { reasoning_effort: "none" },
       low: { reasoning_effort: "low" },
@@ -126,6 +134,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "Mistral",
     baseURL: "https://api.mistral.ai/v1",
     defaultModel: "mistral-small-latest",
+    pricing: { inPerM: 0.15, outPerM: 0.6 },
     thinking: {
       off: { reasoning_effort: "none" },
       low: null,
@@ -138,7 +147,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     id: "moonshot",
     label: "Moonshot (Kimi)",
     baseURL: "https://api.moonshot.cn/v1",
-    defaultModel: "kimi-latest",
+    defaultModel: "kimi-k3",
+    pricing: { inPerM: 3.0, outPerM: 15.0, note: "Current flagship; rolling alias kimi-latest has no official price" },
     thinking: {
       off: { thinking: { type: "disabled" } },
       low: { reasoning_effort: "low" },
@@ -153,6 +163,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "Zhipu (GLM)",
     baseURL: "https://open.bigmodel.cn/api/paas/v4",
     defaultModel: "glm-5.3-flash",
+    pricing: { inPerM: 0.15, outPerM: 0.5 },
     fastModeParams: { reasoning_effort: "low" },
     thinking: {
       off: null,
@@ -167,6 +178,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "Alibaba Qwen (DashScope)",
     baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     defaultModel: "qwen-flash",
+    pricing: { inPerM: 0.05, outPerM: 0.4 },
     thinking: {
       off: { enable_thinking: false },
       low: { enable_thinking: true, reasoning_effort: "low" },
@@ -180,6 +192,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "SiliconFlow",
     baseURL: "https://api.siliconflow.cn/v1",
     defaultModel: "Qwen/Qwen3-8B",
+    pricing: { inPerM: 0.06, outPerM: 0.06 },
     thinking: {
       off: { enable_thinking: false },
       low: { enable_thinking: true, thinking_budget: 1024 },
@@ -192,6 +205,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "Ollama (local)",
     baseURL: "http://localhost:11434/v1",
     defaultModel: "qwen3:8b",
+    pricing: { inPerM: 0, outPerM: 0, note: "Local — no API cost" },
     keyless: true,
     thinking: {
       off: { reasoning_effort: "none" },
@@ -206,6 +220,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     label: "LM Studio (local)",
     baseURL: "http://localhost:1234/v1",
     defaultModel: "local-model",
+    pricing: { inPerM: 0, outPerM: 0, note: "Local — no API cost" },
     keyless: true,
     thinking: {
       off: null,

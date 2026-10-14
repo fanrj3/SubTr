@@ -35,6 +35,8 @@ import {
   readUILang,
   writeUILang,
   subscribeUILang,
+  usePlugins,
+  mergeProviderPresets,
   type Theme,
   type UILang,
 } from "@/lib/client";
@@ -42,6 +44,8 @@ import { ArrowLeftIcon, CheckIcon, AlertIcon, LoaderIcon } from "@/components/ic
 import { HelpTooltip } from "@/components/tooltip";
 import { PositionPlayer } from "@/components/position-player";
 import { HotkeyRecorder } from "@/components/hotkey-recorder";
+import { ConfigTransfer } from "@/components/config-transfer";
+import { PluginsSection } from "@/components/plugins-section";
 
 type TestStatus =
   | { kind: "idle" }
@@ -171,7 +175,12 @@ function activeProfile(store: SettingsStore): StoredProfile {
 export default function SettingsPage() {
   const { t } = useT();
   const { store, timing, style, theme, uiLang, updateStore, updateTiming, updateStyle, updateTheme, updateUiLang } = useSettings();
+  const plugins = usePlugins();
   const profile = activeProfile(store);
+  const providers = useMemo(
+    () => mergeProviderPresets(PROVIDER_PRESETS, plugins.data),
+    [plugins.data]
+  );
 
   const [test, setTest] = useState<TestStatus>({ kind: "idle" });
   const [showKey, setShowKey] = useState(false);
@@ -187,9 +196,9 @@ export default function SettingsPage() {
 
   const handlePresetChange = useCallback(
     (presetId: string) => {
-      updateStore(updateActiveProfile(store, applyPreset(presetId, profile)));
+      updateStore(updateActiveProfile(store, applyPreset(presetId, profile, providers)));
     },
-    [profile, store, updateStore]
+    [profile, store, updateStore, providers]
   );
 
   const handleCreateProfile = useCallback(() => {
@@ -273,7 +282,7 @@ export default function SettingsPage() {
     return t("settings.provider.latency.slow");
   }
 
-  const selectedPreset = PROVIDER_PRESETS.find((p) => p.id === profile.presetId);
+  const selectedPreset = providers.find((p) => p.id === profile.presetId);
 
   return (
     <div className="min-h-full bg-background text-foreground">
@@ -386,7 +395,7 @@ export default function SettingsPage() {
                   onChange={(e) => handlePresetChange(e.target.value)}
                   className="w-full rounded-xl border border-card-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
                 >
-                  {PROVIDER_PRESETS.map((preset) => (
+                  {providers.map((preset) => (
                     <option key={preset.id} value={preset.id}>
                       {preset.label}
                     </option>
@@ -562,8 +571,15 @@ export default function SettingsPage() {
               </div>
 
               <HotkeyRecorder />
+              <ConfigTransfer />
             </div>
           </section>
+
+          <PluginsSection
+            data={plugins.data}
+            loading={plugins.loading}
+            onToggle={plugins.toggle}
+          />
 
           {/* Subtitle */}
           <section className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">

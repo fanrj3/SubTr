@@ -939,6 +939,8 @@ async function resolveBaseUrl() {
       PORT: String(port),
       HOSTNAME: "127.0.0.1",
       NODE_ENV: "production",
+      // Server-side plugins live in the app's userData dir in packaged builds.
+      SUBTR_PLUGINS_DIR: path.join(app.getPath("userData"), "plugins"),
     },
     stdio: "pipe",
     serviceName: "subtr-web",

@@ -1,0 +1,23 @@
+{
+  "id": "acme-translate",
+  "name": "Acme Translate",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "minAppVersion": "0.2.5",
+  "description": "Example declarative plugin: contributes an OpenAI-compatible provider preset and runs no code.",
+  "author": "Acme",
+  "homepage": "https://example.com/acme",
+  "capabilities": [],
+  "contributes": {
+    "providers": [
+      {
+        "id": "acme",
+        "label": "Acme Translate",
+        "baseURL": "https://api.acme.example/v1",
+        "defaultModel": "acme-translate-1",
+        "pricing": { "inPerM": 0.1, "outPerM": 0.4 },
+        "note": "Contributed by the acme-translate example plugin"
+      }
+    ]
+  }
+}

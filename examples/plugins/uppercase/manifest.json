@@ -1,0 +1,13 @@
+{
+  "id": "uppercase",
+  "name": "Uppercase",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "minAppVersion": "0.2.5",
+  "description": "Example plugin: uppercases the text before translation and the translation after it.",
+  "author": "SubTr",
+  "homepage": "https://github.com/subtr/subtr",
+  "entry": "index.cjs",
+  "capabilities": ["translate.transformInput", "translate.transformOutput"],
+  "streaming": "per-chunk"
+}

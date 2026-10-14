@@ -81,6 +81,11 @@ export type ProviderPreset = {
    */
   fastModeParams?: Record<string, unknown>;
   /**
+   * Estimated USD per 1M tokens for this preset's default model (models.dev, Oct 2026).
+   * Used by the local cost meter; omit = unknown/unmetered.
+   */
+  pricing?: { inPerM: number; outPerM: number; note?: string };
+  /**
    * Per-mode thinking/reasoning control parameters (populated after provider research).
    * null = the mode is unsupported for this preset (UI falls back to defaults + shows `note`).
    */

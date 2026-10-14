@@ -19,6 +19,7 @@ import {
 import { TopBar } from "./top-bar";
 import { Reader } from "./reader";
 import { SubtitleOverlay, type SubtitleState } from "./subtitle-overlay";
+import { StatusBar } from "./status-bar";
 
 const TARGET_LANG_KEY = "subtr.targetLang.v1";
 const DEFAULT_TARGET_LANG = "auto";
@@ -184,7 +185,7 @@ export function SubTrApp() {
   }, []);
 
   return (
-    <div className="flex min-h-full flex-col">
+    <div className="flex min-h-full flex-col pb-9">
       <TopBar
         mode={mode}
         onModeChange={handleModeChange}
@@ -197,6 +198,7 @@ export function SubTrApp() {
         state={subtitle}
         onDismiss={dismissSubtitle}
       />
+      <StatusBar />
     </div>
   );
 }

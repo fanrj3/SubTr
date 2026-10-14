@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type MutableRefObject } from "react";
-import { XIcon, LoaderIcon, AlertIcon, CheckIcon } from "./icons";
+import { XIcon, LoaderIcon, AlertIcon, CheckIcon, LockIcon } from "./icons";
 import { getTextMetrics, useT } from "@/lib/client";
 import { isDesktopMode } from "@/lib/client/desktop";
 import {
@@ -124,6 +124,7 @@ export function SubtitleOverlay({
   const [dragPos, setDragPos] = useState<{ xPct: number; yPct: number } | null>(null);
   const [showGuides, setShowGuides] = useState({ x: false, y: false });
   const dragRef = useRef(false);
+  const [pinned, setPinned] = useState(false);
 
   // Measure card and viewport so we can clamp the center position to keep the card on-screen.
   const [metrics, setMetrics] = useState({
@@ -315,6 +316,12 @@ export function SubtitleOverlay({
     }
   }, [state.kind]);
 
+  // Pinning is per-subtitle; reset when a new one appears.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPinned(false);
+  }, [original]);
+
   // Cancel an in-flight exit only when a genuinely NEW subtitle arrives during
   // the exit; start exit when parent switches to idle.
   useEffect(() => {
@@ -466,19 +473,22 @@ export function SubtitleOverlay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [original, isControlled]);
 
+  function pin(showHint: boolean) {
+    if (pinned) return;
+    setPinned(true);
+    interruptedRef.current = true;
+    phaseRef.current = "interrupted";
+    if (showHint) setShowEscHint(true);
+    onRequestEscArmed?.(true);
+    // Clear auto-hide timers.
+    if (timersRef.current.final) clearTimeout(timersRef.current.final);
+    if (timersRef.current.static) clearTimeout(timersRef.current.static);
+  }
+
   function handleWheel(e: React.WheelEvent) {
     if (state.kind === "error" || state.kind === "loading" || state.kind === "dictionary") return;
     if (e.deltaY === 0) return;
-
-    if (!interruptedRef.current) {
-      interruptedRef.current = true;
-      phaseRef.current = "interrupted";
-      setShowEscHint(true);
-      onRequestEscArmed?.(true);
-      // Clear auto-hide timers.
-      if (timersRef.current.final) clearTimeout(timersRef.current.final);
-      if (timersRef.current.static) clearTimeout(timersRef.current.static);
-    }
+    pin(true);
   }
 
   function handleDismiss() {
@@ -503,6 +513,8 @@ export function SubtitleOverlay({
 
   const hasText = rawText.trim().length > 0;
   const mainText = hasText ? rawText : fallbackText;
+  const isShort = isDictionary || mainText.trim().length <= 40;
+  const contentPad = isShort ? "px-10" : "pr-1";
 
   if (state.kind === "idle" && !isExiting) return null;
 
@@ -570,6 +582,10 @@ export function SubtitleOverlay({
           testMode.onDragStart();
           setDragPos({ xPct: style.xPct, yPct: style.yPct });
         }}
+        onClick={() => {
+          if (testMode?.enabled) return;
+          pin(false);
+        }}
         onMouseEnter={() => onRequestInteractive?.(true)}
         onMouseLeave={() => onRequestInteractive?.(false)}
         onWheel={handleWheel}
@@ -584,7 +600,10 @@ export function SubtitleOverlay({
           <button
             type="button"
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={testMode.onConfirm}
+            onClick={(e) => {
+              e.stopPropagation();
+              testMode.onConfirm();
+            }}
             className="absolute right-9 top-2 rounded-lg p-1.5 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
             style={{ color: dimmedColor }}
             aria-label={t("subtitle.confirmPosition")}
@@ -596,7 +615,10 @@ export function SubtitleOverlay({
         <button
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
-          onClick={handleDismiss}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDismiss();
+          }}
           className="absolute right-2 top-2 rounded-lg p-1.5 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
           style={{ color: dimmedColor }}
           aria-label={t("subtitle.dismiss")}
@@ -605,7 +627,7 @@ export function SubtitleOverlay({
         </button>
 
         <p
-          className="mb-1 line-clamp-2 text-xs leading-relaxed"
+          className="mb-1 line-clamp-2 px-10 text-xs leading-relaxed"
           style={{ color: dimmedColor }}
         >
           {state.kind !== "idle" ? state.original : ""}
@@ -637,7 +659,7 @@ export function SubtitleOverlay({
         {isDictionary && state.kind === "dictionary" && (
           <div
             ref={viewportRef}
-            className="subtr-scroll max-h-[200px] overflow-y-auto pr-1 text-left"
+            className={`subtr-scroll max-h-[200px] overflow-y-auto text-left ${contentPad}`}
           >
             <div ref={contentRef} className="space-y-1.5">
               <p className="text-lg font-semibold leading-tight tracking-wide">
@@ -660,7 +682,7 @@ export function SubtitleOverlay({
         {!isLoading && !isError && !isDictionary && (
           <div
             ref={viewportRef}
-            className="subtr-scroll max-h-[200px] overflow-y-auto pr-1 text-left"
+            className={`subtr-scroll max-h-[200px] overflow-y-auto text-left ${contentPad}`}
           >
             <div ref={contentRef}>
               {state.kind === "streaming" && !hasText ? (
@@ -684,14 +706,25 @@ export function SubtitleOverlay({
           </div>
         )}
 
-        {!controlledPlay && (
-          <HoldProgress
-            phaseRef={phaseRef}
-            timingRef={timingRef}
-            mountStartTimeRef={mountStartTimeRef}
-            finalStartTimeRef={finalStartTimeRef}
-            textColor={style.textColor}
-          />
+        {pinned ? (
+          <div
+            className="pointer-events-none absolute bottom-2 right-2 flex h-4 w-4 items-center justify-center"
+            style={{ color: dimmedColor }}
+            role="img"
+            aria-label={t("subtitle.pinned")}
+          >
+            <LockIcon className="h-3.5 w-3.5" />
+          </div>
+        ) : (
+          !controlledPlay && (
+            <HoldProgress
+              phaseRef={phaseRef}
+              timingRef={timingRef}
+              mountStartTimeRef={mountStartTimeRef}
+              finalStartTimeRef={finalStartTimeRef}
+              textColor={style.textColor}
+            />
+          )
         )}
       </div>
     </div>
