@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useT } from "@/lib/client";
 import {
   applyImportBundle,
@@ -11,6 +11,7 @@ import {
   type ConfigPayload,
   type ImportBundle,
 } from "@/lib/client";
+import { SettingsDialog } from "./settings-ui";
 
 type Mode = "export" | "import" | "confirm" | null;
 
@@ -34,15 +35,6 @@ export function ConfigTransfer() {
     setError(null);
     setBusy(false);
   }
-
-  useEffect(() => {
-    if (!mode) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape" && !busy) close();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [mode, busy]);
 
   async function handleExport() {
     if (passphrase.length < 8) {
@@ -112,152 +104,152 @@ export function ConfigTransfer() {
     }
   }
 
+  const passField = (
+    <div className="flex items-center gap-2">
+      <input
+        type={showPass ? "text" : "password"}
+        value={passphrase}
+        onChange={(e) => setPassphrase(e.target.value)}
+        placeholder={t("settings.app.config.passphrase")}
+        autoFocus
+        className="w-full rounded-lg border border-card-border bg-background px-2.5 py-2 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+      />
+      <button
+        type="button"
+        onClick={() => setShowPass((s) => !s)}
+        className="shrink-0 rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
+      >
+        {showPass ? t("settings.app.config.hide") : t("settings.app.config.show")}
+      </button>
+    </div>
+  );
+
+  const cancelButton = (
+    <button
+      type="button"
+      onClick={close}
+      disabled={busy}
+      className="rounded-lg border border-card-border bg-background px-3 py-1.5 text-[13px] font-medium transition-colors hover:bg-black/5 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
+    >
+      {t("settings.app.config.cancel")}
+    </button>
+  );
+
   return (
-    <div className="space-y-2">
-      <label className="block text-sm font-medium">
-        {t("settings.app.config.export")} / {t("settings.app.config.import")}
-      </label>
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => {
-            close();
-            setMode("export");
-          }}
-          className="rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
-        >
-          {t("settings.app.config.export")}
-        </button>
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
-        >
-          {t("settings.app.config.import")}
-        </button>
+    <div className="flex flex-wrap gap-2">
+      <button
+        type="button"
+        onClick={() => {
+          close();
+          setMode("export");
+        }}
+        className="rounded-lg border border-card-border bg-background px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
+      >
+        {t("settings.app.config.export")}
+      </button>
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        className="rounded-lg border border-card-border bg-background px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
+      >
+        {t("settings.app.config.import")}
+      </button>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) void handleFile(file);
+        }}
+      />
+
+      <SettingsDialog
+        open={mode === "export"}
+        onOpenChange={(open) => {
+          if (!open && !busy) close();
+        }}
+        title={t("settings.app.config.exportTitle")}
+        description={t("settings.app.config.encryptNote")}
+        footer={
+          <>
+            {cancelButton}
+            <button
+              type="button"
+              onClick={() => void handleExport()}
+              disabled={busy}
+              className="rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-accent/90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {busy
+                ? t("settings.app.config.working")
+                : t("settings.app.config.exportAction")}
+            </button>
+          </>
+        }
+      >
+        {passField}
         <input
-          ref={fileInputRef}
-          type="file"
-          accept="application/json,.json"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            e.target.value = "";
-            if (file) void handleFile(file);
-          }}
+          type={showPass ? "text" : "password"}
+          value={confirmPassphrase}
+          onChange={(e) => setConfirmPassphrase(e.target.value)}
+          placeholder={t("settings.app.config.confirmPassphrase")}
+          className="w-full rounded-lg border border-card-border bg-background px-2.5 py-2 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
         />
-      </div>
+        {error && <p className="text-xs text-danger">{error}</p>}
+      </SettingsDialog>
 
-      {mode && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-          onClick={() => {
-            if (!busy) close();
-          }}
-        >
-          <div
-            className="w-full max-w-sm rounded-2xl border border-card-border bg-card p-5 shadow-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="mb-3 text-base font-semibold tracking-tight">
-              {mode === "export"
-                ? t("settings.app.config.exportTitle")
-                : mode === "import"
-                  ? t("settings.app.config.importTitle")
-                  : t("settings.app.config.confirmTitle")}
-            </h3>
+      <SettingsDialog
+        open={mode === "import"}
+        onOpenChange={(open) => {
+          if (!open && !busy) close();
+        }}
+        title={t("settings.app.config.importTitle")}
+        description={t("settings.app.config.importNote")}
+        footer={
+          <>
+            {cancelButton}
+            <button
+              type="button"
+              onClick={() => void handleImport()}
+              disabled={busy}
+              className="rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-accent/90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {busy
+                ? t("settings.app.config.working")
+                : t("settings.app.config.importAction")}
+            </button>
+          </>
+        }
+      >
+        {passField}
+        {error && <p className="text-xs text-danger">{error}</p>}
+      </SettingsDialog>
 
-            {mode === "confirm" ? (
-              <>
-                <p className="mb-4 text-sm leading-relaxed text-muted">
-                  {t("settings.app.config.confirmBody")}
-                </p>
-                <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={close}
-                    disabled={busy}
-                    className="rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
-                  >
-                    {t("settings.app.config.cancel")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleConfirm()}
-                    disabled={busy}
-                    className="rounded-xl bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/90 disabled:opacity-50"
-                  >
-                    {busy ? t("settings.app.config.working") : t("settings.app.config.replace")}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <p className="mb-3 text-xs leading-relaxed text-muted">
-                  {mode === "export"
-                    ? t("settings.app.config.encryptNote")
-                    : t("settings.app.config.importNote")}
-                </p>
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type={showPass ? "text" : "password"}
-                      value={passphrase}
-                      onChange={(e) => setPassphrase(e.target.value)}
-                      placeholder={t("settings.app.config.passphrase")}
-                      autoFocus
-                      className="w-full rounded-xl border border-card-border bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPass((s) => !s)}
-                      className="shrink-0 rounded-lg px-2 py-1 text-xs text-muted transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5"
-                    >
-                      {showPass
-                        ? t("settings.app.config.hide")
-                        : t("settings.app.config.show")}
-                    </button>
-                  </div>
-                  {mode === "export" && (
-                    <input
-                      type={showPass ? "text" : "password"}
-                      value={confirmPassphrase}
-                      onChange={(e) => setConfirmPassphrase(e.target.value)}
-                      placeholder={t("settings.app.config.confirmPassphrase")}
-                      className="w-full rounded-xl border border-card-border bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-                    />
-                  )}
-                </div>
-
-                {error && <p className="mt-3 text-xs text-danger">{error}</p>}
-
-                <div className="mt-4 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={close}
-                    disabled={busy}
-                    className="rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
-                  >
-                    {t("settings.app.config.cancel")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void (mode === "export" ? handleExport() : handleImport())}
-                    disabled={busy}
-                    className="rounded-xl bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/90 disabled:opacity-50"
-                  >
-                    {busy
-                      ? t("settings.app.config.working")
-                      : mode === "export"
-                        ? t("settings.app.config.exportAction")
-                        : t("settings.app.config.importAction")}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      <SettingsDialog
+        open={mode === "confirm"}
+        onOpenChange={(open) => {
+          if (!open && !busy) close();
+        }}
+        title={t("settings.app.config.confirmTitle")}
+        description={t("settings.app.config.confirmBody")}
+        footer={
+          <>
+            {cancelButton}
+            <button
+              type="button"
+              onClick={() => void handleConfirm()}
+              disabled={busy}
+              className="rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-accent/90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {busy
+                ? t("settings.app.config.working")
+                : t("settings.app.config.replace")}
+            </button>
+          </>
+        }
+      />
     </div>
   );
 }

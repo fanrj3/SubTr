@@ -1,6 +1,6 @@
 {
   "name": "subtr",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "private": true,
   "main": "desktop/main.cjs",
   "scripts": {
@@ -19,6 +19,7 @@
     "dist:linux": "electron-builder --linux AppImage"
   },
   "dependencies": {
+    "@base-ui/react": "^1.9.0",
     "fflate": "^0.8.3",
     "next": "16.4.0",
     "react": "19.3.0",

@@ -1,3 +1,4 @@
+import { APP_VERSION } from "@/lib/version";
 import { readStorage, writeStorage } from "./storage";
 import { notifyStorageKey } from "./use-local-storage";
 import {
@@ -28,7 +29,6 @@ export const TARGET_LANG_KEY = "subtr.targetLang.v1";
 export const DEFAULT_TARGET_LANG = "auto";
 
 export const CONFIG_VERSION = 1 as const;
-export const APP_VERSION = "0.2.5";
 export const PBKDF2_ITERATIONS = 310000;
 
 export type EncryptedValue = {

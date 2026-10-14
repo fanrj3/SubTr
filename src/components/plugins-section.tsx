@@ -14,6 +14,7 @@ import {
 } from "@/lib/client";
 import { LoaderIcon } from "./icons";
 import { PluginPanelFrame } from "./plugin-panel-frame";
+import { SettingsDialog, SettingsSwitch } from "./settings-ui";
 
 type PluginsSectionProps = {
   data: PluginsResponse | null;
@@ -398,18 +399,15 @@ export function PluginsSection({
                           <span className="min-w-0 truncate text-muted">
                             {t("settings.plugins.showOnHome", { title: panel.title })}
                           </span>
-                          <input
-                            type="checkbox"
+                          <SettingsSwitch
                             checked={panel.visible !== false}
                             disabled={busy}
-                            onChange={(e) =>
-                              void togglePanelVisibility(
-                                plugin,
-                                panel.id,
-                                e.target.checked
-                              )
+                            aria-label={t("settings.plugins.showOnHome", {
+                              title: panel.title,
+                            })}
+                            onCheckedChange={(checked) =>
+                              void togglePanelVisibility(plugin, panel.id, checked)
                             }
-                            className="shrink-0 accent-accent"
                           />
                         </label>
                       ))}
@@ -422,168 +420,140 @@ export function PluginsSection({
 
       {error && <p className="mt-3 text-xs text-danger">{error}</p>}
 
-      {showOverwrite && pendingFile && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-          onClick={() => {
-            if (!importing) {
-              setShowOverwrite(false);
-              setPendingFile(null);
-            }
-          }}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl border border-card-border bg-card p-5 shadow-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="mb-2 text-base font-semibold tracking-tight">
-              {t("settings.plugins.importExistsTitle")}
-            </h3>
-            <p className="mb-4 text-sm leading-relaxed text-muted">
-              {t("settings.plugins.importExistsBody")}
+      <SettingsDialog
+        open={showOverwrite && !!pendingFile}
+        onOpenChange={(open) => {
+          if (!open && !importing) {
+            setShowOverwrite(false);
+            setPendingFile(null);
+          }
+        }}
+        title={t("settings.plugins.importExistsTitle")}
+        description={t("settings.plugins.importExistsBody")}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setShowOverwrite(false);
+                setPendingFile(null);
+              }}
+              disabled={importing}
+              className="rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
+            >
+              {t("settings.plugins.cancel")}
+            </button>
+            <button
+              type="button"
+              onClick={() => pendingFile && void upload(pendingFile, true)}
+              disabled={importing}
+              className="rounded-xl bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/90 disabled:opacity-50"
+            >
+              {importing
+                ? t("settings.plugins.importing")
+                : t("settings.plugins.overwrite")}
+            </button>
+          </>
+        }
+      />
+
+      <SettingsDialog
+        open={!!uninstallTarget}
+        onOpenChange={(open) => {
+          if (!open && !uninstalling) setUninstallTarget(null);
+        }}
+        title={
+          uninstallTarget
+            ? t("settings.plugins.uninstallTitle", { name: uninstallTarget.name })
+            : ""
+        }
+        description={t("settings.plugins.uninstallBody")}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setUninstallTarget(null)}
+              disabled={uninstalling}
+              className="rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
+            >
+              {t("settings.plugins.cancel")}
+            </button>
+            <button
+              type="button"
+              onClick={() => void confirmUninstall()}
+              disabled={uninstalling}
+              className="rounded-xl bg-danger px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-danger/90 disabled:opacity-50"
+            >
+              {uninstalling
+                ? t("settings.plugins.uninstalling")
+                : t("settings.plugins.uninstall")}
+            </button>
+          </>
+        }
+      />
+
+      <SettingsDialog
+        open={!!consentPlugin}
+        onOpenChange={(open) => {
+          if (!open && !busy) setConsentPlugin(null);
+        }}
+        title={t("settings.plugins.consent.title")}
+        description={t("settings.plugins.consent.security")}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setConsentPlugin(null)}
+              disabled={busy}
+              className="rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
+            >
+              {t("settings.plugins.consent.cancel")}
+            </button>
+            <button
+              type="button"
+              onClick={() => void confirmEnable()}
+              disabled={busy}
+              className="rounded-xl bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/90 disabled:opacity-50"
+            >
+              {busy
+                ? t("settings.app.config.working")
+                : t("settings.plugins.consent.enable")}
+            </button>
+          </>
+        }
+      >
+        {consentPlugin && consentPlugin.capabilities.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-foreground">
+              {t("settings.plugins.consent.capabilities")}
             </p>
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowOverwrite(false);
-                  setPendingFile(null);
-                }}
-                disabled={importing}
-                className="rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
+            {consentPlugin.capabilities.map((capability) => (
+              <label
+                key={capability}
+                className="flex items-start gap-2 rounded-lg border border-card-border bg-background p-2 text-xs"
               >
-                {t("settings.plugins.cancel")}
-              </button>
-              <button
-                type="button"
-                onClick={() => void upload(pendingFile, true)}
-                disabled={importing}
-                className="rounded-xl bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/90 disabled:opacity-50"
-              >
-                {importing
-                  ? t("settings.plugins.importing")
-                  : t("settings.plugins.overwrite")}
-              </button>
-            </div>
+                <input
+                  type="checkbox"
+                  checked={granted[capability] ?? true}
+                  onChange={(e) =>
+                    setGranted((prev) => ({
+                      ...prev,
+                      [capability]: e.target.checked,
+                    }))
+                  }
+                  className="mt-0.5 accent-accent"
+                />
+                <span>
+                  {isPluginCapability(capability)
+                    ? capabilityLabel(capability, t)
+                    : capability}
+                </span>
+              </label>
+            ))}
           </div>
-        </div>
-      )}
-
-      {uninstallTarget && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-          onClick={() => {
-            if (!uninstalling) setUninstallTarget(null);
-          }}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl border border-card-border bg-card p-5 shadow-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="mb-2 text-base font-semibold tracking-tight">
-              {t("settings.plugins.uninstallTitle", { name: uninstallTarget.name })}
-            </h3>
-            <p className="mb-4 text-sm leading-relaxed text-muted">
-              {t("settings.plugins.uninstallBody")}
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setUninstallTarget(null)}
-                disabled={uninstalling}
-                className="rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
-              >
-                {t("settings.plugins.cancel")}
-              </button>
-              <button
-                type="button"
-                onClick={() => void confirmUninstall()}
-                disabled={uninstalling}
-                className="rounded-xl bg-danger px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-danger/90 disabled:opacity-50"
-              >
-                {uninstalling
-                  ? t("settings.plugins.uninstalling")
-                  : t("settings.plugins.uninstall")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {consentPlugin && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
-          onClick={() => {
-            if (!busy) setConsentPlugin(null);
-          }}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl border border-card-border bg-card p-5 shadow-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="mb-2 text-base font-semibold tracking-tight">
-              {t("settings.plugins.consent.title")}
-            </h3>
-            <p className="mb-3 text-xs leading-relaxed text-muted">
-              {t("settings.plugins.consent.security")}
-            </p>
-
-            {consentPlugin.capabilities.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-foreground">
-                  {t("settings.plugins.consent.capabilities")}
-                </p>
-                {consentPlugin.capabilities.map((capability) => (
-                  <label
-                    key={capability}
-                    className="flex items-start gap-2 rounded-lg border border-card-border bg-background p-2 text-xs"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={granted[capability] ?? true}
-                      onChange={(e) =>
-                        setGranted((prev) => ({
-                          ...prev,
-                          [capability]: e.target.checked,
-                        }))
-                      }
-                      className="mt-0.5 accent-accent"
-                    />
-                    <span>
-                      {isPluginCapability(capability)
-                        ? capabilityLabel(capability, t)
-                        : capability}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            )}
-
-            {error && <p className="mt-3 text-xs text-danger">{error}</p>}
-
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setConsentPlugin(null)}
-                disabled={busy}
-                className="rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/5"
-              >
-                {t("settings.plugins.consent.cancel")}
-              </button>
-              <button
-                type="button"
-                onClick={() => void confirmEnable()}
-                disabled={busy}
-                className="rounded-xl bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/90 disabled:opacity-50"
-              >
-                {busy
-                  ? t("settings.app.config.working")
-                  : t("settings.plugins.consent.enable")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        )}
+        {error && <p className="text-xs text-danger">{error}</p>}
+      </SettingsDialog>
     </section>
   );
 }

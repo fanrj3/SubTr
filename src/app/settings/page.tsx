@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import { Tabs } from "@base-ui/react/tabs";
+import { APP_VERSION } from "@/lib/version";
 import { PROVIDER_PRESETS } from "@/lib/presets";
 import type {
   SettingsStore,
@@ -48,12 +50,68 @@ import { PositionPlayer } from "@/components/position-player";
 import { HotkeyRecorder } from "@/components/hotkey-recorder";
 import { ConfigTransfer } from "@/components/config-transfer";
 import { PluginsSection } from "@/components/plugins-section";
+import {
+  Advanced,
+  SettingsRow,
+  SettingsRowFull,
+  SettingsSelect,
+  SettingsSlider,
+  SettingsSurface,
+} from "@/components/settings-ui";
 
 type TestStatus =
   | { kind: "idle" }
   | { kind: "testing" }
   | { kind: "success"; latencyMs: number; reply?: string }
   | { kind: "error"; message: string };
+
+function RailIcon({ name }: { name: string }) {
+  const common = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    className: "h-4 w-4 shrink-0",
+    "aria-hidden": true,
+  };
+  switch (name) {
+    case "cloud":
+      return (
+        <svg {...common}>
+          <path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.2 9.5 4 4 0 0 0 7 19Z" />
+        </svg>
+      );
+    case "user":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4 21a8 8 0 0 1 16 0" />
+        </svg>
+      );
+    case "captions":
+      return (
+        <svg {...common}>
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="M7 12h4m3 0h3M7 15h2m3 0h5" />
+        </svg>
+      );
+    case "puzzle":
+      return (
+        <svg {...common}>
+          <path d="M9 4a2 2 0 0 1 4 0v1h2a2 2 0 0 1 2 2v2h1a2 2 0 0 1 0 4h-1v2a2 2 0 0 1-2 2h-2v1a2 2 0 0 1-4 0v-1H7a2 2 0 0 1-2-2v-2H4a2 2 0 0 1 0-4h1V7a2 2 0 0 1 2-2h2Z" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+        </svg>
+      );
+  }
+}
 
 function useThemeSetting(): [Theme, (theme: Theme) => void] {
   const theme = useSyncExternalStore(
@@ -189,6 +247,10 @@ export default function SettingsPage() {
   const [test, setTest] = useState<TestStatus>({ kind: "idle" });
   const [showKey, setShowKey] = useState(false);
   const [editingName, setEditingName] = useState<string | null>(null);
+  const [section, setSection] = useLocalStorage<string>(
+    "subtr.settings.section.v1",
+    "provider"
+  );
 
   const handleProfileChange = useCallback(
     (patch: Partial<StoredProfile>) => {
@@ -288,10 +350,20 @@ export default function SettingsPage() {
 
   const selectedPreset = providers.find((p) => p.id === profile.presetId);
 
+  const railItems = [
+    { group: t("settings.nav.group.translate"), value: "provider", label: t("settings.provider.title"), icon: "cloud" },
+    { group: null, value: "profiles", label: t("settings.profiles.title"), icon: "user" },
+    { group: t("settings.nav.group.subtitle"), value: "subtitle", label: t("settings.subtitle.title"), icon: "captions" },
+    { group: t("settings.nav.group.plugins"), value: "plugins", label: t("settings.plugins.title"), icon: "puzzle" },
+    { group: t("settings.nav.group.app"), value: "app", label: t("settings.app.title"), icon: "gear" },
+  ] as const;
+  const paneTitle =
+    railItems.find((item) => item.value === section)?.label ?? t("settings.title");
+
   return (
     <div className="min-h-full bg-background text-foreground">
       <header className="sticky top-0 z-30 border-b border-card-border bg-background/80 backdrop-blur-md">
-        <div className="mx-auto flex h-16 min-w-0 max-w-3xl items-center gap-3 px-4 sm:px-6">
+        <div className="mx-auto flex h-14 min-w-0 max-w-6xl items-center gap-3 px-4 sm:px-6">
           <Link
             href="/"
             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
@@ -299,29 +371,63 @@ export default function SettingsPage() {
             <ArrowLeftIcon className="h-4 w-4" />
             {t("settings.back")}
           </Link>
-          <h1 className="truncate text-lg font-semibold tracking-tight">{t("settings.title")}</h1>
+          <h1 className="truncate text-sm font-semibold tracking-tight">{t("settings.title")}</h1>
         </div>
       </header>
 
-      <main className="mx-auto w-full min-w-0 max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
-        <div className="space-y-6">
-          {/* Profiles */}
-          <section className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
-            <h2 className="mb-4 text-base font-semibold tracking-tight">{t("settings.profiles.title")}</h2>
-            <div className="space-y-2">
-              {store.profiles.map((p) => {
-                const isActive = p.id === store.activeProfileId;
-                const isEditing = editingName === p.id;
-                return (
-                  <div
-                    key={p.id}
-                    className={`flex min-w-0 flex-wrap items-center gap-2 rounded-xl border px-3 py-2.5 transition-colors ${
-                      isActive
-                        ? "border-accent/40 bg-accent-dim"
-                        : "border-card-border bg-background"
-                    }`}
-                  >
-                    {isEditing ? (
+      <Tabs.Root
+        value={section}
+        onValueChange={(value) => setSection(value as string)}
+        orientation="vertical"
+        className="mx-auto flex w-full max-w-6xl items-start gap-4 px-2 py-4 sm:gap-6 sm:px-6 sm:py-6"
+      >
+        <Tabs.List
+          aria-label={t("settings.title")}
+          className="sticky top-16 z-20 flex w-12 shrink-0 flex-col gap-0.5 min-[700px]:w-52"
+        >
+          {railItems.map((item, index) => (
+            <div key={item.value} className="contents">
+              {item.group && (
+                <div className="hidden px-2.5 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-muted min-[700px]:block">
+                  {item.group}
+                </div>
+              )}
+              <Tabs.Tab
+                value={item.value}
+                title={item.label}
+                aria-label={item.label}
+                className="flex h-9 items-center gap-2.5 rounded-[10px] px-2.5 text-left text-[13px] font-medium text-muted outline-none transition-colors hover:bg-black/5 focus-visible:ring-2 focus-visible:ring-accent data-[selected]:bg-accent-dim data-[selected]:text-foreground dark:hover:bg-white/5"
+              >
+                <RailIcon name={item.icon} />
+                <span className="hidden truncate min-[700px]:inline">{item.label}</span>
+              </Tabs.Tab>
+              {index === railItems.length - 1 && (
+                <div className="mt-auto hidden border-t border-card-border pt-3 min-[700px]:block">
+                  <p className="px-2.5 text-[11px] text-muted">SubTr</p>
+                  <p className="px-2.5 text-[11px] tabular-nums text-muted">v{APP_VERSION}</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </Tabs.List>
+
+        <main className="min-w-0 flex-1">
+          <div className="pointer-events-none sticky top-14 z-10 -mx-1 bg-gradient-to-b from-background via-background to-transparent px-1 pb-3 pt-1">
+            <h2 className="text-base font-semibold tracking-tight">{paneTitle}</h2>
+          </div>
+
+          <div className="space-y-4">
+            <Tabs.Panel value="profiles">
+          <SettingsSurface>
+            {store.profiles.map((p) => {
+              const isActive = p.id === store.activeProfileId;
+              const isEditing = editingName === p.id;
+              return (
+                <SettingsRow
+                  key={p.id}
+                  className={isActive ? "bg-accent-dim" : ""}
+                  title={
+                    isEditing ? (
                       <input
                         autoFocus
                         defaultValue={p.name}
@@ -332,255 +438,255 @@ export default function SettingsPage() {
                           }
                           if (e.key === "Escape") setEditingName(null);
                         }}
-                        className="flex-1 rounded-lg border border-card-border bg-background px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        className="w-full rounded-lg border border-card-border bg-background px-2 py-1 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent"
                       />
                     ) : (
-                      <>
+                      <span className="truncate">{p.name}</span>
+                    )
+                  }
+                  description={isActive ? t("settings.profiles.active") : undefined}
+                >
+                  {!isEditing && (
+                    <div className="flex items-center gap-1">
+                      {!isActive && (
                         <button
                           type="button"
                           onClick={() => handleSwitchProfile(p.id)}
-                          className="min-w-0 flex-1 truncate text-left text-sm font-medium"
+                          className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
                         >
-                          {p.name}
-                          {isActive && (
-                            <span className="ml-2 text-xs text-accent">{t("settings.profiles.active")}</span>
-                          )}
+                          {t("settings.profiles.setActive")}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingName(p.id)}
-                          className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5"
-                        >
-                          {t("settings.profiles.rename")}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteProfile(p.id)}
-                          disabled={store.profiles.length <= 1}
-                          className="rounded-md px-2 py-1 text-xs text-danger transition-colors hover:bg-danger-soft disabled:opacity-40"
-                        >
-                          {t("settings.profiles.delete")}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleDuplicateProfile}
-                className="rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
-              >
-                {t("settings.profiles.duplicate")}
-              </button>
-              <button
-                type="button"
-                onClick={handleCreateProfile}
-                className="rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
-              >
-                {t("settings.profiles.new")}
-              </button>
-            </div>
-            <div className="mt-4 border-t border-card-border pt-4">
-              <ConfigTransfer />
-            </div>
-          </section>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setEditingName(p.id)}
+                        className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
+                      >
+                        {t("settings.profiles.rename")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteProfile(p.id)}
+                        disabled={store.profiles.length <= 1}
+                        className="rounded-md px-2 py-1 text-xs text-danger transition-colors hover:bg-danger-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+                      >
+                        {t("settings.profiles.delete")}
+                      </button>
+                    </div>
+                  )}
+                </SettingsRow>
+              );
+            })}
 
-          {/* Provider */}
-          <section className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
-            <h2 className="mb-4 text-base font-semibold tracking-tight">{t("settings.provider.title")}</h2>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label htmlFor="preset" className="block text-sm font-medium">
-                  {t("settings.provider.provider")}
-                </label>
-                <select
-                  id="preset"
-                  value={profile.presetId}
-                  onChange={(e) => handlePresetChange(e.target.value)}
-                  className="w-full rounded-xl border border-card-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+            <SettingsRow title={t("settings.profiles.new")}>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={handleDuplicateProfile}
+                  className="rounded-lg border border-card-border bg-background px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
                 >
-                  {providers.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-                {selectedPreset?.note && (
-                  <p className="text-xs text-muted">{selectedPreset.note}</p>
-                )}
+                  {t("settings.profiles.duplicate")}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateProfile}
+                  className="rounded-lg border border-card-border bg-background px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
+                >
+                  {t("settings.profiles.new")}
+                </button>
               </div>
+            </SettingsRow>
 
-              <div className="space-y-2">
-                <label htmlFor="apiKey" className="block text-sm font-medium">
-                  {t("settings.provider.apiKey")}
-                </label>
-                <div className="relative">
-                  <input
-                    id="apiKey"
-                    type={showKey ? "text" : "password"}
-                    value={profile.apiKey}
-                    onChange={(e) => handleProfileChange({ apiKey: e.target.value })}
-                    placeholder="sk-..."
-                    className="w-full rounded-xl border border-card-border bg-background px-3 py-2.5 pr-10 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowKey((s) => !s)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
-                    aria-label={showKey ? t("settings.provider.hide") : t("settings.provider.show")}
-                  >
-                    {showKey ? t("settings.provider.hide") : t("settings.provider.show")}
-                  </button>
-                </div>
-              </div>
+            <SettingsRowFull
+              title={t("settings.profiles.config")}
+              description={t("settings.app.config.encryptNote")}
+            >
+              <ConfigTransfer />
+            </SettingsRowFull>
+          </SettingsSurface>
+            </Tabs.Panel>
 
-              <div className="space-y-2">
-                <label htmlFor="baseURL" className="block text-sm font-medium">
-                  {t("settings.provider.baseUrl")}
-                </label>
+            <Tabs.Panel value="provider">
+          {/* Provider */}
+          <SettingsSurface>
+            <SettingsRow
+              title={t("settings.provider.provider")}
+              description={selectedPreset?.note}
+            >
+              <SettingsSelect
+                value={profile.presetId}
+                onChange={handlePresetChange}
+                options={providers.map((preset) => ({
+                  value: preset.id,
+                  label: preset.label,
+                }))}
+                ariaLabel={t("settings.provider.provider")}
+              />
+            </SettingsRow>
+
+            <SettingsRowFull
+              title={t("settings.provider.baseUrl")}
+              description={t("settings.provider.securityNote")}
+            >
+              <input
+                id="baseURL"
+                type="url"
+                value={profile.baseURL}
+                onChange={(e) => handleProfileChange({ baseURL: e.target.value })}
+                placeholder="https://api.openai.com/v1"
+                className="w-full rounded-lg border border-card-border bg-background px-2.5 py-2 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+              />
+            </SettingsRowFull>
+
+            <SettingsRowFull title={t("settings.provider.apiKey")}>
+              <div className="relative">
                 <input
-                  id="baseURL"
-                  type="url"
-                  value={profile.baseURL}
-                  onChange={(e) => handleProfileChange({ baseURL: e.target.value })}
-                  placeholder="https://api.openai.com/v1"
-                  className="w-full rounded-xl border border-card-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+                  id="apiKey"
+                  type={showKey ? "text" : "password"}
+                  value={profile.apiKey}
+                  onChange={(e) => handleProfileChange({ apiKey: e.target.value })}
+                  placeholder="sk-..."
+                  className="w-full rounded-lg border border-card-border bg-background px-2.5 py-2 pr-16 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowKey((s) => !s)}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
+                  aria-label={showKey ? t("settings.provider.hide") : t("settings.provider.show")}
+                >
+                  {showKey ? t("settings.provider.hide") : t("settings.provider.show")}
+                </button>
               </div>
+            </SettingsRowFull>
 
-              <div className="space-y-2">
-                <label htmlFor="model" className="block text-sm font-medium">
-                  {t("settings.provider.model")}
-                </label>
-                <input
-                  id="model"
-                  type="text"
-                  value={profile.model}
-                  onChange={(e) => handleProfileChange({ model: e.target.value })}
-                  placeholder="gpt-5-mini"
-                  className="w-full rounded-xl border border-card-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-                />
-              </div>
+            <SettingsRowFull title={t("settings.provider.model")}>
+              <input
+                id="model"
+                type="text"
+                value={profile.model}
+                onChange={(e) => handleProfileChange({ model: e.target.value })}
+                placeholder="gpt-5-mini"
+                className="w-full rounded-lg border border-card-border bg-background px-2.5 py-2 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+              />
+            </SettingsRowFull>
 
-              <div className="space-y-2">
-                <label htmlFor="thinking" className="block text-sm font-medium">
+            <SettingsRow
+              title={
+                <span className="inline-flex items-center gap-1">
                   {t("settings.provider.thinking")}
                   <HelpTooltip>{t("settings.provider.thinking.help")}</HelpTooltip>
-                </label>
-                <select
-                  id="thinking"
+                </span>
+              }
+              description={t("settings.provider.thinking.help")}
+            >
+              <div className="flex flex-col items-end gap-1">
+                <SettingsSelect
                   value={profile.thinkingMode ?? "preset"}
-                  onChange={(e) =>
+                  onChange={(value) =>
                     handleProfileChange({
-                      thinkingMode: e.target.value as StoredProfile["thinkingMode"],
+                      thinkingMode: value as StoredProfile["thinkingMode"],
                     })
                   }
-                  className="w-full rounded-xl border border-card-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                  <option value="preset">{t("settings.provider.thinking.preset")}</option>
-                  <option value="off">{t("settings.provider.thinking.off")}</option>
-                  <option value="low">{t("settings.provider.thinking.low")}</option>
-                  <option value="medium">{t("settings.provider.thinking.medium")}</option>
-                  <option value="high">{t("settings.provider.thinking.high")}</option>
-                </select>
-                <p className="text-xs text-muted">
-                  {t("settings.provider.thinking.help")}
-                </p>
+                  options={[
+                    { value: "preset", label: t("settings.provider.thinking.preset") },
+                    { value: "off", label: t("settings.provider.thinking.off") },
+                    { value: "low", label: t("settings.provider.thinking.low") },
+                    { value: "medium", label: t("settings.provider.thinking.medium") },
+                    { value: "high", label: t("settings.provider.thinking.high") },
+                  ]}
+                  ariaLabel={t("settings.provider.thinking")}
+                />
                 <ThinkingNote preset={selectedPreset} mode={profile.thinkingMode} />
               </div>
+            </SettingsRow>
 
-              <div className="flex flex-wrap items-center gap-3 pt-1">
+            <SettingsRow title={t("settings.provider.testConnection")}>
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={handleTest}
                   disabled={test.kind === "testing"}
-                  className="inline-flex items-center gap-2 rounded-xl border border-card-border bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-black/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 dark:hover:bg-white/[0.03]"
+                  className="inline-flex items-center gap-2 rounded-lg border border-card-border bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 dark:hover:bg-white/[0.03]"
                 >
-                  {test.kind === "testing" && <LoaderIcon className="h-4 w-4" />}
+                  {test.kind === "testing" && <LoaderIcon className="h-3.5 w-3.5" />}
                   {t("settings.provider.testConnection")}
                 </button>
                 {test.kind === "success" && (
-                  <span className="inline-flex flex-wrap items-center gap-x-1.5 text-sm text-success">
-                    <CheckIcon className="h-4 w-4" />
+                  <span className="inline-flex flex-wrap items-center gap-x-1.5 text-xs text-success">
+                    <CheckIcon className="h-3.5 w-3.5" />
                     {test.reply
                       ? t("settings.provider.reply", { n: test.latencyMs, reply: test.reply })
                       : t("settings.provider.valid", { n: test.latencyMs })}
-                    <span className="text-xs opacity-80">{latencyFlavor(test.latencyMs)}</span>
+                    <span className="opacity-80">{latencyFlavor(test.latencyMs)}</span>
                   </span>
                 )}
                 {test.kind === "error" && (
-                  <span className="inline-flex items-center gap-1.5 text-sm text-danger">
-                    <AlertIcon className="h-4 w-4" />
+                  <span className="inline-flex items-center gap-1.5 text-xs text-danger">
+                    <AlertIcon className="h-3.5 w-3.5" />
                     {test.message}
                   </span>
                 )}
               </div>
+            </SettingsRow>
+          </SettingsSurface>
+            </Tabs.Panel>
 
-              <p className="text-xs leading-relaxed text-muted">
-                {t("settings.provider.securityNote")}
-              </p>
-            </div>
-          </section>
-
+            <Tabs.Panel value="app">
           {/* App */}
-          <section className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
-            <h2 className="mb-4 text-base font-semibold tracking-tight">{t("settings.app.title")}</h2>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="block text-sm font-medium">{t("settings.app.appearance")}</label>
-                <div className="flex min-w-0 flex-wrap gap-2 rounded-xl border border-card-border bg-background p-1">
-                  {([
-                    { value: "system", label: t("settings.app.theme.system") },
-                    { value: "light", label: t("settings.app.theme.light") },
-                    { value: "dark", label: t("settings.app.theme.dark") },
-                  ] as { value: Theme; label: string }[]).map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => updateTheme(option.value)}
-                      className={`min-w-0 flex-1 basis-24 truncate rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-                        theme === option.value
-                          ? "bg-accent text-white"
-                          : "hover:bg-black/5 dark:hover:bg-white/5"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
+          <SettingsSurface>
+            <SettingsRow title={t("settings.app.appearance")}>
+              <div className="flex min-w-0 flex-wrap gap-1 rounded-lg border border-card-border bg-background p-0.5">
+                {([
+                  { value: "system", label: t("settings.app.theme.system") },
+                  { value: "light", label: t("settings.app.theme.light") },
+                  { value: "dark", label: t("settings.app.theme.dark") },
+                ] as { value: Theme; label: string }[]).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => updateTheme(option.value)}
+                    className={`min-w-0 rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                      theme === option.value
+                        ? "bg-accent text-white"
+                        : "text-muted hover:bg-black/5 dark:hover:bg-white/5"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
+            </SettingsRow>
 
-              <div className="space-y-2">
-                <label className="block text-sm font-medium">{t("settings.app.language")}</label>
-                <div className="flex min-w-0 flex-wrap gap-2 rounded-xl border border-card-border bg-background p-1">
-                  {([
-                    { value: "system", label: t("settings.app.language.system") },
-                    { value: "zh-CN", label: t("settings.app.language.zhCN") },
-                    { value: "en", label: t("settings.app.language.en") },
-                  ] as { value: UILang; label: string }[]).map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => updateUiLang(option.value)}
-                      className={`min-w-0 flex-1 basis-24 truncate rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-                        uiLang === option.value
-                          ? "bg-accent text-white"
-                          : "hover:bg-black/5 dark:hover:bg-white/5"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
+            <SettingsRow title={t("settings.app.language")}>
+              <div className="flex min-w-0 flex-wrap gap-1 rounded-lg border border-card-border bg-background p-0.5">
+                {([
+                  { value: "system", label: t("settings.app.language.system") },
+                  { value: "zh-CN", label: t("settings.app.language.zhCN") },
+                  { value: "en", label: t("settings.app.language.en") },
+                ] as { value: UILang; label: string }[]).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => updateUiLang(option.value)}
+                    className={`min-w-0 rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                      uiLang === option.value
+                        ? "bg-accent text-white"
+                        : "text-muted hover:bg-black/5 dark:hover:bg-white/5"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
+            </SettingsRow>
 
+            <Advanced label={t("settings.app.advanced")}>
               <HotkeyRecorder />
-            </div>
-          </section>
+            </Advanced>
+          </SettingsSurface>
+            </Tabs.Panel>
 
+            <Tabs.Panel value="plugins">
           <PluginsSection
             data={plugins.data}
             loading={plugins.loading}
@@ -589,267 +695,230 @@ export default function SettingsPage() {
             onToggle={plugins.toggle}
             onRefresh={plugins.refresh}
           />
+            </Tabs.Panel>
 
+            <Tabs.Panel value="subtitle">
           {/* Subtitle */}
-          <section className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
-            <h2 className="mb-4 text-base font-semibold tracking-tight">{t("settings.subtitle.title")}</h2>
-
-            <div className="space-y-5">
-              <div className="space-y-4">
-                <h3 className="text-sm font-medium">{t("settings.subtitle.timing")}</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <NumberField
-                    label={t("settings.subtitle.initialHold")}
-                    hint={t("settings.subtitle.initialHold.help")}
-                    value={timing.initialHoldMs}
-                    onChange={(v) => updateTiming({ ...timing, initialHoldMs: v })}
-                    min={0}
-                    max={30000}
-                    step={500}
-                    unit="ms"
-                  />
-                  <NumberField
-                    label={t("settings.subtitle.minimumDisplay")}
-                    hint={t("settings.subtitle.minimumDisplay.help")}
-                    value={timing.minDisplayMs}
-                    onChange={(v) => updateTiming({ ...timing, minDisplayMs: v })}
-                    min={1000}
-                    max={60000}
-                    step={1000}
-                    unit="ms"
-                  />
-                  <NumberField
-                    label={t("settings.subtitle.finalHold")}
-                    hint={t("settings.subtitle.finalHold.help")}
-                    value={timing.finalHoldMs}
-                    onChange={(v) => updateTiming({ ...timing, finalHoldMs: v })}
-                    min={0}
-                    max={10000}
-                    step={200}
-                    unit="ms"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium">
-                    {t("settings.subtitle.readingPace")}
-                    <HelpTooltip>{t("settings.subtitle.readingPace.help")}</HelpTooltip>
-                  </label>
-                  <div className="flex flex-col gap-3 rounded-xl border border-card-border bg-background p-3 sm:flex-row sm:items-center">
-                    <input
-                      type="range"
+          <SettingsSurface>
+            <SettingsRow
+              title={
+                <span className="inline-flex items-center gap-1">
+                  {t("settings.subtitle.readingPace")}
+                  <HelpTooltip>{t("settings.subtitle.readingPace.help")}</HelpTooltip>
+                </span>
+              }
+              description={t("settings.subtitle.readingPace.help")}
+            >
+              <div className="flex min-w-[15rem] flex-col items-end gap-1.5">
+                <div className="flex w-full items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <SettingsSlider
+                      value={timing.textScale}
                       min={0.2}
                       max={5}
                       step={0.05}
-                      value={timing.textScale}
-                      onChange={(e) =>
-                        updateTiming({ ...timing, textScale: parseFloat(e.target.value) })
-                      }
-                      className="flex-1 accent-accent"
+                      aria-label={t("settings.subtitle.readingPace")}
+                      onChange={(v) => updateTiming({ ...timing, textScale: v })}
                     />
-                    <span className="w-16 text-center text-sm font-medium tabular-nums">
-                      {timing.textScale.toFixed(2)}×
-                    </span>
-                    <div className="flex gap-2">
-                      {(["slow", "normal", "fast"] as const).map((pace) => (
-                        <button
-                          key={pace}
-                          type="button"
-                          onClick={() =>
-                            updateTiming({ ...timing, textScale: READING_PACE_SCALE[pace] })
-                          }
-                          className={`rounded-lg px-2.5 py-1 text-xs font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-                            paceFromScale(timing.textScale) === pace
-                              ? "bg-accent text-white"
-                              : "border border-card-border bg-background hover:bg-black/5 dark:hover:bg-white/5"
-                          }`}
-                        >
-                          {t(`settings.subtitle.pace.${pace}`)}
-                        </button>
-                      ))}
-                    </div>
                   </div>
+                  <span className="w-12 text-right text-xs font-medium tabular-nums">
+                    {timing.textScale.toFixed(2)}×
+                  </span>
+                </div>
+                <div className="flex gap-1">
+                  {(["slow", "normal", "fast"] as const).map((pace) => (
+                    <button
+                      key={pace}
+                      type="button"
+                      onClick={() =>
+                        updateTiming({ ...timing, textScale: READING_PACE_SCALE[pace] })
+                      }
+                      className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                        paceFromScale(timing.textScale) === pace
+                          ? "bg-accent text-white"
+                          : "text-muted hover:bg-black/5 dark:hover:bg-white/5"
+                      }`}
+                    >
+                      {t(`settings.subtitle.pace.${pace}`)}
+                    </button>
+                  ))}
                 </div>
               </div>
+            </SettingsRow>
 
-              <div className="space-y-3">
-                <h3 className="text-sm font-medium">{t("settings.subtitle.position")}</h3>
-                <PositionPlayer style={style} timing={timing} onChange={updateStyle} />
+            <SettingsRow
+              title={t("settings.subtitle.initialHold")}
+              description={t("settings.subtitle.initialHold.help")}
+            >
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min={0}
+                  max={30000}
+                  step={500}
+                  value={timing.initialHoldMs}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value, 10);
+                    if (!Number.isNaN(n)) {
+                      updateTiming({
+                        ...timing,
+                        initialHoldMs: Math.max(0, Math.min(30000, n)),
+                      });
+                    }
+                  }}
+                  className="w-20 rounded-lg border border-card-border bg-background px-2 py-1.5 text-[13px] tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                />
+                <span className="text-xs text-muted">ms</span>
               </div>
+            </SettingsRow>
 
-              <div className="space-y-3">
-                <h3 className="text-sm font-medium">{t("settings.appearance.title")}</h3>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div className="min-w-0 space-y-2">
-                    <label htmlFor="fontFamily" className="block text-sm font-medium">
-                      {t("settings.appearance.font")}
-                    </label>
-                    <select
-                      id="fontFamily"
-                      value={style.fontFamily}
-                      onChange={(e) =>
-                        updateStyle({
-                          ...style,
-                          fontFamily: e.target.value as SubtitleStyle["fontFamily"],
-                        })
-                      }
-                      className="w-full rounded-xl border border-card-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                      <option value="system">{t("settings.appearance.font.system")}</option>
-                      <option value="serif">{t("settings.appearance.font.serif")}</option>
-                      <option value="mono">{t("settings.appearance.font.mono")}</option>
-                      <option value="geist">{t("settings.appearance.font.geist")}</option>
-                    </select>
-                  </div>
-                  <RangeField
-                    label={t("settings.appearance.size")}
+            <SettingsRow
+              title={t("settings.subtitle.minimumDisplay")}
+              description={t("settings.subtitle.minimumDisplay.help")}
+            >
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min={1000}
+                  max={60000}
+                  step={1000}
+                  value={timing.minDisplayMs}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value, 10);
+                    if (!Number.isNaN(n)) {
+                      updateTiming({
+                        ...timing,
+                        minDisplayMs: Math.max(1000, Math.min(60000, n)),
+                      });
+                    }
+                  }}
+                  className="w-20 rounded-lg border border-card-border bg-background px-2 py-1.5 text-[13px] tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                />
+                <span className="text-xs text-muted">ms</span>
+              </div>
+            </SettingsRow>
+
+            <SettingsRow
+              title={t("settings.subtitle.finalHold")}
+              description={t("settings.subtitle.finalHold.help")}
+            >
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min={0}
+                  max={10000}
+                  step={200}
+                  value={timing.finalHoldMs}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value, 10);
+                    if (!Number.isNaN(n)) {
+                      updateTiming({
+                        ...timing,
+                        finalHoldMs: Math.max(0, Math.min(10000, n)),
+                      });
+                    }
+                  }}
+                  className="w-20 rounded-lg border border-card-border bg-background px-2 py-1.5 text-[13px] tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                />
+                <span className="text-xs text-muted">ms</span>
+              </div>
+            </SettingsRow>
+
+            <SettingsRow title={t("settings.appearance.font")}>
+              <SettingsSelect
+                value={style.fontFamily}
+                onChange={(value) =>
+                  updateStyle({
+                    ...style,
+                    fontFamily: value as SubtitleStyle["fontFamily"],
+                  })
+                }
+                options={[
+                  { value: "system", label: t("settings.appearance.font.system") },
+                  { value: "serif", label: t("settings.appearance.font.serif") },
+                  { value: "mono", label: t("settings.appearance.font.mono") },
+                  { value: "geist", label: t("settings.appearance.font.geist") },
+                ]}
+                ariaLabel={t("settings.appearance.font")}
+              />
+            </SettingsRow>
+
+            <SettingsRow title={t("settings.appearance.size")}>
+              <div className="flex min-w-[10rem] items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <SettingsSlider
                     value={style.fontSizePx}
-                    onChange={(v) => updateStyle({ ...style, fontSizePx: v })}
                     min={12}
                     max={32}
-                    unit="px"
+                    aria-label={t("settings.appearance.size")}
+                    onChange={(v) => updateStyle({ ...style, fontSizePx: v })}
                   />
                 </div>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <div className="min-w-0">
-                    <ColorField
-                      label={t("settings.appearance.textColor")}
-                      value={style.textColor}
-                      onChange={(v) => updateStyle({ ...style, textColor: v })}
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <ColorField
-                      label={t("settings.appearance.background")}
-                      value={style.bgColor}
-                      onChange={(v) => updateStyle({ ...style, bgColor: v })}
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <RangeField
-                      label={t("settings.appearance.backgroundOpacity")}
-                      value={style.bgOpacity}
-                      onChange={(v) => updateStyle({ ...style, bgOpacity: v })}
-                      min={0}
-                      max={100}
-                      unit="%"
-                    />
-                  </div>
-                </div>
+                <span className="w-10 text-right text-xs text-muted tabular-nums">
+                  {style.fontSizePx}px
+                </span>
               </div>
-            </div>
-          </section>
-        </div>
-      </main>
-    </div>
-  );
-}
+            </SettingsRow>
 
-function NumberField({
-  label,
-  hint,
-  value,
-  onChange,
-  min,
-  max,
-  step,
-  unit,
-}: {
-  label: string;
-  hint?: string;
-  value: number;
-  onChange: (v: number) => void;
-  min: number;
-  max: number;
-  step: number;
-  unit: string;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <label className="block text-sm font-medium">
-        {label}
-        {hint && <HelpTooltip>{hint}</HelpTooltip>}
-      </label>
-      <div className="flex items-center gap-2">
-        <input
-          type="number"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={(e) => {
-            const n = parseInt(e.target.value, 10);
-            onChange(Number.isNaN(n) ? value : Math.max(min, Math.min(max, n)));
-          }}
-          className="w-full rounded-xl border border-card-border bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-        />
-        <span className="text-xs text-muted">{unit}</span>
-      </div>
-    </div>
-  );
-}
+            <SettingsRow title={t("settings.appearance.textColor")}>
+              <div className="flex min-w-0 items-center gap-2">
+                <input
+                  type="color"
+                  value={style.textColor}
+                  onChange={(e) => updateStyle({ ...style, textColor: e.target.value })}
+                  className="h-7 w-7 shrink-0 rounded-md border border-card-border bg-transparent p-0.5"
+                />
+                <input
+                  type="text"
+                  value={style.textColor}
+                  onChange={(e) => updateStyle({ ...style, textColor: e.target.value })}
+                  className="w-24 rounded-lg border border-card-border bg-background px-2 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                />
+              </div>
+            </SettingsRow>
 
-function RangeField({
-  label,
-  value,
-  onChange,
-  min,
-  max,
-  unit,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  min: number;
-  max: number;
-  unit: string;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <label className="block text-sm font-medium">{label}</label>
-      <div className="flex items-center gap-3">
-        <input
-          type="range"
-          min={min}
-          max={max}
-          value={value}
-          onChange={(e) => onChange(parseInt(e.target.value, 10))}
-          className="flex-1 accent-accent"
-        />
-        <span className="w-12 text-right text-sm text-muted">
-          {value}
-          {unit}
-        </span>
-      </div>
-    </div>
-  );
-}
+            <SettingsRow title={t("settings.appearance.background")}>
+              <div className="flex min-w-0 items-center gap-2">
+                <input
+                  type="color"
+                  value={style.bgColor}
+                  onChange={(e) => updateStyle({ ...style, bgColor: e.target.value })}
+                  className="h-7 w-7 shrink-0 rounded-md border border-card-border bg-transparent p-0.5"
+                />
+                <input
+                  type="text"
+                  value={style.bgColor}
+                  onChange={(e) => updateStyle({ ...style, bgColor: e.target.value })}
+                  className="w-24 rounded-lg border border-card-border bg-background px-2 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                />
+              </div>
+            </SettingsRow>
 
-function ColorField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="min-w-0 space-y-1.5">
-      <label className="block text-sm font-medium">{label}</label>
-      <div className="flex min-w-0 items-center gap-2">
-        <input
-          type="color"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="h-9 w-9 shrink-0 rounded-lg border border-card-border bg-transparent p-0.5"
-        />
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="min-w-0 flex-1 rounded-xl border border-card-border bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-        />
-      </div>
+            <SettingsRow title={t("settings.appearance.backgroundOpacity")}>
+              <div className="flex min-w-[10rem] items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <SettingsSlider
+                    value={style.bgOpacity}
+                    min={0}
+                    max={100}
+                    aria-label={t("settings.appearance.backgroundOpacity")}
+                    onChange={(v) => updateStyle({ ...style, bgOpacity: v })}
+                  />
+                </div>
+                <span className="w-10 text-right text-xs text-muted tabular-nums">
+                  {style.bgOpacity}%
+                </span>
+              </div>
+            </SettingsRow>
+
+            <SettingsRowFull title={t("settings.subtitle.position")}>
+              <PositionPlayer style={style} timing={timing} onChange={updateStyle} />
+            </SettingsRowFull>
+          </SettingsSurface>
+            </Tabs.Panel>
+          </div>
+        </main>
+      </Tabs.Root>
     </div>
   );
 }

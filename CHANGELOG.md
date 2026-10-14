@@ -16,6 +16,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | **0.2.1** | `66af67f` | Settings page, profiles v2, thinking control, subtitle customization |
 | **0.2.2** | `4c10810` · docs `0efc776` | Theme + UI language, compact window, position player |
 | **0.2.3** | `cb855ca` · docs `3650ab3` | Native theme, display-aspect preview, Test button, fade-out, caps, capture handshake |
+| **0.2.7** | *(release commit)* | Settings refactor (nav rail + setting rows), Base UI primitives, DESIGN.md |
 | **0.2.6** | `c4260d8` | Usage-stats plugin, panel capability, settings polish |
 | **0.2.5** | `34d13b5` | Plugins v1, cost meter + status bar, encrypted config export/import, player polish |
 | **0.2.4** | `f3cc2a3` | Dictionary, real-screen player, hotkey, tray |
@@ -64,6 +65,8 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | Usage-stats plugin (bar chart + calendar heatmap) | 0.2.6 | `c4260d8` | `examples/plugins/usage-stats/`, daily buckets in `src/lib/server/stats.ts` |
 | Plugin import/uninstall in Settings (zip upload, overwrite confirm, atomic swap) | 0.2.6 | `599c57a` | `src/app/api/plugins/import/`, DELETE in `src/app/api/plugins/[id]/route.ts`, `src/components/plugins-section.tsx` |
 | Plugin home widgets + `location` split (settings vs home) | 0.2.6 | `44de54e` | `src/components/home-widgets.tsx`, `src/components/plugin-panel-frame.tsx`, `location`/`visiblePanels` in `src/lib/server/plugins.ts` |
+| Settings shell refactor (grouped nav rail + row primitive + sticky pane) | 0.2.7 | *(release commit)* | `src/app/settings/page.tsx`, `src/components/settings-ui.tsx`, `DESIGN.md` |
+| Base UI primitives adopted (Tabs/Switch/Slider/Select/Dialog/Collapsible) | 0.2.7 | *(release commit)* | `package.json`, `src/components/settings-ui.tsx` |
 
 ---
 
@@ -91,6 +94,15 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 
 ### 0.2.3 (`cb855ca`) — native theme · preview rework · test · robustness
 - Title bar follows theme (`setNativeTheme`); canvas = real display aspect + double-click enlarge; drag without text selection; appearance row responsive; base pace 220 wpm / 400 cpm with 0.2–5.0× slider; **Test** button (real-screen playback with live style); fade-out on every dismissal; caps raised (10000/12000); capture delivery handshake + latest-wins pending queue; dismissal aborts in-flight translation.
+
+### 0.2.7 — settings page normative refactor
+- Settings rebuilt as a **modern settings shell**: grouped **vertical nav rail + single pane** (Translate / Subtitle / Plugins / App), 48 px icon-only below 700 px, labels at ≥ 700 px (the default 714×480 window shows labels; the rail stays usable down to 400 px), remembered active section, sticky pane header with a gradient fade.
+- Every setting is now a **row** (`title + description + right-aligned control`) on one soft surface per section with hairline separators — no more card-per-setting; long controls span under their row; destructive actions sit at their section's bottom; rarely-used knobs fold into **Advanced** disclosures.
+- **Base UI** adopted as the only new dependency (Tabs, Switch, Slider, Select, Dialog, Collapsible), restyled with the existing theme tokens — no token-system swap; selects now show human labels while storing raw values.
+- Profiles / Provider / Subtitle fully converted to the row primitive; config export/import dialogs migrated to the shared dialog; behavior unchanged (atomic import, live refresh, wrong-passphrase errors).
+- Version strings unified in `src/lib/version.ts` (rail footer + exported config).
+- `DESIGN.md` added at the repo root (type scale, spacing, radii, roles, row/nav specs) so future UI work reuses the contract.
+- Verified: full browser pass 44/45 → fixed → rail re-check 18/18.
 
 ### 0.2.6 — usage-stats plugin · panel capability · settings polish
 - **Play snapshot fully re-syncs**: reading pace / initial hold / min display / final hold AND text are compared to the session snapshot — any change starts a fresh run; unchanged resumes.
