@@ -26,13 +26,30 @@
     --grid-empty: #1f1f23;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(113, 113, 122, 0.45) transparent;
+  }
+  html.dark, html.dark body {
+    scrollbar-color: rgba(161, 161, 170, 0.45) transparent;
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(113, 113, 122, 0.45);
+    border-radius: 8px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(113, 113, 122, 0.65); }
+  html.dark ::-webkit-scrollbar-thumb { background: rgba(161, 161, 170, 0.45); }
+  html.dark ::-webkit-scrollbar-thumb:hover { background: rgba(161, 161, 170, 0.65); }
   body {
     background: var(--bg);
     color: var(--fg);
     font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     padding: 14px;
-    overflow-x: hidden;
   }
   .row { display: flex; flex-wrap: wrap; gap: 8px; }
   .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -210,6 +227,13 @@
     } catch (e) {}
   }
 
+  function scheduleResize() {
+    requestAnimationFrame(function () {
+      reportResize();
+      requestAnimationFrame(reportResize);
+    });
+  }
+
   /* ---------- data ---------- */
 
   function loadStats() {
@@ -305,7 +329,7 @@
       document.getElementById("heat").innerHTML = "";
       document.getElementById("legend").innerHTML = "";
       document.getElementById("switcher").innerHTML = "";
-      reportResize();
+      scheduleResize();
       return;
     }
 
@@ -324,7 +348,7 @@
     renderSwitcher();
     renderBars();
     renderHeat();
-    reportResize();
+    scheduleResize();
   }
 
   function stat(label, value) {
@@ -438,8 +462,14 @@
     void byDate;
   }
 
-  window.addEventListener("resize", reportResize);
-  document.addEventListener("DOMContentLoaded", reportResize);
+  window.addEventListener("resize", scheduleResize);
+  document.addEventListener("DOMContentLoaded", scheduleResize);
+
+  if (typeof ResizeObserver !== "undefined") {
+    var observer = new ResizeObserver(scheduleResize);
+    observer.observe(document.documentElement);
+    observer.observe(document.body);
+  }
 })();
 </script>
 </body>

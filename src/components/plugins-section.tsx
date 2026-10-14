@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useT } from "@/lib/client";
 import {
   hostFromBaseURL,
@@ -13,6 +13,7 @@ import {
   type TKey,
 } from "@/lib/client";
 import { LoaderIcon } from "./icons";
+import { PluginPanelFrame } from "./plugin-panel-frame";
 
 type PluginsSectionProps = {
   data: PluginsResponse | null;
@@ -22,100 +23,11 @@ type PluginsSectionProps = {
   onToggle: (
     id: string,
     enabled: boolean,
-    grantedCapabilities?: string[]
+    grantedCapabilities?: string[],
+    visiblePanels?: Record<string, boolean>
   ) => Promise<boolean>;
   onRefresh: () => Promise<void>;
 };
-
-function isSafeApiUrl(url: unknown): url is string {
-  if (typeof url !== "string") return false;
-  if (!url.startsWith("/api/")) return false;
-  if (url.includes("..")) return false;
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url)) return false;
-  return true;
-}
-
-type PluginPanelProps = {
-  pluginId: string;
-  panel: { id: string; title: string; entry: string };
-  theme: "light" | "dark";
-  lang: "en" | "zh-CN";
-};
-
-function PluginPanel({ pluginId, panel, theme, lang }: PluginPanelProps) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [height, setHeight] = useState(400);
-
-  const sendInit = useCallback(() => {
-    const win = iframeRef.current?.contentWindow;
-    if (!win) return;
-    win.postMessage({ type: "subtr-plugin-init", theme, lang }, "*");
-  }, [theme, lang]);
-
-  // (a) parent → iframe on load and on theme/lang change.
-  useEffect(() => {
-    sendInit();
-  }, [sendInit]);
-
-  // (b) iframe → parent bridge.
-  useEffect(() => {
-    async function onMessage(event: MessageEvent) {
-      const win = iframeRef.current?.contentWindow;
-      if (!win || event.source !== win) return;
-      const data = event.data as Record<string, unknown> | null;
-      if (!data || typeof data.type !== "string") return;
-
-      if (data.type === "subtr-plugin-fetch") {
-        const rid = data.rid;
-        const url = data.url;
-        if (!isSafeApiUrl(url)) return;
-        try {
-          const res = await fetch(url, { cache: "no-store" });
-          const body = await res.text();
-          win.postMessage(
-            {
-              type: "subtr-plugin-fetch-result",
-              rid,
-              ok: res.ok,
-              status: res.status,
-              body,
-            },
-            "*"
-          );
-        } catch {
-          win.postMessage(
-            { type: "subtr-plugin-fetch-result", rid, ok: false, status: 0, body: "" },
-            "*"
-          );
-        }
-        return;
-      }
-
-      if (data.type === "subtr-plugin-resize") {
-        const raw = Number(data.height);
-        if (!Number.isFinite(raw)) return;
-        setHeight(Math.max(120, Math.min(720, raw)));
-      }
-    }
-
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, []);
-
-  return (
-    <iframe
-      ref={iframeRef}
-      src={`/api/plugins/${encodeURIComponent(pluginId)}/panel/${encodeURIComponent(
-        panel.id
-      )}`}
-      title={panel.title}
-      sandbox="allow-scripts"
-      onLoad={sendInit}
-      style={{ height }}
-      className="w-full rounded-xl border border-card-border bg-background"
-    />
-  );
-}
 
 function capabilityLabel(
   capability: PluginCapability,
@@ -258,6 +170,20 @@ export function PluginsSection({
       kind: "error",
       text: importErrorText(result.status, result.error),
     });
+  }
+
+  async function togglePanelVisibility(
+    plugin: PluginInfo,
+    panelId: string,
+    visible: boolean
+  ) {
+    setBusy(true);
+    setError(null);
+    const ok = await onToggle(plugin.id, plugin.enabled, undefined, {
+      [panelId]: visible,
+    });
+    setBusy(false);
+    if (!ok) setError(t("settings.plugins.error.toggle"));
   }
 
   async function confirmUninstall() {
@@ -451,15 +377,42 @@ export function PluginsSection({
                 plugin.panels &&
                 plugin.panels.length > 0 && (
                   <div className="mt-3 space-y-3 border-t border-card-border pt-3">
-                    {plugin.panels.map((panel) => (
-                      <PluginPanel
-                        key={panel.id}
-                        pluginId={plugin.id}
-                        panel={panel}
-                        theme={theme}
-                        lang={lang}
-                      />
-                    ))}
+                    {plugin.panels
+                      .filter((panel) => panel.location !== "home")
+                      .map((panel) => (
+                        <PluginPanelFrame
+                          key={panel.id}
+                          pluginId={plugin.id}
+                          panel={panel}
+                          theme={theme}
+                          lang={lang}
+                        />
+                      ))}
+                    {plugin.panels
+                      .filter((panel) => panel.location === "home")
+                      .map((panel) => (
+                        <label
+                          key={panel.id}
+                          className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-background px-2.5 py-2 text-xs"
+                        >
+                          <span className="min-w-0 truncate text-muted">
+                            {t("settings.plugins.showOnHome", { title: panel.title })}
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={panel.visible !== false}
+                            disabled={busy}
+                            onChange={(e) =>
+                              void togglePanelVisibility(
+                                plugin,
+                                panel.id,
+                                e.target.checked
+                              )
+                            }
+                            className="shrink-0 accent-accent"
+                          />
+                        </label>
+                      ))}
                   </div>
                 )}
             </div>

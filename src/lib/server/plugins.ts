@@ -35,11 +35,24 @@ const ID_RE = /^[a-z0-9-]+$/;
 export type PluginStatus = "ok" | "disabled" | "error" | "incompatible";
 
 /** One embeddable panel declared by a plugin (requires the `ui.panel` capability). */
+export type PanelLocation = "settings" | "home";
+
 export type PanelDecl = {
   id: string;
   title: string;
   /** Path to an HTML file inside the plugin folder. */
   entry: string;
+  /** Where the panel is shown; defaults to "settings". */
+  location?: PanelLocation;
+};
+
+/** Panel as returned by GET /api/plugins (location + visibility resolved). */
+export type ResolvedPanel = {
+  id: string;
+  title: string;
+  entry: string;
+  location: PanelLocation;
+  visible: boolean;
 };
 
 /** Per-plugin entry shape returned by GET /api/plugins (frozen API). */
@@ -57,7 +70,7 @@ export type PluginInfo = {
   streaming?: "per-chunk" | "buffered";
   contributes?: { providers?: unknown[] };
   /** Declared panels (empty when the plugin has none). */
-  panels: PanelDecl[];
+  panels: ResolvedPanel[];
   enabled: boolean;
   grantedCapabilities: string[];
   status: PluginStatus;
@@ -131,6 +144,8 @@ type ConsentRecord = {
   version?: string;
   grantedCapabilities?: string[];
   grantedAt?: string;
+  /** Per-panel visibility; a missing key means visible (default true). */
+  visiblePanels?: Record<string, boolean>;
 };
 
 type ConsentFile = Record<string, ConsentRecord>;
@@ -203,6 +218,21 @@ async function writeConsent(next: ConsentFile): Promise<void> {
 function consentFor(consent: ConsentFile, id: string): ConsentRecord {
   const entry = consent[id];
   return entry && typeof entry === "object" ? entry : {};
+}
+
+/**
+ * Panels as returned by GET /api/plugins: manifest location (default
+ * "settings") plus per-panel visibility from the consent file (default true).
+ */
+function resolvePanels(record: PluginRecord, consentRecord: ConsentRecord): ResolvedPanel[] {
+  const visible = consentRecord.visiblePanels ?? {};
+  return (record.manifest?.panels ?? []).map((panel) => ({
+    id: panel.id,
+    title: panel.title,
+    entry: panel.entry,
+    location: panel.location ?? "settings",
+    visible: visible[panel.id] ?? true,
+  }));
 }
 
 function grantedFrom(consent: ConsentRecord, capabilities: string[]): string[] {
@@ -303,7 +333,19 @@ function validateManifest(
       if (typeof panelEntry !== "string" || !panelEntry.trim()) {
         return { ok: false, error: "panel entry must be a non-empty string" };
       }
-      parsed.push({ id: panelId, title: title.trim(), entry: panelEntry.trim() });
+      let location: PanelLocation | undefined;
+      if (item.location !== undefined) {
+        if (item.location !== "settings" && item.location !== "home") {
+          return { ok: false, error: `panel location must be "settings" or "home"` };
+        }
+        location = item.location;
+      }
+      parsed.push({
+        id: panelId,
+        title: title.trim(),
+        entry: panelEntry.trim(),
+        ...(location ? { location } : {}),
+      });
     }
     panels = parsed;
   }
@@ -396,7 +438,13 @@ function recordFromManifest(
       capabilities: [...manifest.capabilities],
       ...(manifest.streaming ? { streaming: manifest.streaming } : {}),
       ...(manifest.contributes ? { contributes: manifest.contributes } : {}),
-      panels: [...(manifest.panels ?? [])],
+      panels: (manifest.panels ?? []).map((panel) => ({
+        id: panel.id,
+        title: panel.title,
+        entry: panel.entry,
+        location: panel.location ?? "settings",
+        visible: true,
+      })),
       enabled: false,
       grantedCapabilities: [],
       status: incompatible ? "incompatible" : "disabled",
@@ -849,6 +897,7 @@ export async function getPluginsSnapshot(): Promise<PluginsSnapshot> {
     const entry = consentFor(consent, record.folder);
     const capabilities = record.manifest.capabilities;
     record.info.grantedCapabilities = capabilities.length > 0 ? grantedFrom(entry, capabilities) : [];
+    record.info.panels = resolvePanels(record, entry);
     const enabled = entry.enabled === true && !record.incompatible && !record.error;
     record.info.enabled = enabled;
     if (record.incompatible) {
@@ -869,7 +918,12 @@ export async function getPluginsSnapshot(): Promise<PluginsSnapshot> {
 
   const plugins = [...records.values()]
     .sort((a, b) => a.folder.localeCompare(b.folder))
-    .map((r) => ({ ...r.info, grantedCapabilities: [...r.info.grantedCapabilities], capabilities: [...r.info.capabilities] }));
+    .map((r) => ({
+      ...r.info,
+      grantedCapabilities: [...r.info.grantedCapabilities],
+      capabilities: [...r.info.capabilities],
+      panels: r.info.panels.map((panel) => ({ ...panel })),
+    }));
 
   return { revision, dir: getPluginsDir(), plugins };
 }
@@ -878,6 +932,7 @@ export async function getPluginsSnapshot(): Promise<PluginsSnapshot> {
 export type ConsentInput = {
   enabled: boolean;
   grantedCapabilities?: string[];
+  visiblePanels?: Record<string, boolean>;
 };
 
 export async function setPluginConsent(
@@ -900,6 +955,21 @@ export async function setPluginConsent(
     granted = body.grantedCapabilities as string[];
   }
 
+  let visiblePanels: Record<string, boolean> | undefined;
+  if (body.visiblePanels !== undefined) {
+    if (!isRecord(body.visiblePanels) || Array.isArray(body.visiblePanels)) {
+      return { ok: false, error: "visiblePanels must be an object of booleans" };
+    }
+    const parsed: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(body.visiblePanels)) {
+      if (typeof value !== "boolean") {
+        return { ok: false, error: "visiblePanels values must be booleans" };
+      }
+      parsed[key] = value;
+    }
+    visiblePanels = parsed;
+  }
+
   const record = records.get(id);
   if (!record) return { ok: false, error: `unknown plugin: ${id}` };
   if (record.incompatible) return { ok: false, error: `plugin ${id} is incompatible (apiVersion)` };
@@ -910,6 +980,17 @@ export async function setPluginConsent(
     (c): c is string => typeof c === "string" && CAPABILITY_SET.has(c),
   );
 
+  // Partial merge; panel ids the plugin does not declare are ignored.
+  let mergedVisible = existing.visiblePanels;
+  if (visiblePanels) {
+    const declared = new Set((record.manifest?.panels ?? []).map((panel) => panel.id));
+    const next: Record<string, boolean> = { ...(existing.visiblePanels ?? {}) };
+    for (const [panelId, visible] of Object.entries(visiblePanels)) {
+      if (declared.has(panelId)) next[panelId] = visible;
+    }
+    mergedVisible = next;
+  }
+
   await writeConsent({
     ...consent,
     [id]: {
@@ -917,6 +998,9 @@ export async function setPluginConsent(
       version: record.info.version,
       grantedCapabilities: effectiveGranted,
       grantedAt: existing.grantedAt ?? new Date().toISOString(),
+      ...(mergedVisible && Object.keys(mergedVisible).length > 0
+        ? { visiblePanels: mergedVisible }
+        : {}),
     },
   });
 

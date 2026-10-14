@@ -6,5 +6,7 @@
   "minAppVersion": "0.2.6",
   "description": "Shows recent usage: totals, a 30-day bar chart, and a calendar heatmap.",
   "capabilities": ["ui.panel"],
-  "panels": [{ "id": "main", "title": "Usage Stats", "entry": "panel.html" }]
+  "panels": [
+    { "id": "main", "title": "Usage Stats", "entry": "panel.html", "location": "home" }
+  ]
 }

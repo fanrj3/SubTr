@@ -63,6 +63,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | Plugin UI panels (`ui.panel`, panels manifest, iframe host + fetch relay) | 0.2.6 | `c4260d8` | `src/lib/server/plugins.ts`, `src/components/plugins-section.tsx`, `src/app/api/plugins/[id]/panel/` |
 | Usage-stats plugin (bar chart + calendar heatmap) | 0.2.6 | `c4260d8` | `examples/plugins/usage-stats/`, daily buckets in `src/lib/server/stats.ts` |
 | Plugin import/uninstall in Settings (zip upload, overwrite confirm, atomic swap) | 0.2.6 | `599c57a` | `src/app/api/plugins/import/`, DELETE in `src/app/api/plugins/[id]/route.ts`, `src/components/plugins-section.tsx` |
+| Plugin home widgets + `location` split (settings vs home) | 0.2.6 | *(fix commit)* | `src/components/home-widgets.tsx`, `src/components/plugin-panel-frame.tsx`, `location`/`visiblePanels` in `src/lib/server/plugins.ts` |
 
 ---
 
@@ -100,6 +101,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 - **Plugin system v1.1**: `ui.panel` capability + `panels` manifest entries + traversal-safe panel HTML route + sandboxed iframe host (`sandbox="allow-scripts"`) with a postMessage fetch relay (allow-listed to same-origin `/api/`, GET-only; forged messages are dropped).
 - **First real plugin**: `examples/plugins/usage-stats` — totals, 30-day bar chart, GitHub-style calendar heatmap, metric switcher, theme/language aware; `/api/stats` now returns per-day `daily` buckets (stats store v2, lossless migration).
 - **Plugin management in Settings** (same 0.2.6): **Import plugin…** (.zip built from a plugin folder; duplicate → overwrite confirm; invalid/too-large errors shown inline) and per-plugin **Uninstall** (removes folder + consent). Server: fflate-based extraction with traversal + zip-bomb guards, 20 MB cap, atomic swap-in.
+- **Plugin panels, split by purpose** (same 0.2.6): panels declare `location: "settings"` (parameter controls, rendered inside Settings) or `"home"` (the plugin's own display, rendered on `/` as **collapsible lazy-mounted widget cards** with a zero-footprint empty state). Themed thin scrollbars + auto-height reporting fix the white native scrollbar and bottom clipping; a per-panel **Show on home page** toggle lives in Settings. `usage-stats` now ships as a home widget.
 
 ### 0.2.5 — plugins v1 · cost meter · encrypted config transfer · player polish
 - **Player polish**: longer default preview text (with gentle migration); editing the preview text applies on the next Play (unchanged text still resumes); short/dictionary cards reserve space so ✕/Esc never overlap the word.

@@ -15,7 +15,13 @@ export type PluginInfo = {
   capabilities: string[];
   streaming?: "per-chunk" | "buffered";
   contributes?: { providers?: ProviderPreset[] };
-  panels?: { id: string; title: string; entry: string }[];
+  panels?: {
+    id: string;
+    title: string;
+    entry: string;
+    location?: "settings" | "home";
+    visible?: boolean;
+  }[];
   enabled: boolean;
   grantedCapabilities: string[];
   status: PluginStatus;
@@ -56,13 +62,17 @@ export async function fetchPlugins(): Promise<PluginsResponse | null> {
 export async function setPluginEnabled(
   id: string,
   enabled: boolean,
-  grantedCapabilities?: string[]
+  grantedCapabilities?: string[],
+  visiblePanels?: Record<string, boolean>
 ): Promise<boolean> {
   try {
+    const body: Record<string, unknown> = { enabled };
+    if (grantedCapabilities) body.grantedCapabilities = grantedCapabilities;
+    if (visiblePanels) body.visiblePanels = visiblePanels;
     const res = await fetch(`/api/plugins/${encodeURIComponent(id)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled, grantedCapabilities }),
+      body: JSON.stringify(body),
     });
     return res.ok;
   } catch {

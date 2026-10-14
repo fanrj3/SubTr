@@ -194,6 +194,41 @@ body {
   background: rgba(255, 255, 255, 0.4);
 }
 
+.subtr-panel-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(113, 113, 122, 0.45) transparent;
+}
+
+.dark .subtr-panel-scroll {
+  scrollbar-color: rgba(161, 161, 170, 0.45) transparent;
+}
+
+.subtr-panel-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.subtr-panel-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.subtr-panel-scroll::-webkit-scrollbar-thumb {
+  background: rgba(113, 113, 122, 0.45);
+  border-radius: 8px;
+}
+
+.subtr-panel-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(113, 113, 122, 0.65);
+}
+
+.dark .subtr-panel-scroll::-webkit-scrollbar-thumb {
+  background: rgba(161, 161, 170, 0.45);
+}
+
+.dark .subtr-panel-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(161, 161, 170, 0.65);
+}
+
 .subtr-markdown {
   line-height: 1.5;
 }

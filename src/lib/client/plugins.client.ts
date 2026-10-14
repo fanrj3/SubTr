@@ -14,7 +14,8 @@ export function usePlugins(): {
   toggle: (
     id: string,
     enabled: boolean,
-    grantedCapabilities?: string[]
+    grantedCapabilities?: string[],
+    visiblePanels?: Record<string, boolean>
   ) => Promise<boolean>;
 } {
   const [data, setData] = useState<PluginsResponse | null>(null);
@@ -35,8 +36,13 @@ export function usePlugins(): {
   }, [refresh]);
 
   const toggle = useCallback(
-    async (id: string, enabled: boolean, grantedCapabilities?: string[]) => {
-      const ok = await setPluginEnabled(id, enabled, grantedCapabilities);
+    async (
+      id: string,
+      enabled: boolean,
+      grantedCapabilities?: string[],
+      visiblePanels?: Record<string, boolean>
+    ) => {
+      const ok = await setPluginEnabled(id, enabled, grantedCapabilities, visiblePanels);
       if (ok) await refresh();
       return ok;
     },

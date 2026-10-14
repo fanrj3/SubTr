@@ -218,6 +218,9 @@ export const en = {
   "settings.plugins.uninstallBody": "This deletes its folder. This cannot be undone.",
   "settings.plugins.uninstalling": "Uninstalling…",
   "settings.plugins.uninstallFailed": "Could not uninstall this plugin.",
+  "settings.plugins.showOnHome": "Show “{title}” on home page",
+  "home.widgets.expand": "Expand",
+  "home.widgets.collapse": "Collapse",
 
   // Tooltip
   "tooltip.moreInfo": "More info",

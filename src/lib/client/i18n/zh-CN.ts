@@ -218,6 +218,9 @@ export const zhCN = {
   "settings.plugins.uninstallBody": "此操作会删除该插件的文件夹，且无法撤销。",
   "settings.plugins.uninstalling": "卸载中…",
   "settings.plugins.uninstallFailed": "无法卸载该插件。",
+  "settings.plugins.showOnHome": "在主页显示“{title}”",
+  "home.widgets.expand": "展开",
+  "home.widgets.collapse": "收起",
 
   // Tooltip
   "tooltip.moreInfo": "更多信息",

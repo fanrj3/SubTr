@@ -20,6 +20,7 @@ import { TopBar } from "./top-bar";
 import { Reader } from "./reader";
 import { SubtitleOverlay, type SubtitleState } from "./subtitle-overlay";
 import { StatusBar } from "./status-bar";
+import { HomeWidgets } from "./home-widgets";
 
 const TARGET_LANG_KEY = "subtr.targetLang.v1";
 const DEFAULT_TARGET_LANG = "auto";
@@ -198,6 +199,7 @@ export function SubTrApp() {
         state={subtitle}
         onDismiss={dismissSubtitle}
       />
+      <HomeWidgets />
       <StatusBar />
     </div>
   );
