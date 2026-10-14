@@ -76,7 +76,7 @@ SubTr loads local plugins from a folder (desktop: the app's data folder `plugins
 - **dictionary.source** — provide dictionary lookups (used when the bundled dictionary misses)
 - **Provider presets** — a plugin can contribute a provider declaratively (no code)
 
-Plugins run as local Node code with full access to your machine — only enable plugins you trust. See `examples/plugins/` for a starter (uppercase), a declarative provider, and a **usage-stats panel** (charts + calendar heatmap via the sandboxed panel host).
+Plugins run as local Node code with full access to your machine — only enable plugins you trust. See `examples/plugins/` for a starter (uppercase), a declarative provider, and a **usage-stats panel** (charts + calendar heatmap via the sandboxed panel host). Ready-to-import packages live in **`examples/plugin-zips/`** (`usage-stats.zip`, `uppercase.zip`, `acme-translate.zip`); regenerate them with `npm run plugins:zip` after editing the examples.
 
 ## Security notes
 

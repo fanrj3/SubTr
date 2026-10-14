@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "dict:build": "node scripts/build-dict.mjs",
+    "plugins:zip": "node scripts/build-plugin-zips.mjs",
     "desktop:prepare": "node desktop/prepare-standalone.cjs",
     "desktop:build": "next build && node desktop/prepare-standalone.cjs",
     "desktop": "next build && node desktop/prepare-standalone.cjs && electron .",
