@@ -63,7 +63,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | Plugin UI panels (`ui.panel`, panels manifest, iframe host + fetch relay) | 0.2.6 | `c4260d8` | `src/lib/server/plugins.ts`, `src/components/plugins-section.tsx`, `src/app/api/plugins/[id]/panel/` |
 | Usage-stats plugin (bar chart + calendar heatmap) | 0.2.6 | `c4260d8` | `examples/plugins/usage-stats/`, daily buckets in `src/lib/server/stats.ts` |
 | Plugin import/uninstall in Settings (zip upload, overwrite confirm, atomic swap) | 0.2.6 | `599c57a` | `src/app/api/plugins/import/`, DELETE in `src/app/api/plugins/[id]/route.ts`, `src/components/plugins-section.tsx` |
-| Plugin home widgets + `location` split (settings vs home) | 0.2.6 | *(fix commit)* | `src/components/home-widgets.tsx`, `src/components/plugin-panel-frame.tsx`, `location`/`visiblePanels` in `src/lib/server/plugins.ts` |
+| Plugin home widgets + `location` split (settings vs home) | 0.2.6 | `44de54e` | `src/components/home-widgets.tsx`, `src/components/plugin-panel-frame.tsx`, `location`/`visiblePanels` in `src/lib/server/plugins.ts` |
 
 ---
 
