@@ -192,6 +192,7 @@ export const zhCN = {
   "settings.plugins.capability.transformInput": "可在翻译前改写所选文本",
   "settings.plugins.capability.transformOutput": "可在显示前改写译文",
   "settings.plugins.capability.dictionarySource": "可提供词典查询",
+  "settings.plugins.capability.uiPanel": "可添加设置面板",
   "settings.plugins.contributes.provider": "新增提供商：{label} — 请求发送至 {host}",
   "settings.plugins.consent.title": "启用插件？",
   "settings.plugins.consent.security": "插件是本地代码，可完全访问这台机器。请只启用你信任的插件。",

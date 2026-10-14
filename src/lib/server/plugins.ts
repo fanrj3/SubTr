@@ -19,6 +19,7 @@ export const KNOWN_CAPABILITIES = [
   "translate.transformInput",
   "translate.transformOutput",
   "dictionary.source",
+  "ui.panel",
 ] as const;
 
 export type Capability = (typeof KNOWN_CAPABILITIES)[number];
@@ -30,9 +31,16 @@ const STATE_TTL_MS = 1000;
 const MAX_CONSECUTIVE_FAILURES = 2;
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 const ID_RE = /^[a-z0-9-]+$/;
-const DEFAULT_ENTRY = "index.cjs";
 
 export type PluginStatus = "ok" | "disabled" | "error" | "incompatible";
+
+/** One embeddable panel declared by a plugin (requires the `ui.panel` capability). */
+export type PanelDecl = {
+  id: string;
+  title: string;
+  /** Path to an HTML file inside the plugin folder. */
+  entry: string;
+};
 
 /** Per-plugin entry shape returned by GET /api/plugins (frozen API). */
 export type PluginInfo = {
@@ -48,6 +56,8 @@ export type PluginInfo = {
   capabilities: string[];
   streaming?: "per-chunk" | "buffered";
   contributes?: { providers?: unknown[] };
+  /** Declared panels (empty when the plugin has none). */
+  panels: PanelDecl[];
   enabled: boolean;
   grantedCapabilities: string[];
   status: PluginStatus;
@@ -73,6 +83,7 @@ type Manifest = {
   capabilities: string[];
   streaming?: "per-chunk" | "buffered";
   contributes?: { providers?: unknown[] };
+  panels?: PanelDecl[];
 };
 
 /** Context passed to input transforms. Never contains keys/base URLs. */
@@ -244,8 +255,10 @@ function validateManifest(
     return { ok: false, error: `unknown capabilities: ${unknown.join(", ")}` };
   }
   const entry = typeof raw.entry === "string" && raw.entry.trim() ? raw.entry.trim() : undefined;
-  if (capabilities.length > 0 && !entry) {
-    return { ok: false, error: "manifest entry is required when capabilities are declared" };
+  // `ui.panel` is declarative (HTML only); everything else registers code hooks.
+  const needsEntry = capabilities.some((c) => c !== "ui.panel");
+  if (needsEntry && !entry) {
+    return { ok: false, error: "manifest entry is required when code capabilities are declared" };
   }
   const streaming = raw.streaming;
   if (streaming !== undefined && streaming !== "per-chunk" && streaming !== "buffered") {
@@ -260,6 +273,41 @@ function validateManifest(
     }
     contributes = Array.isArray(providers) ? { providers } : {};
   }
+
+  // Panels are embedded UI (HTML) and require the `ui.panel` capability.
+  let panels: PanelDecl[] | undefined;
+  if (raw.panels !== undefined) {
+    if (!Array.isArray(raw.panels)) {
+      return { ok: false, error: "manifest panels must be an array" };
+    }
+    if (!capabilities.includes("ui.panel")) {
+      return { ok: false, error: 'manifest panels require the "ui.panel" capability' };
+    }
+    const parsed: PanelDecl[] = [];
+    const seenIds = new Set<string>();
+    for (const item of raw.panels) {
+      if (!isRecord(item)) return { ok: false, error: "each panel must be an object" };
+      const panelId = item.id;
+      const title = item.title;
+      const panelEntry = item.entry;
+      if (typeof panelId !== "string" || !ID_RE.test(panelId)) {
+        return { ok: false, error: 'panel id must match /^[a-z0-9-]+$/' };
+      }
+      if (seenIds.has(panelId)) {
+        return { ok: false, error: `duplicate panel id: ${panelId}` };
+      }
+      seenIds.add(panelId);
+      if (typeof title !== "string" || !title.trim()) {
+        return { ok: false, error: "panel title must be a non-empty string" };
+      }
+      if (typeof panelEntry !== "string" || !panelEntry.trim()) {
+        return { ok: false, error: "panel entry must be a non-empty string" };
+      }
+      parsed.push({ id: panelId, title: title.trim(), entry: panelEntry.trim() });
+    }
+    panels = parsed;
+  }
+
   return {
     ok: true,
     manifest: {
@@ -275,6 +323,7 @@ function validateManifest(
       capabilities: capabilities as string[],
       ...(streaming ? { streaming: streaming as "per-chunk" | "buffered" } : {}),
       ...(contributes ? { contributes } : {}),
+      ...(panels ? { panels } : {}),
     },
   };
 }
@@ -298,6 +347,7 @@ function errorRecord(folder: string, dir: string, message: string): PluginRecord
       minAppVersion: "0.0.0",
       description: "",
       capabilities: [],
+      panels: [],
       enabled: false,
       grantedCapabilities: [],
       status: "error",
@@ -313,11 +363,16 @@ function recordFromManifest(
 ): { ok: true; record: PluginRecord } | { ok: false; error: string } {
   const incompatible = manifest.apiVersion !== API_VERSION;
   let entryPath: string | null = null;
-  if (manifest.capabilities.length > 0) {
-    const entryFile = manifest.entry ?? DEFAULT_ENTRY;
-    entryPath = path.join(/* turbopackIgnore: true */ dir, entryFile);
+  if (manifest.entry) {
+    entryPath = path.join(/* turbopackIgnore: true */ dir, manifest.entry);
     if (!existsSync(/* turbopackIgnore: true */ entryPath)) {
-      return { ok: false, error: `entry file not found: ${entryFile}` };
+      return { ok: false, error: `entry file not found: ${manifest.entry}` };
+    }
+  }
+  for (const panel of manifest.panels ?? []) {
+    const panelPath = path.join(/* turbopackIgnore: true */ dir, panel.entry);
+    if (!existsSync(/* turbopackIgnore: true */ panelPath)) {
+      return { ok: false, error: `panel "${panel.id}" entry file not found: ${panel.entry}` };
     }
   }
   const record: PluginRecord = {
@@ -341,6 +396,7 @@ function recordFromManifest(
       capabilities: [...manifest.capabilities],
       ...(manifest.streaming ? { streaming: manifest.streaming } : {}),
       ...(manifest.contributes ? { contributes: manifest.contributes } : {}),
+      panels: [...(manifest.panels ?? [])],
       enabled: false,
       grantedCapabilities: [],
       status: incompatible ? "incompatible" : "disabled",
@@ -892,6 +948,40 @@ export async function setPluginConsent(
 /** Current revision (bumped on reload/enable/disable). */
 export function getPluginsRevision(): number {
   return revision;
+}
+
+/**
+ * Read a plugin panel's HTML entry.
+ *
+ * Returns null (→ 404) for unknown/uninstalled plugins, plugins that are not
+ * enabled/ok, unknown panel ids, and any entry path that escapes the plugin
+ * folder (path-traversal guard). Only manifest-declared files are served.
+ */
+export async function readPanelFile(
+  id: string,
+  panelId: string,
+): Promise<string | null> {
+  await ensureScanned();
+  const record = records.get(id);
+  if (!record || !record.manifest) return null;
+  if (record.incompatible || record.error) return null;
+  if (!record.info.enabled || record.info.status !== "ok") return null;
+
+  const panel = (record.manifest.panels ?? []).find((p) => p.id === panelId);
+  if (!panel) return null;
+
+  const pluginDir = path.resolve(/* turbopackIgnore: true */ record.dir);
+  const resolved = path.resolve(
+    /* turbopackIgnore: true */ pluginDir,
+    /* turbopackIgnore: true */ panel.entry,
+  );
+  if (!resolved.startsWith(pluginDir + path.sep)) return null;
+
+  try {
+    return await fs.readFile(/* turbopackIgnore: true */ resolved, "utf8");
+  } catch {
+    return null;
+  }
 }
 
 /** Test-only: reset module state. */

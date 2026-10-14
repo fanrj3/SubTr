@@ -1,5 +1,5 @@
 import { connection } from "next/server";
-import { readStats } from "@/lib/server/stats";
+import { dailySeries, readStats } from "@/lib/server/stats";
 
 /**
  * GET /api/stats — aggregate LLM usage/cost for the local cost meter.
@@ -20,5 +20,6 @@ export async function GET(): Promise<Response> {
     outTokens: stats.totals.outTokens,
     estimatedCount: stats.totals.estimatedCount,
     lastRecordAt: stats.recent[0]?.ts ?? null,
+    daily: dailySeries(stats),
   });
 }

@@ -41,6 +41,15 @@ function formatSeconds(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+function sameTiming(a: SubtitleTiming, b: SubtitleTiming): boolean {
+  return (
+    a.initialHoldMs === b.initialHoldMs &&
+    a.minDisplayMs === b.minDisplayMs &&
+    a.textScale === b.textScale &&
+    a.finalHoldMs === b.finalHoldMs
+  );
+}
+
 function useIsMounted(): boolean {
   return useSyncExternalStore(
     () => () => {},
@@ -190,7 +199,8 @@ function PositionPreview({
     maxWidth: layout.containerWidth * 0.9,
     backgroundColor: hexToRgba(style.bgColor, style.bgOpacity),
     borderRadius: Math.max(8, 16 * ratio),
-    border: "1px solid rgba(255,255,255,0.1)",
+    border: "2px solid var(--color-accent)",
+    boxShadow: "0 1px 8px rgba(0, 0, 0, 0.35)",
     transform: "translate(-50%, -50%)",
   };
 
@@ -231,7 +241,7 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
     POSITION_TEST_TEXT_KEY,
     DEFAULT_POSITION_TEST_TEXT
   );
-  const sessionTextRef = useRef("");
+  const sessionSnapshotRef = useRef<{ text: string; timing: SubtitleTiming } | null>(null);
 
   // Adopt the longer default when the stored value is absent or is the old default.
   useEffect(() => {
@@ -342,8 +352,10 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
     if (!trimmed) return;
 
     const ended = playState.timeMs >= playState.totalMs;
-    const textChanged = trimmed !== sessionTextRef.current;
-    const hasSession = playState.active && !ended && !textChanged;
+    const snapshot = sessionSnapshotRef.current;
+    const changed =
+      !snapshot || snapshot.text !== trimmed || !sameTiming(snapshot.timing, timing);
+    const hasSession = playState.active && !ended && !changed;
 
     if (isDesktopPlayer) {
       if (playState.playing) {
@@ -351,7 +363,7 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
       } else if (hasSession) {
         window.subtrDesktop?.controlTestPlay?.({ action: "play" });
       } else {
-        sessionTextRef.current = trimmed;
+        sessionSnapshotRef.current = { text: trimmed, timing: { ...timing } };
         window.subtrDesktop?.showTestSubtitle?.(trimmed);
         window.subtrDesktop?.controlTestPlay?.({ action: "play" });
       }
@@ -363,7 +375,7 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
     } else if (hasSession) {
       setPlayState((prev) => ({ ...prev, playing: true }));
     } else {
-      sessionTextRef.current = trimmed;
+      sessionSnapshotRef.current = { text: trimmed, timing: { ...timing } };
       setPlayState({
         active: true,
         playing: true,
@@ -496,7 +508,7 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
                 key={preset.label}
                 type="button"
                 onClick={() => onChange({ ...style, xPct: preset.xPct, yPct: preset.yPct })}
-                className="rounded-lg border border-card-border bg-background px-2 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
+                className="min-w-0 break-words rounded-lg border border-card-border bg-background px-2 py-1.5 text-center text-xs font-medium leading-tight transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
               >
                 {preset.label}
               </button>

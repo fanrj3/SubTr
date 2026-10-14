@@ -8,6 +8,9 @@ import path from "node:path";
  * Persists to `~/.subtr/stats.json`. Writes are atomic (tmp + rename) and
  * serialized through a promise queue so a single process never interleaves
  * writes. Never stores keys or translation text.
+ *
+ * v2 adds `daily` buckets keyed by LOCAL calendar date (YYYY-MM-DD). v1 files
+ * are migrated on read (daily starts empty; totals/recent are preserved).
  */
 
 export type StatsRecord = {
@@ -32,15 +35,30 @@ export type StatsTotals = {
   estimatedCount: number;
 };
 
+/** One local-calendar-day bucket. */
+export type DailyEntry = {
+  calls: number;
+  translations: number;
+  inTok: number;
+  outTok: number;
+  costUsd: number;
+};
+
 export type StatsFile = {
-  version: 1;
+  version: 2;
   totals: StatsTotals;
   /** Newest first, capped at MAX_RECENT. */
   recent: StatsRecord[];
+  /** Keyed by local date (YYYY-MM-DD), capped at MAX_DAILY_DAYS. */
+  daily: Record<string, DailyEntry>;
 };
 
+/** Sorted shape returned by GET /api/stats. */
+export type DailyPoint = DailyEntry & { date: string };
+
 const MAX_RECENT = 200;
-const VERSION = 1 as const;
+const MAX_DAILY_DAYS = 730;
+const VERSION = 2 as const;
 
 function statsDir(): string {
   return path.join(os.homedir(), ".subtr");
@@ -48,6 +66,14 @@ function statsDir(): string {
 
 function statsPath(): string {
   return path.join(statsDir(), "stats.json");
+}
+
+/** Local calendar date as YYYY-MM-DD. */
+export function localDateKey(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function emptyStats(): StatsFile {
@@ -62,6 +88,7 @@ function emptyStats(): StatsFile {
       estimatedCount: 0,
     },
     recent: [],
+    daily: {},
   };
 }
 
@@ -69,7 +96,22 @@ function num(value: unknown, fallback = 0): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-/** Coerce an untrusted parsed file into the expected shape. */
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Keep only the most recent MAX_DAILY_DAYS buckets. */
+function trimDaily(daily: Record<string, DailyEntry>): void {
+  const keys = Object.keys(daily);
+  if (keys.length <= MAX_DAILY_DAYS) return;
+  keys.sort((a, b) => b.localeCompare(a));
+  for (const key of keys.slice(MAX_DAILY_DAYS)) {
+    delete daily[key];
+  }
+}
+
+/**
+ * Coerce an untrusted parsed file into the current shape. v1 files (no `daily`)
+ * migrate cleanly: totals/recent are preserved and `daily` starts empty.
+ */
 function normalize(raw: unknown): StatsFile {
   if (!raw || typeof raw !== "object") return emptyStats();
   const record = raw as Record<string, unknown>;
@@ -90,6 +132,24 @@ function normalize(raw: unknown): StatsFile {
       estimated: r.estimated === true,
     });
   }
+
+  const daily: Record<string, DailyEntry> = {};
+  const dailyRaw = record.daily;
+  if (dailyRaw && typeof dailyRaw === "object" && !Array.isArray(dailyRaw)) {
+    for (const [date, value] of Object.entries(dailyRaw as Record<string, unknown>)) {
+      if (!DATE_RE.test(date) || !value || typeof value !== "object") continue;
+      const v = value as Record<string, unknown>;
+      daily[date] = {
+        calls: num(v.calls),
+        translations: num(v.translations),
+        inTok: num(v.inTok),
+        outTok: num(v.outTok),
+        costUsd: num(v.costUsd),
+      };
+    }
+    trimDaily(daily);
+  }
+
   return {
     version: VERSION,
     totals: {
@@ -101,6 +161,7 @@ function normalize(raw: unknown): StatsFile {
       estimatedCount: num(totalsRaw.estimatedCount),
     },
     recent,
+    daily,
   };
 }
 
@@ -154,8 +215,9 @@ async function persist(stats: StatsFile): Promise<void> {
 }
 
 /**
- * Append a usage record and fold it into the totals. `translated` increments the
- * translations counter (a non-empty translation was produced).
+ * Append a usage record and fold it into the totals + today's daily bucket.
+ * `translated` increments the translations counter (a non-empty translation
+ * was produced).
  */
 export function recordUsage(
   record: StatsRecord,
@@ -163,12 +225,34 @@ export function recordUsage(
 ): Promise<void> {
   return enqueue(async () => {
     const stats = await load();
+    const inTok = Math.max(0, record.inTok);
+    const outTok = Math.max(0, record.outTok);
+    const translated = opts?.translated === true;
+    const cost = typeof record.costUsd === "number" ? record.costUsd : 0;
+
     stats.totals.calls += 1;
-    if (opts?.translated) stats.totals.translations += 1;
-    stats.totals.inTokens += Math.max(0, record.inTok);
-    stats.totals.outTokens += Math.max(0, record.outTok);
+    if (translated) stats.totals.translations += 1;
+    stats.totals.inTokens += inTok;
+    stats.totals.outTokens += outTok;
     if (record.estimated) stats.totals.estimatedCount += 1;
     if (typeof record.costUsd === "number") stats.totals.costUsd += record.costUsd;
+
+    const key = localDateKey();
+    const bucket = stats.daily[key] ?? {
+      calls: 0,
+      translations: 0,
+      inTok: 0,
+      outTok: 0,
+      costUsd: 0,
+    };
+    bucket.calls += 1;
+    if (translated) bucket.translations += 1;
+    bucket.inTok += inTok;
+    bucket.outTok += outTok;
+    bucket.costUsd += cost;
+    stats.daily[key] = bucket;
+    trimDaily(stats.daily);
+
     stats.recent.unshift(record);
     if (stats.recent.length > MAX_RECENT) {
       stats.recent.length = MAX_RECENT;
@@ -177,8 +261,20 @@ export function recordUsage(
   });
 }
 
-/** Read the current stats (aggregates + recent records). */
+/** Read the current stats (aggregates + recent records + daily buckets). */
 export async function readStats(): Promise<StatsFile> {
   const stats = await load();
-  return { ...stats, totals: { ...stats.totals }, recent: [...stats.recent] };
+  return {
+    version: stats.version,
+    totals: { ...stats.totals },
+    recent: [...stats.recent],
+    daily: { ...stats.daily },
+  };
+}
+
+/** Daily buckets as an array sorted oldest → newest (for GET /api/stats). */
+export function dailySeries(stats: StatsFile): DailyPoint[] {
+  return Object.entries(stats.daily)
+    .map(([date, entry]) => ({ date, ...entry }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }

@@ -16,6 +16,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | **0.2.1** | `66af67f` | Settings page, profiles v2, thinking control, subtitle customization |
 | **0.2.2** | `4c10810` · docs `0efc776` | Theme + UI language, compact window, position player |
 | **0.2.3** | `cb855ca` · docs `3650ab3` | Native theme, display-aspect preview, Test button, fade-out, caps, capture handshake |
+| **0.2.6** | *(release commit)* | Usage-stats plugin, panel capability, settings polish |
 | **0.2.5** | `34d13b5` | Plugins v1, cost meter + status bar, encrypted config export/import, player polish |
 | **0.2.4** | `f3cc2a3` | Dictionary, real-screen player, hotkey, tray |
 
@@ -59,6 +60,8 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | Cost meter (usage capture, stats store, `/api/stats`, home status bar) | 0.2.5 | `34d13b5` | `src/lib/server/stats.ts`, `src/lib/server/pricing.ts`, `src/app/api/stats/`, `src/components/status-bar.tsx` |
 | Encrypted config export/import (AES-GCM + PBKDF2) | 0.2.5 | `34d13b5` | `src/lib/client/config-transfer.ts`, `src/components/config-transfer.tsx` |
 | Pin-on-interaction + lock (click/wheel pins; bottom-right lock) | 0.2.5 | `34d13b5` | `src/components/subtitle-overlay.tsx` |
+| Plugin UI panels (`ui.panel`, panels manifest, iframe host + fetch relay) | 0.2.6 | *(release commit)* | `src/lib/server/plugins.ts`, `src/components/plugins-section.tsx`, `src/app/api/plugins/[id]/panel/` |
+| Usage-stats plugin (bar chart + calendar heatmap) | 0.2.6 | *(release commit)* | `examples/plugins/usage-stats/`, daily buckets in `src/lib/server/stats.ts` |
 
 ---
 
@@ -86,6 +89,15 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 
 ### 0.2.3 (`cb855ca`) — native theme · preview rework · test · robustness
 - Title bar follows theme (`setNativeTheme`); canvas = real display aspect + double-click enlarge; drag without text selection; appearance row responsive; base pace 220 wpm / 400 cpm with 0.2–5.0× slider; **Test** button (real-screen playback with live style); fade-out on every dismissal; caps raised (10000/12000); capture delivery handshake + latest-wins pending queue; dismissal aborts in-flight translation.
+
+### 0.2.6 — usage-stats plugin · panel capability · settings polish
+- **Play snapshot fully re-syncs**: reading pace / initial hold / min display / final hold AND text are compared to the session snapshot — any change starts a fresh run; unchanged resumes.
+- Config **export/import moved into the Profiles section** (配置文件).
+- Position board mini box: 2px accent border + shadow (board only; the real overlay card unchanged).
+- Settings layout: centered stable column with robust shrink (714×480, ~400px) and wide-window centering; controls no longer squeeze.
+- Navigation stability: enter animation removed, deterministic scroll reset — the header/title no longer flickers or shifts.
+- **Plugin system v1.1**: `ui.panel` capability + `panels` manifest entries + traversal-safe panel HTML route + sandboxed iframe host (`sandbox="allow-scripts"`) with a postMessage fetch relay (allow-listed to same-origin `/api/`, GET-only; forged messages are dropped).
+- **First real plugin**: `examples/plugins/usage-stats` — totals, 30-day bar chart, GitHub-style calendar heatmap, metric switcher, theme/language aware; `/api/stats` now returns per-day `daily` buckets (stats store v2, lossless migration).
 
 ### 0.2.5 — plugins v1 · cost meter · encrypted config transfer · player polish
 - **Player polish**: longer default preview text (with gentle migration); editing the preview text applies on the next Play (unchanged text still resumes); short/dictionary cards reserve space so ✕/Esc never overlap the word.

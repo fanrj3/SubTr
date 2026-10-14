@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "@/lib/client";
 import {
   hostFromBaseURL,
@@ -15,12 +15,104 @@ import { LoaderIcon } from "./icons";
 type PluginsSectionProps = {
   data: PluginsResponse | null;
   loading: boolean;
+  theme: "light" | "dark";
+  lang: "en" | "zh-CN";
   onToggle: (
     id: string,
     enabled: boolean,
     grantedCapabilities?: string[]
   ) => Promise<boolean>;
 };
+
+function isSafeApiUrl(url: unknown): url is string {
+  if (typeof url !== "string") return false;
+  if (!url.startsWith("/api/")) return false;
+  if (url.includes("..")) return false;
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url)) return false;
+  return true;
+}
+
+type PluginPanelProps = {
+  pluginId: string;
+  panel: { id: string; title: string; entry: string };
+  theme: "light" | "dark";
+  lang: "en" | "zh-CN";
+};
+
+function PluginPanel({ pluginId, panel, theme, lang }: PluginPanelProps) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(400);
+
+  const sendInit = useCallback(() => {
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    win.postMessage({ type: "subtr-plugin-init", theme, lang }, "*");
+  }, [theme, lang]);
+
+  // (a) parent → iframe on load and on theme/lang change.
+  useEffect(() => {
+    sendInit();
+  }, [sendInit]);
+
+  // (b) iframe → parent bridge.
+  useEffect(() => {
+    async function onMessage(event: MessageEvent) {
+      const win = iframeRef.current?.contentWindow;
+      if (!win || event.source !== win) return;
+      const data = event.data as Record<string, unknown> | null;
+      if (!data || typeof data.type !== "string") return;
+
+      if (data.type === "subtr-plugin-fetch") {
+        const rid = data.rid;
+        const url = data.url;
+        if (!isSafeApiUrl(url)) return;
+        try {
+          const res = await fetch(url, { cache: "no-store" });
+          const body = await res.text();
+          win.postMessage(
+            {
+              type: "subtr-plugin-fetch-result",
+              rid,
+              ok: res.ok,
+              status: res.status,
+              body,
+            },
+            "*"
+          );
+        } catch {
+          win.postMessage(
+            { type: "subtr-plugin-fetch-result", rid, ok: false, status: 0, body: "" },
+            "*"
+          );
+        }
+        return;
+      }
+
+      if (data.type === "subtr-plugin-resize") {
+        const raw = Number(data.height);
+        if (!Number.isFinite(raw)) return;
+        setHeight(Math.max(120, Math.min(720, raw)));
+      }
+    }
+
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  return (
+    <iframe
+      ref={iframeRef}
+      src={`/api/plugins/${encodeURIComponent(pluginId)}/panel/${encodeURIComponent(
+        panel.id
+      )}`}
+      title={panel.title}
+      sandbox="allow-scripts"
+      onLoad={sendInit}
+      style={{ height }}
+      className="w-full rounded-xl border border-card-border bg-background"
+    />
+  );
+}
 
 function capabilityLabel(
   capability: PluginCapability,
@@ -33,6 +125,8 @@ function capabilityLabel(
       return t("settings.plugins.capability.transformOutput");
     case "dictionary.source":
       return t("settings.plugins.capability.dictionarySource");
+    case "ui.panel":
+      return t("settings.plugins.capability.uiPanel");
   }
 }
 
@@ -49,7 +143,13 @@ function statusClasses(status: PluginInfo["status"]): string {
   }
 }
 
-export function PluginsSection({ data, loading, onToggle }: PluginsSectionProps) {
+export function PluginsSection({
+  data,
+  loading,
+  theme,
+  lang,
+  onToggle,
+}: PluginsSectionProps) {
   const { t } = useT();
   const [consentPlugin, setConsentPlugin] = useState<PluginInfo | null>(null);
   const [granted, setGranted] = useState<Record<string, boolean>>({});
@@ -234,6 +334,23 @@ export function PluginsSection({ data, loading, onToggle }: PluginsSectionProps)
                   })}
                 </p>
               ))}
+
+              {plugin.enabled &&
+                plugin.status === "ok" &&
+                plugin.panels &&
+                plugin.panels.length > 0 && (
+                  <div className="mt-3 space-y-3 border-t border-card-border pt-3">
+                    {plugin.panels.map((panel) => (
+                      <PluginPanel
+                        key={panel.id}
+                        pluginId={plugin.id}
+                        panel={panel}
+                        theme={theme}
+                        lang={lang}
+                      />
+                    ))}
+                  </div>
+                )}
             </div>
           ))}
         </div>

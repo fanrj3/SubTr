@@ -35,6 +35,8 @@ import {
   readUILang,
   writeUILang,
   subscribeUILang,
+  isDarkTheme,
+  effectiveUILang,
   usePlugins,
   mergeProviderPresets,
   type Theme,
@@ -181,6 +183,8 @@ export default function SettingsPage() {
     () => mergeProviderPresets(PROVIDER_PRESETS, plugins.data),
     [plugins.data]
   );
+  const panelTheme = isDarkTheme(theme) ? "dark" : "light";
+  const panelLang = effectiveUILang(uiLang);
 
   const [test, setTest] = useState<TestStatus>({ kind: "idle" });
   const [showKey, setShowKey] = useState(false);
@@ -287,19 +291,19 @@ export default function SettingsPage() {
   return (
     <div className="min-h-full bg-background text-foreground">
       <header className="sticky top-0 z-30 border-b border-card-border bg-background/80 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-[75rem] items-center gap-3 px-4 sm:px-6">
+        <div className="mx-auto flex h-16 min-w-0 max-w-3xl items-center gap-3 px-4 sm:px-6">
           <Link
             href="/"
-            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
           >
             <ArrowLeftIcon className="h-4 w-4" />
             {t("settings.back")}
           </Link>
-          <h1 className="text-lg font-semibold tracking-tight">{t("settings.title")}</h1>
+          <h1 className="truncate text-lg font-semibold tracking-tight">{t("settings.title")}</h1>
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
+      <main className="mx-auto w-full min-w-0 max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
         <div className="space-y-6">
           {/* Profiles */}
           <section className="rounded-2xl border border-card-border bg-card p-5 shadow-sm">
@@ -311,7 +315,7 @@ export default function SettingsPage() {
                 return (
                   <div
                     key={p.id}
-                    className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 transition-colors ${
+                    className={`flex min-w-0 flex-wrap items-center gap-2 rounded-xl border px-3 py-2.5 transition-colors ${
                       isActive
                         ? "border-accent/40 bg-accent-dim"
                         : "border-card-border bg-background"
@@ -335,7 +339,7 @@ export default function SettingsPage() {
                         <button
                           type="button"
                           onClick={() => handleSwitchProfile(p.id)}
-                          className="flex-1 text-left text-sm font-medium"
+                          className="min-w-0 flex-1 truncate text-left text-sm font-medium"
                         >
                           {p.name}
                           {isActive && (
@@ -378,6 +382,9 @@ export default function SettingsPage() {
               >
                 {t("settings.profiles.new")}
               </button>
+            </div>
+            <div className="mt-4 border-t border-card-border pt-4">
+              <ConfigTransfer />
             </div>
           </section>
 
@@ -524,7 +531,7 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <label className="block text-sm font-medium">{t("settings.app.appearance")}</label>
-                <div className="flex flex-wrap gap-2 rounded-xl border border-card-border bg-background p-1">
+                <div className="flex min-w-0 flex-wrap gap-2 rounded-xl border border-card-border bg-background p-1">
                   {([
                     { value: "system", label: t("settings.app.theme.system") },
                     { value: "light", label: t("settings.app.theme.light") },
@@ -534,7 +541,7 @@ export default function SettingsPage() {
                       key={option.value}
                       type="button"
                       onClick={() => updateTheme(option.value)}
-                      className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                      className={`min-w-0 flex-1 basis-24 truncate rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                         theme === option.value
                           ? "bg-accent text-white"
                           : "hover:bg-black/5 dark:hover:bg-white/5"
@@ -548,7 +555,7 @@ export default function SettingsPage() {
 
               <div className="space-y-2">
                 <label className="block text-sm font-medium">{t("settings.app.language")}</label>
-                <div className="flex flex-wrap gap-2 rounded-xl border border-card-border bg-background p-1">
+                <div className="flex min-w-0 flex-wrap gap-2 rounded-xl border border-card-border bg-background p-1">
                   {([
                     { value: "system", label: t("settings.app.language.system") },
                     { value: "zh-CN", label: t("settings.app.language.zhCN") },
@@ -558,7 +565,7 @@ export default function SettingsPage() {
                       key={option.value}
                       type="button"
                       onClick={() => updateUiLang(option.value)}
-                      className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                      className={`min-w-0 flex-1 basis-24 truncate rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                         uiLang === option.value
                           ? "bg-accent text-white"
                           : "hover:bg-black/5 dark:hover:bg-white/5"
@@ -571,13 +578,14 @@ export default function SettingsPage() {
               </div>
 
               <HotkeyRecorder />
-              <ConfigTransfer />
             </div>
           </section>
 
           <PluginsSection
             data={plugins.data}
             loading={plugins.loading}
+            theme={panelTheme}
+            lang={panelLang}
             onToggle={plugins.toggle}
           />
 

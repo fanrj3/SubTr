@@ -15,6 +15,7 @@ export type PluginInfo = {
   capabilities: string[];
   streaming?: "per-chunk" | "buffered";
   contributes?: { providers?: ProviderPreset[] };
+  panels?: { id: string; title: string; entry: string }[];
   enabled: boolean;
   grantedCapabilities: string[];
   status: PluginStatus;
@@ -31,6 +32,7 @@ export const PLUGIN_CAPABILITIES = [
   "translate.transformInput",
   "translate.transformOutput",
   "dictionary.source",
+  "ui.panel",
 ] as const;
 
 export type PluginCapability = (typeof PLUGIN_CAPABILITIES)[number];

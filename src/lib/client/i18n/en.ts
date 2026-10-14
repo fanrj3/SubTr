@@ -192,6 +192,7 @@ export const en = {
   "settings.plugins.capability.transformInput": "Can rewrite the selected text before it is translated",
   "settings.plugins.capability.transformOutput": "Can rewrite the translation before it is shown",
   "settings.plugins.capability.dictionarySource": "Can provide dictionary lookups",
+  "settings.plugins.capability.uiPanel": "Can add a settings panel",
   "settings.plugins.contributes.provider": "Adds provider: {label} — requests go to {host}",
   "settings.plugins.consent.title": "Enable plugin?",
   "settings.plugins.consent.security": "Plugins are local code with full access to this machine. Only enable plugins you trust.",
