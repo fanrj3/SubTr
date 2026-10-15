@@ -703,33 +703,36 @@ export default function SettingsPage() {
               </div>
             </SettingsRow>
 
-            <SettingsRow title={t("settings.provider.testConnection")}>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={handleTest}
-                  disabled={test.kind === "testing"}
-                  className="inline-flex items-center gap-2 rounded-lg border border-card-border bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 dark:hover:bg-white/[0.03]"
-                >
-                  {test.kind === "testing" && <LoaderIcon className="h-3.5 w-3.5" />}
-                  {t("settings.provider.testConnection")}
-                </button>
-                {test.kind === "success" && (
-                  <span className="inline-flex flex-wrap items-center gap-x-1.5 text-xs text-success">
-                    <CheckIcon className="h-3.5 w-3.5" />
-                    {test.reply
-                      ? t("settings.provider.reply", { n: test.latencyMs, reply: test.reply })
-                      : t("settings.provider.valid", { n: test.latencyMs })}
-                    <span className="opacity-80">{latencyFlavor(test.latencyMs)}</span>
-                  </span>
-                )}
-                {test.kind === "error" && (
-                  <span className="inline-flex items-center gap-1.5 text-xs text-danger">
+            <SettingsRow
+              title={t("settings.provider.testConnection")}
+              below={
+                test.kind === "success" ? (
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="inline-flex items-center gap-1.5 text-success">
+                      <CheckIcon className="h-3.5 w-3.5" />
+                      {test.reply
+                        ? t("settings.provider.reply", { n: test.latencyMs, reply: test.reply })
+                        : t("settings.provider.valid", { n: test.latencyMs })}
+                    </span>
+                    <span className="text-muted">{latencyFlavor(test.latencyMs)}</span>
+                  </div>
+                ) : test.kind === "error" ? (
+                  <span className="inline-flex items-center gap-1.5 text-danger">
                     <AlertIcon className="h-3.5 w-3.5" />
                     {test.message}
                   </span>
-                )}
-              </div>
+                ) : undefined
+              }
+            >
+              <button
+                type="button"
+                onClick={handleTest}
+                disabled={test.kind === "testing"}
+                className="inline-flex items-center gap-2 rounded-lg border border-card-border bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-black/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60 dark:hover:bg-white/[0.03]"
+              >
+                {test.kind === "testing" && <LoaderIcon className="h-3.5 w-3.5" />}
+                {t("settings.provider.testConnection")}
+              </button>
             </SettingsRow>
           </SettingsSurface>
             </Tabs.Panel>

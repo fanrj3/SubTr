@@ -36,19 +36,21 @@ export function SettingsRow({
   title,
   description,
   children,
+  below,
   htmlFor,
   className = "",
 }: {
   title: ReactNode;
   description?: ReactNode;
   children?: ReactNode;
+  below?: ReactNode;
   htmlFor?: string;
   className?: string;
 }) {
   return (
     <div className={`@container border-b border-card-border last:border-b-0 ${className}`}>
       <div className="flex flex-col gap-2 px-3.5 py-3 @min-[420px]:flex-row @min-[420px]:items-center @min-[420px]:justify-between @min-[420px]:gap-3">
-        <div className="min-w-0 @min-[420px]:flex-1">
+        <div className="min-w-0 @min-[420px]:min-w-[8rem] @min-[420px]:flex-1">
           <label htmlFor={htmlFor} className="block text-[13px] font-medium">
             {title}
           </label>
@@ -62,6 +64,9 @@ export function SettingsRow({
           </div>
         )}
       </div>
+      {below && (
+        <div className="min-w-0 px-3.5 pb-3 text-xs @min-[420px]:pt-0">{below}</div>
+      )}
     </div>
   );
 }

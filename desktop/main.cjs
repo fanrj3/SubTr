@@ -39,17 +39,34 @@ const { buildFrames, buildMenuIcons } = require("./tray-icons.cjs");
 const voicePipeline = require("./voice-pipeline.cjs");
 const { initMain: initLoopbackAudio } = require("electron-audio-loopback");
 
+// macOS system-audio loopback. Electron 39+ offers two backends:
+//   - Core Audio taps  (feature MacCatapLoopbackAudioForScreenShare, default ON)
+//     → on macOS 14.4+/26.x this hands back an audio track that is already
+//       `readyState: "ended"` and delivers pure silence (rms = 0 forever).
+//   - ScreenCaptureKit loopback (MacSckSystemAudioLoopbackOverride) → works.
+// Force the working SCK path by disabling the MacCatap feature, merging with
+// Electron's existing disable-features list (appendSwitch would otherwise
+// clobber it). Set SUBTR_VOICE_CORE_AUDIO_TAP=1 to opt back into the tap backend.
+const forceCoreAudioTap = process.env.SUBTR_VOICE_CORE_AUDIO_TAP === "1";
+if (process.platform === "darwin" && !forceCoreAudioTap) {
+  const disabled = (app.commandLine.getSwitchValue("disable-features") || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!disabled.includes("MacCatapLoopbackAudioForScreenShare")) {
+    disabled.push("MacCatapLoopbackAudioForScreenShare");
+    app.commandLine.appendSwitch("disable-features", disabled.join(","));
+    console.log("[voice] disabled MacCatapLoopbackAudioForScreenShare → SCK loopback");
+  }
+}
+
 // Enable macOS system-audio loopback (electron-audio-loopback). Appends the
 // Chromium feature flags (PulseaudioLoopbackForScreenShare,
 // MacLoopbackAudioForScreenShare, MacSckSystemAudioLoopbackOverride) and
 // registers the "enable-loopback-audio" / "disable-loopback-audio" IPC that
 // installs a setDisplayMediaRequestHandler returning audio:'loopback'.
-//
-// SUBTR_VOICE_CORE_AUDIO_TAP=1 switches to the Core Audio tap backend
-// (MacCatapSystemAudioLoopbackCapture) — an experiment for macOS versions where
-// the default ScreenCaptureKit loopback yields silence.
 initLoopbackAudio({
-  forceCoreAudioTap: process.env.SUBTR_VOICE_CORE_AUDIO_TAP === "1",
+  forceCoreAudioTap,
 });
 
 const APP_ROOT = path.resolve(__dirname, "..");
