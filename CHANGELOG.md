@@ -94,8 +94,8 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | Image-translate result card: contain-fit sizing, Esc/click-away/✕ dismiss (global Esc), Live-Text highlights, subtitle above card | 0.2.10 | `4322702` | `desktop/host-regions.html`, `desktop/main.cjs` |
 | App icon (SVG source + sips/iconutil pipeline wired into electron-builder) | 0.2.10 | `4322702` | `build/icon.svg`, `scripts/build-icon.mjs`, `electron-builder.yml` |
 | Update check in About + `docs/UPDATES.md` plan | 0.2.10 | `4322702` | `src/app/settings/page.tsx`, `src/lib/version.ts`, `docs/UPDATES.md` |
-| Image-translate batch translate via streaming route + visible degrade (no stuck “Translating…”) | 0.2.10 | *(follow-up 3)* | `desktop/main.cjs`, `examples/plugins/image-translate/index.cjs` |
-| Highlight numbers off by default + config migration (`configVersion: 2`) | 0.2.10 | *(follow-up 3)* | `examples/plugins/image-translate/index.cjs`, `examples/plugins/image-translate/README.md` |
+| Image-translate batch translate via streaming route + visible degrade (no stuck “Translating…”) | 0.2.10 | `19cb728` | `desktop/main.cjs`, `examples/plugins/image-translate/index.cjs` |
+| Highlight numbers off by default + config migration (`configVersion: 2`) | 0.2.10 | `19cb728` | `examples/plugins/image-translate/index.cjs`, `examples/plugins/image-translate/README.md` |
 
 ---
 
