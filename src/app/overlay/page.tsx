@@ -21,13 +21,19 @@ import {
   writeSubtitleStyle,
 } from "@/lib/client";
 import { isDesktopMode } from "@/lib/client/desktop";
-import { SubtitleOverlay, type SubtitleState } from "@/components/subtitle-overlay";
+import {
+  SubtitleOverlay,
+  type SubtitleState,
+  type VoiceLine,
+} from "@/components/subtitle-overlay";
 
 const TARGET_LANG_KEY = "subtr.targetLang.v1";
 const DEFAULT_TARGET_LANG = "auto";
 const REPORT_INTERVAL_MS = 200;
 const VOICE_DEBOUNCE_MS = 800;
-const VOICE_IDLE_MS = 2500;
+const VOICE_STOP_MS = 200;
+const VOICE_MAX_LINES = 4;
+const VOICE_CHUNK_THROTTLE_MS = 150;
 
 type TestState = {
   playing: boolean;
@@ -35,16 +41,6 @@ type TestState = {
   totalMs: number;
   text: string;
   confirmed: boolean;
-};
-
-type VoiceSession = {
-  active: boolean;
-  seq: number;
-  latestText: string;
-  displayed: string;
-  debounce: number | null;
-  idle: number | null;
-  controller: AbortController | null;
 };
 
 type PreparedTranslation = {
@@ -57,27 +53,22 @@ function readTargetLang(): string {
   return readStorage(TARGET_LANG_KEY, DEFAULT_TARGET_LANG);
 }
 
-function createVoiceSession(): VoiceSession {
-  return {
-    active: false,
-    seq: 0,
-    latestText: "",
-    displayed: "",
-    debounce: null,
-    idle: null,
-    controller: null,
-  };
-}
-
 function Overlay() {
   const { t } = useT();
   const mode = useModeState();
   const [subtitle, setSubtitle] = useState<SubtitleState>({ kind: "idle" });
   const [test, setTest] = useState<TestState | null>(null);
   const [voiceActive, setVoiceActive] = useState(false);
-  const [voiceRevision, setVoiceRevision] = useState(0);
+  const [voiceLines, setVoiceLines] = useState<VoiceLine[]>([]);
+  const [voiceStopping, setVoiceStopping] = useState(false);
   const testRef = useRef<TestState | null>(null);
-  const voiceRef = useRef<VoiceSession | null>(null);
+  const linesRef = useRef<VoiceLine[]>([]);
+  const voiceSeqRef = useRef(0);
+  const debounceRef = useRef<number | null>(null);
+  const voiceControllerRef = useRef<AbortController | null>(null);
+  const lineReqRef = useRef<Map<string, number>>(new Map());
+  const reqSeqRef = useRef(0);
+  const stopTimerRef = useRef<number | null>(null);
   const wasPlayingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const searchParams = useSearchParams();
@@ -94,26 +85,71 @@ function Overlay() {
     });
   }, []);
 
+  const commitLines = useCallback((next: VoiceLine[]) => {
+    linesRef.current = next;
+    setVoiceLines(next);
+  }, []);
+
+  const applyLineText = useCallback(
+    (id: string, text: string) => {
+      commitLines(linesRef.current.map((line) => (line.id === id ? { ...line, text } : line)));
+    },
+    [commitLines]
+  );
+
   const dismissSubtitle = useCallback(() => {
-    const v = voiceRef.current;
-    if (v) {
-      if (v.debounce) window.clearTimeout(v.debounce);
-      if (v.idle) window.clearTimeout(v.idle);
-      v.controller?.abort();
-      voiceRef.current = {
-        ...createVoiceSession(),
-        displayed: v.displayed,
-      };
+    // Voice mode: local fade only — voice stays on, so the next payload reopens.
+    if (voiceActive || linesRef.current.length > 0) {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+      voiceControllerRef.current?.abort();
+      voiceControllerRef.current = null;
+      setVoiceStopping(true);
+      if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
+      stopTimerRef.current = window.setTimeout(() => {
+        stopTimerRef.current = null;
+        setVoiceStopping(false);
+        commitLines([]);
+        setSubtitle({ kind: "idle" });
+      }, VOICE_STOP_MS);
+      return;
     }
-    // Keep `voiceActive` true through the dismissal render: the overlay uses it
-    // to take the hard-cut path (no re-creating fade, no fallback flash). It is
-    // reset when the next non-voice capture begins.
     abortRef.current?.abort();
     abortRef.current = null;
     testRef.current = null;
     setTest(null);
     setSubtitle({ kind: "idle" });
-  }, []);
+  }, [voiceActive, commitLines]);
+
+  const voiceStopPendingRef = useRef(false);
+
+  const stopVoice = useCallback(() => {
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    debounceRef.current = null;
+    voiceControllerRef.current?.abort();
+    voiceControllerRef.current = null;
+    voiceStopPendingRef.current = true;
+    setVoiceStopping(true);
+    if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
+    stopTimerRef.current = window.setTimeout(() => {
+      stopTimerRef.current = null;
+      // Keep `voiceActive` true for this idle transition so the overlay takes
+      // the voice hard-cut (no re-created fade, no fallback flash). It is
+      // cleared in the effect below, after the card has been removed.
+      setVoiceStopping(false);
+      commitLines([]);
+      setSubtitle({ kind: "idle" });
+    }, VOICE_STOP_MS);
+  }, [commitLines]);
+
+  // Stop teardown: drop the voice flag only after the idle render has removed
+  // the card (never in the same batch).
+  useEffect(() => {
+    if (voiceStopPendingRef.current && subtitle.kind === "idle") {
+      voiceStopPendingRef.current = false;
+      setVoiceActive(false);
+    }
+  }, [subtitle.kind, voiceActive]);
 
   const handleRequestEscArmed = useCallback((armed: boolean) => {
     window.subtrDesktop?.setEscArmed?.(armed);
@@ -164,46 +200,41 @@ function Overlay() {
     };
   }, []);
 
-  /** One translation per debounce window; stale results are ignored by seq. */
-  const runVoiceTranslation = useCallback(
-    (seq: number) => {
-      const v = voiceRef.current;
-      if (!v || !v.active) return;
-      const text = v.latestText;
-      if (!text.trim()) return;
-      const prepared = prepareTranslation(text);
-      if (!prepared) return; // keep previous text visible
-
-      v.controller?.abort();
+  /** Translate one line; stream chunks into it (throttled) with seq guard. */
+  const translateLine = useCallback(
+    (lineId: string, source: string) => {
+      const prepared = prepareTranslation(source);
+      if (!prepared) return; // keep the line's current text
+      voiceControllerRef.current?.abort();
       const controller = new AbortController();
-      // Replace only the controller; keep idle/debounce handles so the
-      // in-flight idle timer can still be cancelled by the next payload.
-      voiceRef.current = { ...v, controller };
+      voiceControllerRef.current = controller;
+      const reqSeq = ++reqSeqRef.current;
+      lineReqRef.current.set(lineId, reqSeq);
       let buffer = "";
+      let lastFlush = 0;
 
       streamTranslate(
-        text,
+        source,
         prepared.targetLang,
         prepared.config,
         controller.signal,
         {
           onChunk: (value) => {
             buffer = value;
+            const now = performance.now();
+            if (now - lastFlush >= VOICE_CHUNK_THROTTLE_MS) {
+              lastFlush = now;
+              if (lineReqRef.current.get(lineId) === reqSeq) {
+                applyLineText(lineId, buffer);
+              }
+            }
           },
           onDone: () => {
-            const current = voiceRef.current;
-            if (!current || !current.active || current.seq !== seq) return; // stale
-            const next = buffer.trim() || text;
-            current.displayed = next;
-            setSubtitle({
-              kind: "success",
-              original: text.slice(0, 80),
-              text: next,
-            });
-            setVoiceRevision((r) => r + 1);
+            if (lineReqRef.current.get(lineId) !== reqSeq) return; // stale
+            applyLineText(lineId, buffer.trim() || source);
           },
           onError: () => {
-            // Keep the previous translated text visible.
+            // Keep the line's current text.
           },
         },
         prepared.bodyOverrides && Object.keys(prepared.bodyOverrides).length > 0
@@ -211,69 +242,106 @@ function Overlay() {
           : undefined
       );
     },
-    [prepareTranslation]
+    [prepareTranslation, applyLineText]
   );
 
-  const handleVoiceCapture = useCallback(
-    (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed) return;
-      const prev = voiceRef.current ?? createVoiceSession();
-      if (prev.debounce) window.clearTimeout(prev.debounce);
-      if (prev.idle) window.clearTimeout(prev.idle);
-
-      const seq = prev.seq + 1;
-      setVoiceActive(true);
-
-      // Never blank the caption: show the source text on the first payload
-      // until the first translation arrives; afterwards keep the previous one.
-      if (!prev.displayed) {
-        setSubtitle({ kind: "success", original: trimmed.slice(0, 80), text: trimmed });
-        setVoiceRevision((r) => r + 1);
-      }
-
-      const debounce = window.setTimeout(() => {
-        const cur = voiceRef.current;
-        if (cur) voiceRef.current = { ...cur, debounce: null };
-        runVoiceTranslation(seq);
+  const scheduleTranslate = useCallback(
+    (lineId: string, source: string) => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+      debounceRef.current = window.setTimeout(() => {
+        debounceRef.current = null;
+        translateLine(lineId, source);
       }, VOICE_DEBOUNCE_MS);
-
-      const idle = window.setTimeout(() => {
-        const cur = voiceRef.current;
-        if (cur) voiceRef.current = { ...cur, idle: null };
-        dismissSubtitle();
-      }, VOICE_IDLE_MS);
-
-      voiceRef.current = {
-        active: true,
-        seq,
-        latestText: trimmed,
-        displayed: prev.displayed,
-        debounce,
-        idle,
-        controller: prev.controller,
-      };
     },
-    [runVoiceTranslation, dismissSubtitle]
+    [translateLine]
   );
 
-  const handleCapture = useCallback(
-    async (text: string, source?: string, voice?: boolean) => {
-      const trimmed = text.trim();
-      if (!trimmed) return;
+  const activeUtteranceRef = useRef<string | null>(null);
 
-      if (voice) {
-        handleVoiceCapture(trimmed);
+  const handleVoicePayload = useCallback(
+    (
+      text: string,
+      utteranceId: string | undefined,
+      close: boolean,
+      stop: boolean
+    ) => {
+      if (stop) {
+        stopVoice();
+        return;
+      }
+      // A payload during/after a stop cancels the teardown and reopens.
+      voiceStopPendingRef.current = false;
+      if (stopTimerRef.current) {
+        window.clearTimeout(stopTimerRef.current);
+        stopTimerRef.current = null;
+      }
+      setVoiceStopping(false);
+      const trimmed = text.trim();
+      const lines = linesRef.current;
+      const live = lines[lines.length - 1];
+      const newUtterance =
+        !live || live.final || (utteranceId ? utteranceId !== activeUtteranceRef.current : false);
+
+      if (newUtterance) {
+        if (!trimmed) return;
+        const id = `v${++voiceSeqRef.current}`;
+        activeUtteranceRef.current = utteranceId ?? id;
+        commitLines(
+          [...lines, { id, source: trimmed, text: "", final: false }].slice(-VOICE_MAX_LINES)
+        );
+        setVoiceActive(true);
+        setSubtitle({ kind: "success", original: "", text: "" });
+        scheduleTranslate(id, trimmed);
         return;
       }
 
+      const sourceChanged = !!trimmed && trimmed !== live.source;
+      let updated = lines.map((line, index) =>
+        index === lines.length - 1 ? { ...line, source: trimmed || line.source } : line
+      );
+      if (close) {
+        updated = updated.map((line, index) =>
+          index === updated.length - 1 ? { ...line, final: true } : line
+        );
+        activeUtteranceRef.current = null;
+      }
+      commitLines(updated);
+      setVoiceActive(true);
+      setSubtitle({ kind: "success", original: "", text: "" });
+      if (sourceChanged) scheduleTranslate(live.id, trimmed);
+    },
+    [commitLines, scheduleTranslate, stopVoice]
+  );
+
+  const handleCapture = useCallback(
+    async (
+      text: string,
+      source?: string,
+      voice?: boolean,
+      voiceOpts?: { utteranceId?: string; close?: boolean; stop?: boolean }
+    ) => {
+      if (voice) {
+        handleVoicePayload(
+          text,
+          voiceOpts?.utteranceId,
+          !!voiceOpts?.close,
+          !!voiceOpts?.stop
+        );
+        return;
+      }
+
+      const trimmed = text.trim();
+      if (!trimmed) return;
+
       // Any non-voice capture leaves voice mode cleanly.
-      const v = voiceRef.current;
-      if (v?.active) {
-        if (v.debounce) window.clearTimeout(v.debounce);
-        if (v.idle) window.clearTimeout(v.idle);
-        v.controller?.abort();
-        voiceRef.current = { ...createVoiceSession(), displayed: v.displayed };
+      if (voiceActive || linesRef.current.length > 0) {
+        if (debounceRef.current) window.clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+        voiceControllerRef.current?.abort();
+        voiceControllerRef.current = null;
+        lineReqRef.current.clear();
+        activeUtteranceRef.current = null;
+        commitLines([]);
         setVoiceActive(false);
       }
 
@@ -371,8 +439,10 @@ function Overlay() {
       t,
       mode,
       report,
-      handleVoiceCapture,
+      handleVoicePayload,
       prepareTranslation,
+      voiceActive,
+      commitLines,
     ]
   );
 
@@ -487,7 +557,11 @@ function Overlay() {
       if (!bridge) return;
 
       const unsubscribe = bridge.onCapture((payload) => {
-        handleCapture(payload.text, payload.source, payload.voice);
+        handleCapture(payload.text, payload.source, payload.voice, {
+          utteranceId: payload.utteranceId,
+          close: payload.close,
+          stop: payload.stop,
+        });
       });
       return unsubscribe;
     }
@@ -511,29 +585,34 @@ function Overlay() {
     return unsubscribe;
   }, [dismissSubtitle]);
 
-  // Dev-only hook to simulate voice capture payloads in the browser.
+  // Dev-only hooks to simulate capture payloads in the browser.
   useEffect(() => {
     if (process.env.NODE_ENV === "production") return;
     const w = window as unknown as {
-      __subtrVoiceTest?: (text: string, voice?: boolean) => void;
+      __subtrVoiceTest?: (
+        text: string,
+        opts?: { utteranceId?: string; close?: boolean; stop?: boolean }
+      ) => void;
+      __subtrCapture?: (text: string, voice?: boolean) => void;
     };
-    w.__subtrVoiceTest = (text, voice = true) => {
+    w.__subtrVoiceTest = (text, opts) => {
+      void handleCapture(text, undefined, true, opts);
+    };
+    w.__subtrCapture = (text, voice = false) => {
       void handleCapture(text, undefined, voice);
     };
     return () => {
       delete w.__subtrVoiceTest;
+      delete w.__subtrCapture;
     };
   }, [handleCapture]);
 
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
-      const v = voiceRef.current;
-      if (v) {
-        if (v.debounce) window.clearTimeout(v.debounce);
-        if (v.idle) window.clearTimeout(v.idle);
-        v.controller?.abort();
-      }
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+      if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
+      voiceControllerRef.current?.abort();
     };
   }, []);
 
@@ -564,7 +643,8 @@ function Overlay() {
       controlledPlay={controllingTest}
       testMode={testMode}
       voice={voiceActive}
-      voiceRevision={voiceRevision}
+      voiceLines={voiceLines}
+      voiceStopping={voiceStopping}
     />
   );
 }

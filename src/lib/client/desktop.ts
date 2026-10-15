@@ -50,6 +50,8 @@ export type DesktopBridge = {
       source?: string;
       voice?: boolean;
       utteranceId?: string;
+      close?: boolean;
+      stop?: boolean;
     }) => void
   ): () => void;
   setOverlayInteractive?(on: boolean): void;

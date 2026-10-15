@@ -20,7 +20,7 @@ process.env.SUBTR_SELECTION_HOOK = "0"; // avoid the native hook during automati
 
 const fs = require("node:fs");
 const { spawn } = require("node:child_process");
-const { app } = require("electron");
+const { app, BrowserWindow } = require("electron");
 
 require("./main.cjs");
 
@@ -31,12 +31,14 @@ function log(...args) {
   console.log("[e2e]", ...args);
 }
 
-/** Summarise a delivery log: in-place growth, dedupe, utterance gaps. */
+/** Summarise a delivery log: in-place growth, dedupe, closes, stops, gaps. */
 function analyzeDeliveries(list) {
+  const content = list.filter((d) => !d.stop);
+  const stops = list.filter((d) => d.stop);
   const byUtterance = new Map();
   let adjacentIdentical = 0;
   let prevText = null;
-  for (const d of list) {
+  for (const d of content) {
     if (prevText !== null && d.text === prevText) adjacentIdentical += 1;
     prevText = d.text;
     if (!byUtterance.has(d.utteranceId)) {
@@ -57,12 +59,18 @@ function analyzeDeliveries(list) {
   }
   const gaps = [];
   for (let i = 1; i < utt.length; i++) gaps.push(utt[i].first - utt[i - 1].last);
+  // Ordered signal summary: "grow" | "close" | "stop".
+  const signals = list.map((d) => (d.stop ? "stop" : d.close ? "close" : "grow"));
   return {
     deliveryCount: list.length,
+    contentCount: content.length,
+    closeCount: content.filter((d) => d.close).length,
+    stopCount: stops.length,
     utteranceCount: utt.length,
     adjacentIdentical,
     growthViolations,
     interUtteranceGapsMs: gaps,
+    signals,
     utterances: utt.map((u) => ({ id: u.id, deliveries: u.count, closes: u.closes, firstText: u.texts[0], lastText: u.texts[u.texts.length - 1] })),
   };
 }
@@ -144,11 +152,11 @@ app.whenReady().then(async () => {
       await playOnce();
       await sleep(4000); // trailing silence → close utterance 2
 
-      const deliveries = globalThis.__subtrVoiceDeliveries();
+      const deliveries1 = globalThis.__subtrVoiceDeliveries();
       results.live = {
         after: globalThis.__subtrVoice(),
-        analysis: analyzeDeliveries(deliveries),
-        deliveries,
+        analysis: analyzeDeliveries(deliveries1),
+        deliveries: deliveries1,
       };
 
       // Hardening: kill whisper-server mid-session → expect a bounded auto-restart.
@@ -156,8 +164,44 @@ app.whenReady().then(async () => {
       await sleep(4000);
       results.live.afterKill = globalThis.__subtrVoice();
 
+      // Session 1 OFF (tray/stop hook): exactly one stop, then no further deliveries.
       globalThis.__subtrVoiceStop();
-      await sleep(500);
+      await sleep(1000);
+      const afterStop1 = globalThis.__subtrVoiceDeliveries();
+      await sleep(800);
+      const afterStop1b = globalThis.__subtrVoiceDeliveries();
+      results.live.stop1 = {
+        stopCount: afterStop1.filter((d) => d.stop).length,
+        stoppedAt: (globalThis.__subtrVoice() || {}).stoppedAt || 0,
+        stableAfterStop: afterStop1.length === afterStop1b.length,
+      };
+
+      // Session 2 via the renderer bridge (voiceSetEnabled): clean re-enable with
+      // no stale stop, then enable→disable emits exactly one stop.
+      let win = null;
+      for (let i = 0; i < 100 && !win; i++) {
+        win = BrowserWindow.getAllWindows().find((w) => {
+          if (w.isDestroyed()) return false;
+          const u = w.webContents.getURL();
+          return u.includes("127.0.0.1") && !u.includes("/overlay");
+        });
+        if (!win) await sleep(100);
+      }
+      const callSet = (v) =>
+        win.webContents
+          .executeJavaScript("window.subtrDesktop.voiceSetEnabled(" + v + ").then((s)=>JSON.stringify(s))")
+          .then(JSON.parse);
+      await callSet(true);
+      await sleep(1500);
+      const midSession2 = globalThis.__subtrVoiceDeliveries();
+      await callSet(false);
+      await sleep(700);
+      const deliveries2 = globalThis.__subtrVoiceDeliveries();
+      results.live.session2 = {
+        stopsBeforeOff: midSession2.filter((d) => d.stop).length,
+        stopCount: deliveries2.filter((d) => d.stop).length,
+        deliveries: deliveries2.length,
+      };
       results.live.status = globalThis.__subtrVoice().status;
     }
   } catch (error) {

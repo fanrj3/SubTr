@@ -24,6 +24,13 @@ export type SubtitleState =
   | { kind: "success"; original: string; text: string }
   | { kind: "dictionary"; original: string; phonetic?: string; senses: string[] };
 
+export type VoiceLine = {
+  id: string;
+  source: string;
+  text: string;
+  final: boolean;
+};
+
 export type ControlledPlay = {
   timeMs: number;
   totalMs: number;
@@ -47,8 +54,10 @@ type SubtitleOverlayProps = {
   testMode?: TestMode;
   /** Continuous voice captions: no internal auto-hide, keep the card stable. */
   voice?: boolean;
-  /** Bumped when the voice text is replaced, to trigger a short cross-fade. */
-  voiceRevision?: number;
+  /** Rolling transcript lines (oldest→newest); newest is the live line. */
+  voiceLines?: VoiceLine[];
+  /** True while a voice session is fading out via `stop`/Esc. */
+  voiceStopping?: boolean;
 };
 
 const ERROR_HIDE_MS = 20000;
@@ -79,7 +88,8 @@ export function SubtitleOverlay({
   controlledPlay,
   testMode,
   voice,
-  voiceRevision,
+  voiceLines,
+  voiceStopping,
 }: SubtitleOverlayProps) {
   const { t } = useT();
   const [showEscHint, setShowEscHint] = useState(false);
@@ -329,6 +339,24 @@ export function SubtitleOverlay({
     setPinned(false);
   }, [original]);
 
+  // Reduced-motion is needed even in voice mode (where the init effect is skipped).
+  useEffect(() => {
+    prefersReducedMotionRef.current = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+  }, []);
+
+  // Voice rolling transcript: keep the newest line at the bottom.
+  useEffect(() => {
+    if (!isVoice) return;
+    const vp = viewportRef.current;
+    if (!vp) return;
+    vp.scrollTo({
+      top: vp.scrollHeight,
+      behavior: prefersReducedMotionRef.current ? "auto" : "smooth",
+    });
+  }, [isVoice, voiceLines]);
+
   // Cancel an in-flight exit only when a genuinely NEW subtitle arrives during
   // the exit; start exit when parent switches to idle.
   useEffect(() => {
@@ -484,6 +512,7 @@ export function SubtitleOverlay({
   }, [original, isControlled, isVoice]);
 
   function pin(showHint: boolean) {
+    if (isVoice) return; // pinning is a no-op while voice mode is active
     if (pinned) return;
     setPinned(true);
     interruptedRef.current = true;
@@ -566,7 +595,9 @@ export function SubtitleOverlay({
     <div
       data-subtr-overlay
       className={`pointer-events-none fixed z-40 mx-auto flex max-w-[min(920px,92vw)] justify-center px-4 transition-all duration-200 ease-out motion-reduce:transition-none ${
-        isExiting ? "pointer-events-none opacity-0 translate-y-2" : "opacity-100 translate-y-0"
+        isExiting || voiceStopping
+          ? "pointer-events-none opacity-0 translate-y-2"
+          : "opacity-100 translate-y-0"
       }`}
       style={{
         left: hasMetrics ? `${leftPx}px` : `${posX}%`,
@@ -638,12 +669,36 @@ export function SubtitleOverlay({
           <XIcon className="h-4 w-4" />
         </button>
 
-        <p
-          className="mb-1 line-clamp-2 px-10 text-xs leading-relaxed"
-          style={{ color: dimmedColor }}
-        >
-          {state.kind !== "idle" ? state.original : ""}
-        </p>
+        {!isVoice && (
+          <p
+            className="mb-1 line-clamp-2 px-10 text-xs leading-relaxed"
+            style={{ color: dimmedColor }}
+          >
+            {state.kind !== "idle" ? state.original : ""}
+          </p>
+        )}
+
+        {isVoice && (
+          <div
+            ref={viewportRef}
+            className="subtr-scroll max-h-[180px] overflow-y-auto pr-1 text-left"
+            style={{ scrollBehavior: "smooth" }}
+          >
+            <div ref={contentRef} className="space-y-1 leading-snug tracking-wide">
+              {(voiceLines ?? []).map((line, index) => {
+                const isLive = index === (voiceLines ?? []).length - 1;
+                return (
+                  <p
+                    key={line.id}
+                    className={isLive ? "transition-opacity duration-100" : "opacity-70"}
+                  >
+                    {line.text || line.source}
+                  </p>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {isLoading && (
           <div className="flex items-center justify-center gap-2 py-1">
@@ -691,7 +746,7 @@ export function SubtitleOverlay({
           </div>
         )}
 
-        {!isLoading && !isError && !isDictionary && (
+        {!isLoading && !isError && !isDictionary && !isVoice && (
           <div
             ref={viewportRef}
             className={`subtr-scroll max-h-[200px] overflow-y-auto text-left ${contentPad}`}
@@ -703,14 +758,9 @@ export function SubtitleOverlay({
                   <span className="subtr-thinking-dots" aria-hidden="true">…</span>
                 </p>
               ) : (
-                <div
-                  key={isVoice ? voiceRevision : undefined}
-                  className={isVoice ? "voice-fade" : undefined}
-                >
-                  <MarkdownRenderer className="leading-snug tracking-wide">
-                    {mainText}
-                  </MarkdownRenderer>
-                </div>
+                <MarkdownRenderer className="leading-snug tracking-wide">
+                  {mainText}
+                </MarkdownRenderer>
               )}
               {state.kind === "streaming" && hasText && (
                 <span

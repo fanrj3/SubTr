@@ -112,17 +112,21 @@ Closed by default; discovery stays one click away.
 - Respect `prefers-reduced-motion`: collapse/transition to `0ms`, no transforms,
   no navigation fade.
 
-## Voice captions (continuous)
+## Voice captions (rolling)
 
-- Voice payloads update the card **in place** — no enter animation, no dismiss
-  between updates; the card box stays stable while text grows (scroll position
-  preserved, length re-evaluated).
-- Translation is **trailing-debounced (~800 ms)** and coalesced to the latest
-  text; stale in-flight results are dropped by sequence number. The previous
-  translated text stays visible while a new translation is pending, then swaps
-  with a ≤100 ms cross-fade (`.voice-fade`).
-- Idle auto-hide **~2.5 s** after the last payload, using the normal fade-out;
-  a new payload cancels it.
+- One persistent card while voice is on: a rolling transcript of the last ~4
+  lines (bottom-anchored), newest line at the bottom; older lines scroll up.
+  The live line updates in place as text grows; `close` finalizes it and the
+  next utterance starts a new live line.
+- **Never dismiss** between utterances (no idle hide). Only `stop: true`
+  (or leaving the overlay) fades out and clears; Esc/✕ fade locally and the next
+  payload reopens. Pin is a no-op while voice is active.
+- Translation uses the existing 800 ms trailing coalescing and sequence guard,
+  but **streams** into the live line (DOM flushes throttled ~150 ms); finalized
+  lines keep their final translation and are updated by line id.
+- Auto-scroll keeps the newest line at the bottom (`smooth`; `auto` under
+  `prefers-reduced-motion`). The viewport clips to a modest max-height so ~4
+  lines fit; the card box never unmounts mid-session.
 - Non-voice payloads keep the existing show → teleprompter/hold → auto-hide flow.
 
 ## Pace slider mapping

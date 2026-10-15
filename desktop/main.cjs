@@ -808,6 +808,9 @@ let voiceUtteranceId = null;
 let voiceLastDeliveredText = "";
 let voiceLastDeliveryAt = 0;
 let voiceDeliveryCount = 0;
+let voiceStoppedAt = 0;
+/** True once the per-session stop signal has been sent (exactly once). */
+let voiceStopSent = false;
 /** Ring buffer of recent deliveries (SUBTR_TEST introspection). */
 const voiceDeliveries = [];
 
@@ -1082,6 +1085,7 @@ function voiceSnapshot() {
     utteranceId: voiceUtteranceId,
     lastDeliveryAt: voiceLastDeliveryAt,
     deliveries: voiceDeliveryCount,
+    stoppedAt: voiceStoppedAt,
     download: voiceDownload.active ? { ...voiceDownload } : null,
     setup: voiceSetupStatus(),
   };
@@ -1295,6 +1299,7 @@ async function restartWhisperServer() {
       clearInterval(voiceHopTimer);
       voiceHopTimer = null;
     }
+    sendVoiceStop(); // server give-up ends the session → fade out the overlay
     setVoiceStatus("server-error");
     return;
   }
@@ -1361,9 +1366,9 @@ function ensureUtterance() {
 
 /**
  * Deliver a voice caption IN PLACE. Marks the payload `voice: true` with the
- * open `utteranceId` so the overlay updates the caption (never dismisses while
- * updates keep arriving; it auto-hides after its own idle timeout). Identical
- * consecutive text is deduped so translation cadence stays clean.
+ * open `utteranceId`. Growth updates are deduped (identical consecutive text is
+ * dropped); a terminal `close` payload is always sent (it may repeat the final
+ * text) so the overlay can finalize the line. `close` is NOT a dismissal.
  * @param {string} text
  * @param {{ close?: boolean }} [opts]
  * @returns {boolean} true when a payload was sent
@@ -1371,16 +1376,41 @@ function ensureUtterance() {
 function deliverVoiceCaption(text, opts = {}) {
   const trimmed = String(text || "").trim();
   if (!trimmed) return false;
-  if (trimmed === voiceLastDeliveredText) return false; // dedupe
+  const isClose = opts.close === true;
+  if (!isClose && trimmed === voiceLastDeliveredText) return false; // dedupe growth
   const utteranceId = ensureUtterance();
   voiceLastDeliveredText = trimmed;
   voiceLastDeliveryAt = Date.now();
   voiceDeliveryCount += 1;
-  voiceDeliveries.push({ text: trimmed, utteranceId, close: opts.close === true, at: voiceLastDeliveryAt });
+  voiceDeliveries.push({
+    text: trimmed,
+    utteranceId,
+    close: isClose,
+    at: voiceLastDeliveryAt,
+  });
   if (voiceDeliveries.length > 200) voiceDeliveries.shift();
-  // Frozen overlay interface: { text, voice: true, utteranceId }.
-  deliverOverlayCapture({ text: trimmed, voice: true, utteranceId });
-  console.log(`[voice] → overlay (${utteranceId}${opts.close ? ", close" : ""}): "${trimmed}"`);
+  // Frozen overlay interface v2: { text, voice: true, utteranceId, close? }.
+  const payload = { text: trimmed, voice: true, utteranceId };
+  if (isClose) payload.close = true;
+  deliverOverlayCapture(payload);
+  console.log(`[voice] → overlay (${utteranceId}${isClose ? ", close" : ""}): "${trimmed}"`);
+  return true;
+}
+
+/**
+ * Signal the end of a voice session so the overlay fades out and clears. Sent
+ * exactly once per session (voice-off paths: tray toggle, voiceSetEnabled(false),
+ * renderer error, server give-up). Payload is `{ voice: true, stop: true }`.
+ * @returns {boolean} true when the signal was sent
+ */
+function sendVoiceStop() {
+  if (voiceStopSent) return false;
+  voiceStopSent = true;
+  voiceStoppedAt = Date.now();
+  voiceDeliveries.push({ text: "", stop: true, at: voiceStoppedAt });
+  if (voiceDeliveries.length > 200) voiceDeliveries.shift();
+  deliverOverlayCapture({ voice: true, stop: true });
+  console.log("[voice] → overlay: stop");
   return true;
 }
 
@@ -1554,6 +1584,7 @@ async function startVoice() {
   voiceLastDeliveryAt = 0;
   voiceDeliveryCount = 0;
   voiceDeliveries.length = 0;
+  voiceStopSent = false; // arm the per-session stop signal (sent on voice-off)
   voiceActive = true;
 
   requestVoiceCapture(true);
@@ -1577,6 +1608,7 @@ function stopVoice() {
   requestVoiceCapture(false);
   if (voiceRing) voiceRing.clear();
   voiceCommitter = null;
+  sendVoiceStop(); // fade out + clear the overlay (exactly once per session)
   setVoiceStatus("off");
   console.log("[voice] stopped");
 }
@@ -1605,6 +1637,7 @@ function applyRendererVoiceStatus(value) {
     }
     voiceActive = false;
     voiceWanted = false;
+    sendVoiceStop(); // capture error ends the session → fade out the overlay
     voiceStatus = "error";
     console.warn("[voice] renderer reported error; stopping");
     return;
