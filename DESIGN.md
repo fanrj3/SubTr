@@ -85,6 +85,8 @@ Never decorate with gradients/glow. Plugin iframes stay `sandbox="allow-scripts"
 - One soft surface per section: `rounded-[10px] border border-card-border bg-card`.
 - Rows: `title + muted description` left, right-aligned control; hairline
   `border-b` between rows; last row borderless.
+- Below a **420px container width** a row stacks: title/description get a full
+  line, the control moves below (never crushes the title).
 - Long controls (base URL, textareas) render full-width under the row.
 - Destructive rows live at the bottom of their section with consequence copy.
 
@@ -93,11 +95,29 @@ Never decorate with gradients/glow. Plugin iframes stay `sandbox="allow-scripts"
 Rarely-used knobs go inside a Base UI `Collapsible` labelled "Advanced".
 Closed by default; discovery stays one click away.
 
+## Overflow
+
+- Settings surfaces and rows never scroll horizontally: scroll regions set
+  `overflow-x-hidden`, row controls shrink/wrap, and the rail/pane use
+  `scrollbar-gutter: stable` so widths don't shift.
+- Only the pane and the rail scroll vertically, independently.
+
 ## Motion
 
-- Durations: `120ms` (micro), `160ms` (surface/collapse), `200ms` (dialog).
+- Durations: `120ms` (micro), `140ms` (navigation fade), `160ms`
+  (surface/collapse), `200ms` (dialog).
 - Easing: `cubic-bezier(0.16, 1, 0.3, 1)`.
-- Respect `prefers-reduced-motion`: collapse/transition to `0ms`, no transforms.
+- Client navigation fades the **content area only** (`PageFade`, opacity
+  0.6 → 1). Headers/top bars never animate, translate, or scale.
+- Respect `prefers-reduced-motion`: collapse/transition to `0ms`, no transforms,
+  no navigation fade.
+
+## Pace slider mapping
+
+- The reading-pace slider is log-symmetric: position maps
+  `scale = exp(ln 0.2 + p·(ln 5 − ln 0.2))`, so `1.00×` is exactly centered,
+  `0.20×` far left, `5.00×` far right, with ticks at 0.2/0.5/1/2/5.
+- Scroll-speed readout is `3 × textScale` px/s, shown with one decimal.
 
 ## Focus
 

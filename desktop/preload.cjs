@@ -248,6 +248,47 @@ contextBridge.exposeInMainWorld("subtrDesktop", {
   },
 
   /**
+   * Master voice toggle (settings Voice section). Idempotent on the main side.
+   * @param {boolean} enabled
+   * @returns {Promise<Record<string, unknown>>} the fresh voice snapshot
+   */
+  voiceSetEnabled(enabled) {
+    return ipcRenderer.invoke("subtr:voice-set-enabled", enabled === true);
+  },
+
+  /** List the downloadable voice models with presence info. */
+  voiceModels() {
+    return ipcRenderer.invoke("subtr:voice-models");
+  },
+
+  /**
+   * Download a voice model by id (progress arrives via onVoiceDownloadProgress).
+   * @param {string} id
+   * @returns {Promise<{ ok: boolean, id?: string, bytes?: number, sha256?: string, error?: string }>}
+   */
+  downloadVoiceModel(id) {
+    return ipcRenderer.invoke("subtr:voice-download-model", id);
+  },
+
+  /**
+   * Subscribe to voice-model download progress.
+   * @param {(progress: { active: boolean, id: string | null, percent: number, received: number, total: number, error: string | null }) => void} callback
+   * @returns {() => void} unsubscribe
+   */
+  onVoiceDownloadProgress(callback) {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, progress) => {
+      try {
+        callback(progress);
+      } catch (error) {
+        console.error("[subtrDesktop] onVoiceDownloadProgress callback failed", error);
+      }
+    };
+    ipcRenderer.on("subtr:voice-download-progress", listener);
+    return () => ipcRenderer.removeListener("subtr:voice-download-progress", listener);
+  },
+
+  /**
    * Handshake: the injected capture shim is installed and listening for
    * voice-toggle events. Lets the main process flush a queued toggle.
    */

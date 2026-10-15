@@ -1,3 +1,47 @@
+export type VoiceSetup = {
+  ready: boolean;
+  server: string;
+  model: string;
+  silero: string;
+  serverPresent: boolean;
+  modelPresent: boolean;
+  vadPresent: boolean;
+  missing: string[];
+};
+
+export type VoiceModel = {
+  id: string;
+  kind: string;
+  label: string;
+  file: string;
+  bytes: number;
+  sha256: string;
+  path: string;
+  present: boolean;
+};
+
+export type VoiceDownloadProgress = {
+  active: boolean;
+  id: string | null;
+  percent: number;
+  received: number;
+  total: number;
+  error: string | null;
+};
+
+export type VoiceSnapshot = {
+  status: string;
+  active: boolean;
+  wanted: boolean;
+  shimReady: boolean;
+  serverReady: boolean;
+  serverPort: number;
+  serverPid: number;
+  serverRestarts: number;
+  setup: VoiceSetup;
+  error?: string;
+};
+
 export type DesktopBridge = {
   isDesktop: true;
   onCapture(cb: (payload: { text: string; source?: string }) => void): () => void;
@@ -16,6 +60,14 @@ export type DesktopBridge = {
   onTestPlayState?(
     cb: (state: { playing: boolean; timeMs: number; totalMs: number }) => void
   ): () => void;
+  voiceSetup?(): Promise<VoiceSetup>;
+  voiceSetEnabled?(enabled: boolean): Promise<VoiceSnapshot>;
+  voiceModels?(): Promise<VoiceModel[]>;
+  downloadVoiceModel?(
+    id: string
+  ): Promise<{ ok: boolean; id?: string; bytes?: number; sha256?: string; error?: string }>;
+  onVoiceDownloadProgress?(cb: (progress: VoiceDownloadProgress) => void): () => void;
+  onVoiceToggle?(cb: (on: boolean) => void): () => void;
   onEsc?(cb: () => void): () => void;
   captureDesktopThumbnail?: () => Promise<string | null>;
 };

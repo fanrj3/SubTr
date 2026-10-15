@@ -46,18 +46,22 @@ export function SettingsRow({
   className?: string;
 }) {
   return (
-    <div
-      className={`flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-card-border px-3.5 py-3 last:border-b-0 ${className}`}
-    >
-      <div className="min-w-0 flex-1">
-        <label htmlFor={htmlFor} className="block text-[13px] font-medium">
-          {title}
-        </label>
-        {description && (
-          <p className="mt-0.5 text-xs leading-relaxed text-muted">{description}</p>
+    <div className={`@container border-b border-card-border last:border-b-0 ${className}`}>
+      <div className="flex flex-col gap-2 px-3.5 py-3 @min-[420px]:flex-row @min-[420px]:items-center @min-[420px]:justify-between @min-[420px]:gap-3">
+        <div className="min-w-0 @min-[420px]:flex-1">
+          <label htmlFor={htmlFor} className="block text-[13px] font-medium">
+            {title}
+          </label>
+          {description && (
+            <p className="mt-0.5 text-xs leading-relaxed text-muted">{description}</p>
+          )}
+        </div>
+        {children && (
+          <div className="min-w-0 w-full @min-[420px]:w-auto @min-[420px]:max-w-full">
+            {children}
+          </div>
         )}
       </div>
-      {children && <div className="shrink-0">{children}</div>}
     </div>
   );
 }

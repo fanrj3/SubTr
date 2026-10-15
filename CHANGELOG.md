@@ -16,6 +16,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | **0.2.1** | `66af67f` | Settings page, profiles v2, thinking control, subtitle customization |
 | **0.2.2** | `4c10810` · docs `0efc776` | Theme + UI language, compact window, position player |
 | **0.2.3** | `cb855ca` · docs `3650ab3` | Native theme, display-aspect preview, Test button, fade-out, caps, capture handshake |
+| **0.2.9** | *(release commit)* | Tray icons + Usage submenu, navigation silkiness, pace scale, About, voice (Beta) phase 2 |
 | **0.2.8** | `bfef0e6` | Home widgets below reader, scroll isolation, position layout, plugin kit + preview, tray usage, voice (Beta) phase 1 |
 | **0.2.7** | `7fe1bf1` | Settings refactor (nav rail + setting rows), Base UI primitives, DESIGN.md |
 | **0.2.6** | `c4260d8` | Usage-stats plugin, panel capability, settings polish |
@@ -75,6 +76,12 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | Usage-stats panel redesign on the kit | 0.2.8 | `bfef0e6` | `examples/plugins/usage-stats/panel.html` |
 | Tray usage menu + 838×556 default window | 0.2.8 | `bfef0e6` | `desktop/main.cjs` |
 | Voice→subtitles Beta phase 1 (loopback capture + whisper.cpp + 2-pass commit + overlay) | 0.2.8 | `bfef0e6` | `desktop/voice-*.cjs`, `src/lib/client/voice/`, `desktop/main.cjs` |
+| Tray template icons + Usage submenu | 0.2.9 | *(release commit)* | `desktop/tray-icons.cjs`, `desktop/main.cjs` |
+| Settings overflow elimination + row wrap + tooltip clamp/flip | 0.2.9 | *(release commit)* | `src/components/settings-ui.tsx`, `src/components/tooltip.tsx`, `src/app/settings/page.tsx` |
+| Navigation PageFade + stable scrollbar gutters | 0.2.9 | *(release commit)* | `src/components/page-fade.tsx`, `src/components/subtr-app.tsx` |
+| Pace log-symmetric slider + 1-decimal px/s readout | 0.2.9 | *(release commit)* | `src/components/position-player.tsx`, `src/lib/client/position-preview.ts` |
+| About section (version/runtime/paths/licenses/links) | 0.2.9 | *(release commit)* | `src/app/settings/page.tsx`, i18n |
+| Voice (Beta) phase 2: settings section, model downloads, VAD, crash-restart | 0.2.9 | *(release commit)* | `src/components/voice-settings.tsx`, `desktop/main.cjs` |
 
 ---
 
@@ -102,6 +109,17 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 
 ### 0.2.3 (`cb855ca`) — native theme · preview rework · test · robustness
 - Title bar follows theme (`setNativeTheme`); canvas = real display aspect + double-click enlarge; drag without text selection; appearance row responsive; base pace 220 wpm / 400 cpm with 0.2–5.0× slider; **Test** button (real-screen playback with live style); fade-out on every dismissal; caps raised (10000/12000); capture delivery handshake + latest-wins pending queue; dismissal aborts in-flight translation.
+
+### 0.2.9 — tray polish · navigation silk · pace scale · About · voice phase 2
+- **Tray**: every menu item now carries a 16 px template icon (eye/bubble/mic/gear/chart/download/power, generated in pure JS); usage moved into a hover-opened **Usage submenu** (Today / All time lines; "No usage data yet" fallback); the menu is still rebuilt on every click.
+- **Settings**: all unnecessary horizontal scrollbars removed (shell/rail/pane/surfaces — the real culprit was a wide control column forcing overflow); rows now **wrap** instead of crushing — below ~420 px container width the control drops under the title/description (Subtitle at 400 px was rendered as a vertical sliver before).
+- **Navigation silkiness**: a content-only 140 ms opacity fade (`PageFade`) with stable scrollbar gutters — the top bar never animates or shifts, and the home↔settings width jump (which read as a web page load) is gone.
+- **Profiles**: Export/Import config is now a normal right-aligned setting row; help tooltips are viewport **and pane** clamped and flip above the anchor near the bottom edge (the Thinking tooltip at 838×556 used to be clipped by ~37 px).
+- **Subtitle**: scroll-speed readout shows **one decimal** (0.6 / 3.0 / 15.0 px/s — no more "0px/s") and the pace slider is **log-symmetric** (0.20× far left, 1.00× dead center, 5.00× far right, ticks at 0.2/0.5/1/2/5) while the multiplier semantics stay identical.
+- New **About** section: version, platform/runtime, real data locations on desktop (plugins dir, whisper assets, stats file), licenses (ECDICT / whisper.cpp / Base UI / PaddleOCR) and links.
+- **Voice (Beta) phase 2**: settings **Voice** section with an interactive master toggle (wired to the tray state and idempotent), live status, **model list with per-model download + progress** (sha256 + size verified, resume-safe atomic installs), setup hints, and a desktop-only note on web; **Silero VAD** layered over the energy gate; whisper-server **crash auto-restart** (bounded, then an explicit error state). Fixed an ON→OFF race that could leave the tray label claiming "Listening" — 6/6 convergence + a negative control confirming the probe.
+- i18n: 272 keys in parity (en/zh).
+- Verified: browser 23/23; Electron 13/14 → race fixed → 6/6 cycles.
 
 ### 0.2.8 — plugin DX · home widgets · scroll/layout fixes · voice (Beta) phase 1
 - Home: plugin panels with `location:"home"` now render **directly below the reader** at full reader width as collapsible cards (default collapsed, lazy mount, zero footprint when none) — moved from the bottom strip; the same plugins no longer render inline in Settings (only the show-on-home toggle).

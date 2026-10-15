@@ -58,14 +58,13 @@ export type PositionMetrics = {
 
 export function computeMetrics(
   text: string,
-  timing: SubtitleTiming,
-  maxScrollPx: number
+  timing: SubtitleTiming
 ): PositionMetrics {
-  const { scaledReadMs, scrollMs, totalMs, latinWords, cjkChars } =
+  const { scaledReadMs, totalMs, latinWords, cjkChars } =
     computeTimeline(text, timing);
   const totalSeconds = totalMs / 1000;
-  const scrollSpeedPxPerS =
-    scrollMs > 0 ? maxScrollPx / (scrollMs / 1000) : 0;
+  // Displayed teleprompter speed: 1.00× = 3 px/s baseline, scaled linearly.
+  const scrollSpeedPxPerS = 3 * timing.textScale;
   const wpm =
     scaledReadMs > 0 ? Math.round((latinWords / scaledReadMs) * 60000) : 0;
   const cpm =

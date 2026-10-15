@@ -50,7 +50,7 @@ The API key you enter stays in your browser (localStorage) and is sent only with
 
 ## Desktop app (Electron)
 
-The same app runs as a desktop app (macOS / Windows / Linux). It opens the reader window and additionally monitors text selections system-wide: select text in **any** app and the translation appears as a subtitle at the bottom of your screen in a transparent, click-through overlay. Long translations scroll like a teleprompter; hovering over the subtitle makes it interactive (wheel to interrupt auto-scroll), and while it is waiting for dismissal the overlay arms a global **Esc**. `⌘/Ctrl+Shift+D` re-triggers a capture manually (useful when selection monitoring is unavailable).
+The same app runs as a desktop app (macOS / Windows / Linux). It opens the reader window and additionally monitors text selections system-wide: select text in **any** app and the translation appears as a subtitle at the bottom of your screen in a transparent, click-through overlay. Long translations scroll like a teleprompter; hovering over the subtitle makes it interactive (wheel to interrupt auto-scroll), and while it is waiting for dismissal the overlay arms a global **Esc**. `⌘/Ctrl+Shift+D` re-triggers a capture manually (useful when selection monitoring is unavailable). The tray icon opens a quick menu — translation toggle, **Voice translation (Beta)** and a **Usage** submenu with today's and all-time cost/calls/translations.
 
 ```bash
 npm run desktop        # build + launch the desktop app
@@ -68,7 +68,7 @@ Notes:
 - Linux: selection monitoring works on X11; Wayland support is limited (always-on-top and global shortcuts depend on the compositor).
 - Closing the app window quits the app (v1 behavior).
 
-**Voice → translated subtitles (Beta, phase 1):** click the **tray icon** and enable **Voice translation (Beta)** — SubTr captures system audio (no virtual device needed), transcribes it locally with whisper.cpp (Metal) and shows the translation through the same subtitle overlay, so an English video plays with subtitles in your language. The local assets live in `~/Library/Application Support/subtr/whisper/` (`bin/whisper-server` + `models/ggml-base.en.bin`); when missing, the tray item says **Setup needed**. Needs the Screen Recording permission. (Live-audio was silent on our test machine — audio routing — so treat this as a working Beta that needs a real-audio retest; the tray state, transcription and overlay hand-off are verified.)
+**Voice → translated subtitles (Beta):** enable it from the **tray icon** or **Settings → Voice** (master toggle, live status, per-model **Download** with progress, setup hints) — SubTr captures system audio (no virtual device needed), transcribes it locally with whisper.cpp (Metal) and shows the translation through the same subtitle overlay, so an English video plays with subtitles in your language. Models install into `~/Library/Application Support/subtr/whisper/` (sha256 + size verified, resume-safe); missing assets show **Setup needed** with a one-click download. Needs the Screen Recording permission. (Live-audio was silent on our test machine — audio routing — so treat this as a Beta that still needs a real-audio retest; the pipeline, tray/settings states and model downloads are verified.)
 
 ## Plugins
 

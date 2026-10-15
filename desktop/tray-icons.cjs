@@ -183,19 +183,191 @@ function buildFrames() {
   };
 }
 
-module.exports = { buildFrames, encodePNG, rasterize };
+// ---------------------------------------------------------------------------
+// Menu-item glyphs — 16×16 (+@2x) macOS *template* PNGs for MenuItem.icon.
+// Black + alpha only, so they adapt to light/dark menu bars automatically.
+// ---------------------------------------------------------------------------
+
+const MENU_SIZES = [16, 32];
+
+/** Point helpers used by the glyph definitions (all in logical px). */
+function dist(px, py, cx, cy) {
+  return Math.hypot(px - cx, py - cy);
+}
+function disc(px, py, cx, cy, r) {
+  return dist(px, py, cx, cy) <= r;
+}
+function ringAt(px, py, cx, cy, r, t) {
+  return Math.abs(dist(px, py, cx, cy) - r) <= t / 2;
+}
+function ellipseRing(px, py, cx, cy, rx, ry, t) {
+  const e = Math.hypot((px - cx) / rx, (py - cy) / ry);
+  return Math.abs(e - 1) <= (t / 2) / Math.min(rx, ry);
+}
+function roundRectPx(px, py, x, y, w, h, r) {
+  return inRoundRect(px, py, { x, y, w, h, r });
+}
+function segDist(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const l2 = dx * dx + dy * dy;
+  let t = l2 > 0 ? ((px - x1) * dx + (py - y1) * dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+function seg(px, py, x1, y1, x2, y2, t) {
+  return segDist(px, py, x1, y1, x2, y2) <= t / 2;
+}
+function triangle(px, py, ax, ay, bx, by, cx, cy) {
+  const d1 = (px - bx) * (ay - by) - (ax - bx) * (py - by);
+  const d2 = (px - cx) * (by - cy) - (bx - cx) * (py - cy);
+  const d3 = (px - ax) * (cy - ay) - (cx - ax) * (py - ay);
+  const hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
+  const hasPos = d1 > 0 || d2 > 0 || d3 > 0;
+  return !(hasNeg && hasPos);
+}
+function angleAt(px, py, cx, cy) {
+  return Math.atan2(py - cy, px - cx);
+}
+
+/** Glyph draw functions: inside(px, py, size) → boolean, in a size×size box. */
+
+/** Eye — "Show SubTr". */
+function glyphShow(px, py, s) {
+  const cx = s * 0.5;
+  const cy = s * 0.5;
+  return ellipseRing(px, py, cx, cy, s * 0.42, s * 0.26, s * 0.09) || disc(px, py, cx, cy, s * 0.115);
+}
+
+/** Speech bubble — "Toggle translation". */
+function glyphTranslate(px, py, s) {
+  const x = s * 0.12;
+  const y = s * 0.15;
+  const w = s * 0.76;
+  const h = s * 0.52;
+  const r = s * 0.13;
+  const t = s * 0.085;
+  const bubble =
+    roundRectPx(px, py, x, y, w, h, r) &&
+    !roundRectPx(px, py, x + t, y + t, w - 2 * t, h - 2 * t, Math.max(r - t, 0));
+  const tail = triangle(px, py, s * 0.3, s * 0.66, s * 0.3, s * 0.87, s * 0.49, s * 0.66);
+  const line1 = roundRectPx(px, py, s * 0.26, s * 0.3, s * 0.3, s * 0.075, s * 0.037);
+  const line2 = roundRectPx(px, py, s * 0.26, s * 0.45, s * 0.2, s * 0.075, s * 0.037);
+  return bubble || tail || line1 || line2;
+}
+
+/** Microphone — voice (Beta). */
+function glyphMic(px, py, s) {
+  const cx = s * 0.5;
+  const capsule = roundRectPx(px, py, s * 0.375, s * 0.12, s * 0.25, s * 0.42, s * 0.125);
+  const a = angleAt(px, py, cx, s * 0.48);
+  const uArc = a > 0.12 && a < Math.PI - 0.12 && ringAt(px, py, cx, s * 0.48, s * 0.24, s * 0.085);
+  const stem = seg(px, py, cx, s * 0.72, cx, s * 0.82, s * 0.085);
+  const base = roundRectPx(px, py, s * 0.33, s * 0.82, s * 0.34, s * 0.08, s * 0.04);
+  return capsule || uArc || stem || base;
+}
+
+/** Cog — settings / setup. */
+function glyphGear(px, py, s) {
+  const cx = s * 0.5;
+  const cy = s * 0.52;
+  if (ringAt(px, py, cx, cy, s * 0.22, s * 0.1)) return true;
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2;
+    if (disc(px, py, cx + Math.cos(a) * s * 0.34, cy + Math.sin(a) * s * 0.34, s * 0.075)) return true;
+  }
+  return false;
+}
+
+/** Bar chart — Usage submenu parent. */
+function glyphUsage(px, py, s) {
+  return (
+    roundRectPx(px, py, s * 0.16, s * 0.52, s * 0.14, s * 0.34, s * 0.05) ||
+    roundRectPx(px, py, s * 0.38, s * 0.34, s * 0.14, s * 0.52, s * 0.05) ||
+    roundRectPx(px, py, s * 0.6, s * 0.2, s * 0.14, s * 0.66, s * 0.05)
+  );
+}
+
+/** Downward arrow — download model. */
+function glyphDownload(px, py, s) {
+  const shaft = seg(px, py, s * 0.5, s * 0.14, s * 0.5, s * 0.56, s * 0.1);
+  const head = triangle(px, py, s * 0.33, s * 0.5, s * 0.67, s * 0.5, s * 0.5, s * 0.72);
+  const base = roundRectPx(px, py, s * 0.24, s * 0.8, s * 0.52, s * 0.09, s * 0.045);
+  return shaft || head || base;
+}
+
+/** Power symbol — quit. */
+function glyphPower(px, py, s) {
+  const cx = s * 0.5;
+  const cy = s * 0.55;
+  const a = angleAt(px, py, cx, cy);
+  const gapAtTop = !(a > -0.62 * Math.PI && a < -0.38 * Math.PI);
+  const arc = gapAtTop && ringAt(px, py, cx, cy, s * 0.3, s * 0.1);
+  const stem = seg(px, py, cx, s * 0.13, cx, s * 0.5, s * 0.1);
+  return arc || stem;
+}
+
+const MENU_GLYPHS = {
+  show: glyphShow,
+  translate: glyphTranslate,
+  mic: glyphMic,
+  gear: glyphGear,
+  usage: glyphUsage,
+  download: glyphDownload,
+  power: glyphPower,
+};
+
+/** Rasterize a boolean glyph to a black+alpha RGBA buffer at `size`. */
+function rasterizeGlyph(size, inside) {
+  const W = size * SS;
+  const cov = new Float32Array(size * size);
+  for (let Y = 0; Y < W; Y++) {
+    for (let X = 0; X < W; X++) {
+      const px = (X + 0.5) / SS;
+      const py = (Y + 0.5) / SS;
+      if (inside(px, py, size)) cov[((Y / SS) | 0) * size + ((X / SS) | 0)] += 1;
+    }
+  }
+  const per = SS * SS;
+  const rgba = new Uint8Array(size * size * 4);
+  for (let i = 0; i < size * size; i++) {
+    rgba[i * 4 + 3] = Math.round(Math.min(1, cov[i] / per) * 255);
+  }
+  return rgba;
+}
+
+function buildMenuIcon(name) {
+  const inside = MENU_GLYPHS[name];
+  if (!inside) throw new Error(`unknown menu glyph: ${name}`);
+  const frame = {};
+  for (const size of MENU_SIZES) {
+    const rgba = rasterizeGlyph(size, inside);
+    frame[size] = { png: encodePNG(size, rgba), bgra: toBGRA(rgba) };
+  }
+  return frame;
+}
+
+/** Build every menu glyph (16px base + 32px @2x). */
+function buildMenuIcons() {
+  const out = {};
+  for (const name of Object.keys(MENU_GLYPHS)) out[name] = buildMenuIcon(name);
+  return out;
+}
+
+module.exports = { buildFrames, buildMenuIcons, encodePNG, rasterize, MENU_SIZES, MENU_GLYPHS };
 
 if (require.main === module) {
   const outDir = process.argv[2] || path.join(__dirname, "tray-icons");
   fs.mkdirSync(outDir, { recursive: true });
-  const frames = buildFrames();
   const write = (name, frame) => {
     fs.writeFileSync(path.join(outDir, `${name}.png`), frame[16].png);
     fs.writeFileSync(path.join(outDir, `${name}@2x.png`), frame[32].png);
   };
+  const frames = buildFrames();
   write("trayTemplate", frames.off);
   write("trayTemplateActive", frames.on);
   frames.burstOn.forEach((f, i) => write(`trayBurstOn-${i}`, f));
   frames.burstOff.forEach((f, i) => write(`trayBurstOff-${i}`, f));
-  console.log(`wrote tray PNGs to ${outDir}`);
+  for (const name of Object.keys(MENU_GLYPHS)) write(`menu-${name}`, buildMenuIcon(name));
+  console.log(`wrote tray + menu PNGs to ${outDir}`);
 }

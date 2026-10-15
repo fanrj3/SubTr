@@ -77,7 +77,12 @@ app.whenReady().then(async () => {
     ];
     results.feeds = feeds.map((t) => ({ input: t, result: globalThis.__subtrVoiceFeed(t) }));
 
-    // 3) Optional live loopback capture (permission-gated by macOS TCC).
+    // 3) Model catalog + download flow (tiny Silero VAD exercises progress+sha256).
+    results.models = globalThis.__subtrVoiceModels();
+    results.download = await globalThis.__subtrVoiceDownload("silero-v6.2.0");
+    results.modelsAfterDownload = globalThis.__subtrVoiceModels();
+
+    // 4) Optional live loopback capture (permission/audio-routing gated).
     if (LIVE) {
       log("starting live loopback capture …");
       const before = globalThis.__subtrVoice();
@@ -98,6 +103,12 @@ app.whenReady().then(async () => {
 
       await sleep(2000);
       results.live = { before, after: globalThis.__subtrVoice() };
+
+      // Hardening: kill whisper-server mid-session → expect a bounded auto-restart.
+      results.live.killedPid = globalThis.__subtrVoiceKillServer();
+      await sleep(4000);
+      results.live.afterKill = globalThis.__subtrVoice();
+
       globalThis.__subtrVoiceStop();
       await sleep(500);
       results.live.status = globalThis.__subtrVoice().status;

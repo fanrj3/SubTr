@@ -21,6 +21,7 @@ import { Reader } from "./reader";
 import { SubtitleOverlay, type SubtitleState } from "./subtitle-overlay";
 import { StatusBar } from "./status-bar";
 import { HomeWidgets } from "./home-widgets";
+import { PageFade } from "./page-fade";
 
 const TARGET_LANG_KEY = "subtr.targetLang.v1";
 const DEFAULT_TARGET_LANG = "auto";
@@ -193,8 +194,10 @@ export function SubTrApp() {
         targetLang={targetLang}
         onTargetLangChange={handleTargetLangChange}
       />
-      <Reader onSelect={handleSelect} mode={mode} />
-      <HomeWidgets />
+      <PageFade>
+        <Reader onSelect={handleSelect} mode={mode} />
+        <HomeWidgets />
+      </PageFade>
       <SubtitleOverlay
         key={subtitle.kind === "idle" ? "idle" : subtitle.original}
         state={subtitle}

@@ -5,7 +5,6 @@ import {
   useLocalStorage,
   useT,
   hexToRgba,
-  fontFamilyCss,
   readStorage,
   type SubtitleStyle,
   type SubtitleTiming,
@@ -21,8 +20,6 @@ import { XIcon } from "./icons";
 
 const FALLBACK_SCREEN = { width: 16, height: 10 };
 const REFERENCE_WIDTH = 640;
-const MEASURE_WIDTH = 800;
-const CARD_MAX_HEIGHT = 200;
 
 type PositionPlayerProps = {
   style: SubtitleStyle;
@@ -260,14 +257,10 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
     timeMs: 0,
     totalMs: 0,
   });
-  const [contentHeight, setContentHeight] = useState(0);
-
-  const measureRef = useRef<HTMLDivElement>(null);
   const timeline = useMemo(() => computeTimeline(testText, timing), [testText, timing]);
-  const maxScroll = Math.max(0, contentHeight - CARD_MAX_HEIGHT);
   const metrics: PositionMetrics = useMemo(
-    () => computeMetrics(testText, timing, maxScroll),
-    [testText, timing, maxScroll]
+    () => computeMetrics(testText, timing),
+    [testText, timing]
   );
 
   const mounted = useIsMounted();
@@ -294,19 +287,6 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
     // eslint-disable-next-line react-hooks/set-state-in-effect
     capture();
   }, [capture]);
-
-  // Measure the test text height for the scroll-speed metric.
-  useEffect(() => {
-    function measure() {
-      if (measureRef.current) {
-        setContentHeight(measureRef.current.scrollHeight);
-      }
-    }
-    measure();
-    const ro = new ResizeObserver(measure);
-    if (measureRef.current) ro.observe(measureRef.current);
-    return () => ro.disconnect();
-  }, [testText, style.fontSizePx, style.fontFamily]);
 
   // Reflect desktop test playback state from the overlay.
   useEffect(() => {
@@ -505,7 +485,7 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
           <div>
             <p className="text-muted">{t("settings.position.scrollSpeed")}</p>
             <p className="font-medium tabular-nums">
-              {Math.round(metrics.scrollSpeedPxPerS)} px/s
+              {metrics.scrollSpeedPxPerS.toFixed(1)} px/s
             </p>
           </div>
           <div className="col-span-2 @min-[560px]:col-span-1">
@@ -542,26 +522,6 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
             {t("settings.subtitle.position.placeholder")}
           </span>
         )}
-      </div>
-
-      {/* Hidden measurement for the scroll-speed metric. */}
-      <div
-        ref={measureRef}
-        aria-hidden="true"
-        style={{
-          position: "fixed",
-          left: -9999,
-          top: 0,
-          visibility: "hidden",
-          pointerEvents: "none",
-          width: MEASURE_WIDTH,
-          fontFamily: fontFamilyCss(style.fontFamily),
-          fontSize: `${style.fontSizePx}px`,
-          lineHeight: 1.375,
-          whiteSpace: "pre-wrap",
-        }}
-      >
-        {testText}
       </div>
 
       {isModalOpen && (

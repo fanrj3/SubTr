@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import Link from "next/link";
 import { Tabs } from "@base-ui/react/tabs";
 import { APP_VERSION } from "@/lib/version";
+import { PageFade } from "@/components/page-fade";
 import { PROVIDER_PRESETS } from "@/lib/presets";
 import type {
   SettingsStore,
@@ -50,6 +51,7 @@ import { PositionPlayer } from "@/components/position-player";
 import { HotkeyRecorder } from "@/components/hotkey-recorder";
 import { ConfigTransfer } from "@/components/config-transfer";
 import { PluginsSection } from "@/components/plugins-section";
+import { VoiceSettings } from "@/components/voice-settings";
 import {
   Advanced,
   SettingsRow,
@@ -64,6 +66,60 @@ type TestStatus =
   | { kind: "testing" }
   | { kind: "success"; latencyMs: number; reply?: string }
   | { kind: "error"; message: string };
+
+const PACE_MIN = 0.2;
+const PACE_MAX = 5;
+
+function paceToPos(scale: number): number {
+  return (
+    (Math.log(Math.max(PACE_MIN, scale)) - Math.log(PACE_MIN)) /
+    (Math.log(PACE_MAX) - Math.log(PACE_MIN))
+  );
+}
+
+function posToPace(pos: number): number {
+  const raw = Math.exp(
+    Math.log(PACE_MIN) + pos * (Math.log(PACE_MAX) - Math.log(PACE_MIN))
+  );
+  return Math.round(raw * 100) / 100;
+}
+
+function PaceSlider({
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  ariaLabel: string;
+}) {
+  const pct = paceToPos(value) * 100;
+  return (
+    <div className="w-full">
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={0.5}
+        value={pct}
+        onChange={(e) => onChange(posToPace(parseFloat(e.target.value) / 100))}
+        aria-label={ariaLabel}
+        className="w-full accent-accent"
+      />
+      <div className="relative mt-0.5 h-3">
+        {[0.2, 0.5, 1, 2, 5].map((tick) => (
+          <span
+            key={tick}
+            className="absolute -translate-x-1/2 text-[10px] tabular-nums text-muted"
+            style={{ left: `${paceToPos(tick) * 100}%` }}
+          >
+            {tick}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function RailIcon({ name }: { name: string }) {
   const common = {
@@ -101,6 +157,22 @@ function RailIcon({ name }: { name: string }) {
       return (
         <svg {...common}>
           <path d="M9 4a2 2 0 0 1 4 0v1h2a2 2 0 0 1 2 2v2h1a2 2 0 0 1 0 4h-1v2a2 2 0 0 1-2 2h-2v1a2 2 0 0 1-4 0v-1H7a2 2 0 0 1-2-2v-2H4a2 2 0 0 1 0-4h1V7a2 2 0 0 1 2-2h2Z" />
+        </svg>
+      );
+    case "info":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v5" />
+          <path d="M12 8h.01" />
+        </svg>
+      );
+    case "mic":
+      return (
+        <svg {...common}>
+          <rect x="9" y="3" width="6" height="11" rx="3" />
+          <path d="M5 11a7 7 0 0 0 14 0" />
+          <path d="M12 18v3" />
         </svg>
       );
     default:
@@ -251,6 +323,34 @@ export default function SettingsPage() {
     "subtr.settings.section.v1",
     "provider"
   );
+  const mounted = useIsMounted();
+
+  const aboutPlatform =
+    mounted && typeof window !== "undefined" && window.subtrDesktop
+      ? t("settings.about.desktop")
+      : t("settings.about.web");
+  const aboutRuntime =
+    mounted && typeof navigator !== "undefined" ? navigator.userAgent : "—";
+  const aboutDataDir = (() => {
+    if (!mounted || typeof navigator === "undefined") return "—";
+    const p = navigator.platform.toLowerCase();
+    if (p.includes("mac")) return "~/Library/Application Support/subtr";
+    if (p.includes("win")) return "%APPDATA%/subtr";
+    return "~/.config/subtr";
+  })();
+
+  const [voicePaths, setVoicePaths] = useState<{ server: string; model: string } | null>(
+    null
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const b = window.subtrDesktop;
+    if (!b?.voiceSetup) return;
+    void b
+      .voiceSetup()
+      .then((s) => setVoicePaths({ server: s.server, model: s.model }))
+      .catch(() => setVoicePaths(null));
+  }, []);
 
   const handleProfileChange = useCallback(
     (patch: Partial<StoredProfile>) => {
@@ -356,6 +456,8 @@ export default function SettingsPage() {
     { group: t("settings.nav.group.subtitle"), value: "subtitle", label: t("settings.subtitle.title"), icon: "captions" },
     { group: t("settings.nav.group.plugins"), value: "plugins", label: t("settings.plugins.title"), icon: "puzzle" },
     { group: t("settings.nav.group.app"), value: "app", label: t("settings.app.title"), icon: "gear" },
+    { group: null, value: "voice", label: t("settings.voice.title"), icon: "mic" },
+    { group: null, value: "about", label: t("settings.about.title"), icon: "info" },
   ] as const;
   const paneTitle =
     railItems.find((item) => item.value === section)?.label ?? t("settings.title");
@@ -375,15 +477,16 @@ export default function SettingsPage() {
         </div>
       </header>
 
+      <PageFade>
       <Tabs.Root
         value={section}
         onValueChange={(value) => setSection(value as string)}
         orientation="vertical"
-        className="mx-auto flex w-full max-w-6xl flex-1 min-h-0 items-stretch gap-4 overflow-hidden px-2 py-4 sm:gap-6 sm:px-6 sm:py-6"
+        className="mx-auto flex w-full max-w-6xl flex-1 min-h-0 items-stretch gap-4 overflow-hidden overflow-x-hidden px-2 py-4 sm:gap-6 sm:px-6 sm:py-6"
       >
         <Tabs.List
           aria-label={t("settings.title")}
-          className="flex h-full w-12 shrink-0 flex-col gap-0.5 overflow-y-auto overscroll-contain min-[700px]:w-52"
+          className="flex h-full w-12 shrink-0 flex-col gap-0.5 overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-gutter:stable] min-[700px]:w-52"
         >
           {railItems.map((item, index) => (
             <div key={item.value} className="contents">
@@ -411,8 +514,8 @@ export default function SettingsPage() {
           ))}
         </Tabs.List>
 
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
-          <div className="pointer-events-none sticky top-0 z-10 -mx-1 bg-gradient-to-b from-background via-background to-transparent px-1 pb-3 pt-1">
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-gutter:stable]">
+          <div className="pointer-events-none sticky top-0 z-10 bg-gradient-to-b from-background via-background to-transparent pb-3 pt-1">
             <h2 className="text-base font-semibold tracking-tight">{paneTitle}</h2>
           </div>
 
@@ -497,12 +600,12 @@ export default function SettingsPage() {
               </div>
             </SettingsRow>
 
-            <SettingsRowFull
+            <SettingsRow
               title={t("settings.profiles.config")}
               description={t("settings.app.config.encryptNote")}
             >
               <ConfigTransfer />
-            </SettingsRowFull>
+            </SettingsRow>
           </SettingsSurface>
             </Tabs.Panel>
 
@@ -686,6 +789,114 @@ export default function SettingsPage() {
           </SettingsSurface>
             </Tabs.Panel>
 
+            <Tabs.Panel value="voice">
+              <VoiceSettings />
+            </Tabs.Panel>
+
+            <Tabs.Panel value="about">
+              <SettingsSurface>
+                <SettingsRow title={t("settings.about.version")} description="SubTr">
+                  <span className="text-[13px] tabular-nums text-muted">
+                    v{APP_VERSION}
+                  </span>
+                </SettingsRow>
+                <SettingsRow
+                  title={t("settings.about.platform")}
+                  description={t("settings.about.runtime")}
+                >
+                  <span className="text-[13px] text-muted">{aboutPlatform}</span>
+                </SettingsRow>
+                <SettingsRowFull title={t("settings.about.runtime")}>
+                  <code className="block break-words rounded-lg border border-card-border bg-background px-2.5 py-2 font-mono text-[11px] text-muted">
+                    {aboutRuntime}
+                  </code>
+                </SettingsRowFull>
+                <SettingsRowFull title={t("settings.about.dataLocations")}>
+                  <div className="space-y-1 font-mono text-[11px] text-muted">
+                    <p className="break-words">
+                      <span className="text-foreground">{t("settings.about.pluginsDir")}</span>
+                      {": "}
+                      {plugins.data?.dir ?? "—"}
+                    </p>
+                    <p className="break-words">
+                      <span className="text-foreground">{t("settings.about.whisperDir")}</span>
+                      {": "}
+                      {voicePaths ? voicePaths.server : `${aboutDataDir}/whisper`}
+                      {!voicePaths && (
+                        <span className="italic"> ({t("settings.about.pathDefault")})</span>
+                      )}
+                    </p>
+                    {voicePaths && (
+                      <p className="break-words">
+                        <span className="text-foreground">
+                          {t("settings.voice.setupModel")}
+                        </span>
+                        {": "}
+                        {voicePaths.model}
+                      </p>
+                    )}
+                    <p className="break-words">
+                      <span className="text-foreground">{t("settings.about.statsFile")}</span>
+                      {": "}
+                      ~/.subtr/stats.json
+                    </p>
+                  </div>
+                </SettingsRowFull>
+                <SettingsRowFull title={t("settings.about.licenses")}>
+                  <ul className="list-disc space-y-0.5 pl-4 text-xs text-muted">
+                    <li>{t("settings.about.license.ecdict")}</li>
+                    <li>{t("settings.about.license.whisper")}</li>
+                    <li>{t("settings.about.license.baseui")}</li>
+                    <li>{t("settings.about.license.paddle")}</li>
+                  </ul>
+                </SettingsRowFull>
+                <SettingsRowFull title={t("settings.about.links")}>
+                  <ul className="space-y-0.5 text-xs">
+                    <li>
+                      <a
+                        href="https://github.com/skywind3000/ECDICT"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline underline-offset-2 hover:text-foreground"
+                      >
+                        ECDICT
+                      </a>
+                    </li>
+                    <li>
+                      <a
+                        href="https://github.com/ggml-org/whisper.cpp"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline underline-offset-2 hover:text-foreground"
+                      >
+                        whisper.cpp
+                      </a>
+                    </li>
+                    <li>
+                      <a
+                        href="https://base-ui.com"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline underline-offset-2 hover:text-foreground"
+                      >
+                        Base UI
+                      </a>
+                    </li>
+                    <li>
+                      <a
+                        href="https://github.com/PaddlePaddle/PaddleOCR"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline underline-offset-2 hover:text-foreground"
+                      >
+                        PaddleOCR
+                      </a>
+                    </li>
+                  </ul>
+                </SettingsRowFull>
+              </SettingsSurface>
+            </Tabs.Panel>
+
             <Tabs.Panel value="plugins">
           <PluginsSection
             data={plugins.data}
@@ -712,12 +923,9 @@ export default function SettingsPage() {
               <div className="flex min-w-[15rem] flex-col items-end gap-1.5">
                 <div className="flex w-full items-center gap-2">
                   <div className="min-w-0 flex-1">
-                    <SettingsSlider
+                    <PaceSlider
                       value={timing.textScale}
-                      min={0.2}
-                      max={5}
-                      step={0.05}
-                      aria-label={t("settings.subtitle.readingPace")}
+                      ariaLabel={t("settings.subtitle.readingPace")}
                       onChange={(v) => updateTiming({ ...timing, textScale: v })}
                     />
                   </div>
@@ -919,6 +1127,7 @@ export default function SettingsPage() {
           </div>
         </main>
       </Tabs.Root>
+      </PageFade>
     </div>
   );
 }

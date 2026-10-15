@@ -12,7 +12,9 @@
 const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
+const crypto = require("node:crypto");
 const net = require("node:net");
+const { Readable } = require("node:stream");
 const { spawn } = require("node:child_process");
 const {
   app,
@@ -30,9 +32,10 @@ const {
   Menu,
   Tray,
   utilityProcess,
+  net: electronNet,
 } = require("electron");
 
-const { buildFrames } = require("./tray-icons.cjs");
+const { buildFrames, buildMenuIcons } = require("./tray-icons.cjs");
 const voicePipeline = require("./voice-pipeline.cjs");
 const { initMain: initLoopbackAudio } = require("electron-audio-loopback");
 
@@ -82,6 +85,10 @@ let pendingCapture = null;
 let tray = null;
 /** Lazily built tray frame set (resting + burst). */
 let trayFrames = null;
+/** Menu-item template glyph frames (built once with the tray). */
+let menuIcons = null;
+/** Cache of nativeImage menu icons, keyed by glyph name. */
+const menuImages = new Map();
 /** @type {ReturnType<typeof setTimeout> | null} */
 let trayAnimTimer = null;
 /** Currently registered translation-toggle hotkey (accelerator string). */
@@ -482,6 +489,24 @@ function buildTrayImage(frame) {
   return image;
 }
 
+/**
+ * Template nativeImage for a menu glyph (16px + @2x), cached. Falls back to
+ * undefined so a missing glyph never breaks menu construction.
+ * @param {string} name
+ */
+function menuIcon(name) {
+  if (menuImages.has(name)) return menuImages.get(name);
+  let image;
+  try {
+    const frame = menuIcons && menuIcons[name];
+    image = frame ? buildTrayImage(frame) : undefined;
+  } catch {
+    image = undefined;
+  }
+  menuImages.set(name, image);
+  return image;
+}
+
 function restingTrayImage() {
   if (!trayFrames) return null;
   return buildTrayImage(currentTrayMode ? trayFrames.on : trayFrames.off);
@@ -578,33 +603,46 @@ function buildStatsMenuItems() {
 }
 
 /**
- * Build the tray context-menu template fresh: usage stats header + separator,
- * then the unchanged actions. Rebuilt on every click so numbers are current.
+ * Build the tray context-menu template fresh: actions (with template icons),
+ * the Usage submenu (live stats) and the voice Beta items. Rebuilt on every
+ * click so numbers/state are current.
  * @returns {Array<Record<string, unknown>>}
  */
 function buildTrayMenuTemplate() {
   return [
-    ...buildStatsMenuItems(),
-    { type: "separator" },
-    { label: "Show SubTr", click: showMainWindow },
+    { label: "Show SubTr", icon: menuIcon("show"), click: showMainWindow },
     {
       label: "Toggle translation",
       type: "checkbox",
       checked: currentTrayMode,
+      icon: menuIcon("translate"),
       click: sendToggleMode,
     },
     ...buildVoiceMenuItems(),
-    { label: "Settings…", accelerator: "CmdOrCtrl+,", click: openSettingsWindow },
+    { label: "Usage", icon: menuIcon("usage"), submenu: buildStatsMenuItems() },
+    { label: "Settings…", accelerator: "CmdOrCtrl+,", icon: menuIcon("gear"), click: openSettingsWindow },
     { type: "separator" },
-    { role: "quit" },
+    { role: "quit", icon: menuIcon("power") },
   ];
 }
 
-/** Labels-only view of the tray menu (SUBTR_TEST introspection). */
-function trayMenuLabels() {
-  return buildTrayMenuTemplate().map((item) =>
-    item.type === "separator" ? "—" : String(item.label ?? ""),
-  );
+/**
+ * Labels-only view of the tray menu (SUBTR_TEST introspection). Submenu children
+ * are enumerated inline, indented by two spaces per level; separators show "—".
+ */
+function trayMenuLabels(template = buildTrayMenuTemplate(), depth = 0) {
+  const out = [];
+  for (const item of template) {
+    if (item.type === "separator") {
+      out.push("—");
+      continue;
+    }
+    out.push(`${"  ".repeat(depth)}${String(item.label ?? "")}`);
+    if (Array.isArray(item.submenu)) {
+      out.push(...trayMenuLabels(item.submenu, depth + 1));
+    }
+  }
+  return out;
 }
 
 /** Timestamp guard so a duplicated click/right-click doesn't pop twice. */
@@ -678,6 +716,7 @@ function createTray() {
   if (tray) return;
   try {
     trayFrames = buildFrames();
+    menuIcons = buildMenuIcons();
     tray = new Tray(restingTrayImage(), TRAY_GUID);
     tray.setToolTip("SubTr");
     if (process.platform === "darwin") {
@@ -719,7 +758,7 @@ function destroyTray() {
 // overlay capture channel, which renders it through the normal /api/translate
 // path (the overlay translates with the active profile from localStorage).
 
-/** @typedef {"off"|"starting"|"listening"|"needs-setup"|"error"} VoiceStatus */
+/** @typedef {"off"|"starting"|"listening"|"needs-setup"|"error"|"server-error"} VoiceStatus */
 
 /** @type {VoiceStatus} */
 let voiceStatus = "off";
@@ -747,33 +786,296 @@ let voiceShimReady = false;
 let voiceTogglePending = null;
 
 /** whisper-server process state (kept warm between voice sessions). */
-const whisper = { proc: null, port: 0, ready: false, starting: null };
+const whisper = {
+  proc: null,
+  port: 0,
+  pid: 0,
+  ready: false,
+  starting: null,
+  /** Consecutive crash restarts in the current session (bounded). */
+  restarts: 0,
+  /** True while an intentional stop is in flight (suppresses auto-restart). */
+  stopping: false,
+};
+const WHISPER_MAX_RESTARTS = 3;
+
+/**
+ * Local GGML model catalog. `kind: "whisper"` models are ASR models; `kind: "vad"`
+ * is the Silero VAD model. Structure allows listing/selecting more later.
+ */
+const WHISPER_MODELS = [
+  {
+    id: "base.en",
+    kind: "whisper",
+    file: "ggml-base.en.bin",
+    bytes: 147964211,
+    sha256: "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
+    label: "Whisper base.en (≈142 MB)",
+    url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
+  },
+  {
+    id: "silero-v6.2.0",
+    kind: "vad",
+    file: "ggml-silero-v6.2.0.bin",
+    bytes: 885098,
+    sha256: "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987",
+    label: "Silero VAD v6.2.0 (≈0.9 MB)",
+    url: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin",
+  },
+];
+
+const DEFAULT_MODEL_ID = "base.en";
+const VAD_MODEL_ID = "silero-v6.2.0";
 
 /** Resolve the whisper.cpp install dirs under the app's userData/appData root. */
 function voicePaths() {
   const root = path.join(app.getPath("appData"), "subtr", "whisper");
+  const modelsDir = path.join(root, "models");
   return {
     root,
+    modelsDir,
     bin: path.join(root, "bin", "whisper-server"),
-    model: path.join(root, "models", "ggml-base.en.bin"),
+    model: path.join(modelsDir, "ggml-base.en.bin"),
+    silero: path.join(modelsDir, "ggml-silero-v6.2.0.bin"),
   };
 }
 
-/** Whether the whisper-server binary + model are present on disk. */
+function findModel(id) {
+  return WHISPER_MODELS.find((m) => m.id === id) || null;
+}
+
+function modelFilePath(model) {
+  return path.join(voicePaths().modelsDir, model.file);
+}
+
+/** A model counts as present when the file exists at the exact expected size. */
+function modelPresent(model) {
+  try {
+    return fs.statSync(modelFilePath(model)).size === model.bytes;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether the whisper-server binary + ASR model (+ optional VAD) are on disk. */
 function voiceSetupStatus() {
   const p = voicePaths();
   const serverPresent = fs.existsSync(p.bin);
-  const modelPresent = fs.existsSync(p.model);
+  const basePresent = modelPresent(findModel(DEFAULT_MODEL_ID));
+  const vadPresent = modelPresent(findModel(VAD_MODEL_ID));
   const missing = [];
   if (!serverPresent) missing.push("whisper-server binary");
-  if (!modelPresent) missing.push("ggml-base.en.bin model");
-  return { ready: serverPresent && modelPresent, server: p.bin, model: p.model, missing };
+  if (!basePresent) missing.push("ggml-base.en.bin model");
+  return {
+    ready: serverPresent && basePresent,
+    server: p.bin,
+    model: p.model,
+    silero: p.silero,
+    serverPresent,
+    modelPresent: basePresent,
+    vadPresent,
+    missing,
+    download: voiceDownload.active ? { ...voiceDownload } : null,
+  };
+}
+
+// --- Model download (streaming + progress + sha256 verify, restart-safe) -----
+
+/** Current download state (single download at a time). */
+const voiceDownload = {
+  active: false,
+  id: null,
+  file: null,
+  received: 0,
+  total: 0,
+  percent: 0,
+  error: null,
+  startedAt: 0,
+};
+/** @type {Promise<{ok:boolean}> | null} */
+let voiceDownloadPromise = null;
+let lastDownloadEmit = 0;
+
+/** Stream a file through sha256 (hex digest). */
+function sha256File(file) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha256");
+    const stream = fs.createReadStream(file);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+    stream.on("error", reject);
+  });
+}
+
+/** Push download progress to the renderer (throttled) for the settings UI. */
+function emitVoiceDownloadProgress(force) {
+  const now = Date.now();
+  if (!force && now - lastDownloadEmit < 250) return;
+  lastDownloadEmit = now;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    mainWindow.webContents.send("subtr:voice-download-progress", { ...voiceDownload });
+  } catch {
+    // ignore
+  }
+}
+
+/** List the catalog with presence info (for the settings UI). */
+function listModels() {
+  return WHISPER_MODELS.map((m) => ({
+    id: m.id,
+    kind: m.kind,
+    label: m.label,
+    file: m.file,
+    bytes: m.bytes,
+    sha256: m.sha256,
+    path: modelFilePath(m),
+    present: modelPresent(m),
+  }));
+}
+
+/**
+ * Download a catalog model into the whisper models dir.
+ *  - restart-safe: any partial `.download` file is discarded and restarted
+ *  - verified: size + sha256 must match the catalog entry
+ *  - atomic: verified temp file is renamed into place
+ * @param {string} [id]
+ * @returns {Promise<{ok:boolean, id?:string, bytes?:number, sha256?:string, error?:string}>}
+ */
+function downloadModel(id) {
+  const model = findModel(id) || findModel(DEFAULT_MODEL_ID);
+  if (!model) return Promise.resolve({ ok: false, error: "unknown model" });
+  if (voiceDownloadPromise) return voiceDownloadPromise;
+
+  voiceDownloadPromise = (async () => {
+    const dir = voicePaths().modelsDir;
+    fs.mkdirSync(dir, { recursive: true });
+    const dest = modelFilePath(model);
+    const tmp = `${dest}.download`;
+
+    Object.assign(voiceDownload, {
+      active: true,
+      id: model.id,
+      file: model.file,
+      received: 0,
+      total: model.bytes,
+      percent: 0,
+      error: null,
+      startedAt: Date.now(),
+    });
+    emitVoiceDownloadProgress(true);
+    console.log(`[voice] downloading ${model.file} from ${model.url}`);
+
+    try {
+      // Resume-safe: drop any partial temp file and restart cleanly.
+      try {
+        fs.rmSync(tmp, { force: true });
+      } catch {
+        // ignore
+      }
+      // Electron's net.fetch uses the Chromium network stack, so it honours the
+      // system proxy (Node's undici fetch does not).
+      const fetchImpl = electronNet && electronNet.fetch ? electronNet.fetch.bind(electronNet) : fetch;
+      const res = await fetchImpl(model.url, { headers: { "User-Agent": "SubTr" } });
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      const total = Number(res.headers.get("content-length")) || model.bytes;
+      voiceDownload.total = total;
+
+      const nodeStream = Readable.fromWeb(res.body);
+      const out = fs.createWriteStream(tmp);
+      await new Promise((resolve, reject) => {
+        nodeStream.on("data", (chunk) => {
+          voiceDownload.received += chunk.length;
+          voiceDownload.percent = total
+            ? Math.min(100, Math.floor((voiceDownload.received / total) * 100))
+            : 0;
+          emitVoiceDownloadProgress(false);
+        });
+        nodeStream.on("error", reject);
+        out.on("error", reject);
+        out.on("finish", resolve);
+        nodeStream.pipe(out);
+      });
+
+      const size = fs.statSync(tmp).size;
+      const sha256 = await sha256File(tmp);
+      if (size !== model.bytes || sha256 !== model.sha256) {
+        try {
+          fs.rmSync(tmp, { force: true });
+        } catch {
+          // ignore
+        }
+        throw new Error(`verification failed (size=${size}, sha256=${sha256.slice(0, 12)}…)`);
+      }
+
+      fs.renameSync(tmp, dest); // atomic within the same directory
+      voiceDownload.active = false;
+      voiceDownload.percent = 100;
+      voiceDownload.error = null;
+      emitVoiceDownloadProgress(true);
+      console.log(`[voice] ${model.file} verified + installed (${size} bytes, sha256 ok)`);
+      return { ok: true, id: model.id, bytes: size, sha256 };
+    } catch (error) {
+      voiceDownload.active = false;
+      voiceDownload.error = error && error.message ? error.message : String(error);
+      emitVoiceDownloadProgress(true);
+      console.warn(`[voice] download ${model.id} failed:`, voiceDownload.error);
+      return { ok: false, id: model.id, error: voiceDownload.error };
+    } finally {
+      voiceDownloadPromise = null;
+    }
+  })();
+
+  return voiceDownloadPromise;
 }
 
 function setVoiceStatus(next) {
   if (next === "listening" && !voiceActive) next = "off";
   voiceStatus = next;
   console.log(`[voice] status=${voiceStatus}`);
+}
+
+/** Current voice state snapshot (shared by the IPC setter and the test hook). */
+function voiceSnapshot() {
+  return {
+    status: voiceStatus,
+    active: voiceActive,
+    wanted: voiceWanted,
+    shimReady: voiceShimReady,
+    serverReady: whisper.ready,
+    serverPort: whisper.port,
+    serverPid: whisper.pid,
+    serverRestarts: whisper.restarts,
+    passes: voicePassCount,
+    commits: voiceCommitCount,
+    pcmSamples: voicePcmSeen,
+    lastRms: voiceLastRms,
+    lastTranscript: voiceLastTranscript,
+    lastCommit: voiceLastCommit,
+    lastCommitAt: voiceLastCommitAt,
+    download: voiceDownload.active ? { ...voiceDownload } : null,
+    setup: voiceSetupStatus(),
+  };
+}
+
+/**
+ * Renderer-driven master toggle (settings Voice section). Idempotent: enabling
+ * while already starting/listening is a no-op, as is disabling while off.
+ * Awaits startVoice() so the returned snapshot already reflects the settled
+ * state ("listening" or "needs-setup"/"error"). The tray menu is rebuilt on the
+ * next click and reads voiceStatus, so no push is required.
+ * @param {boolean} enabled
+ * @returns {Promise<ReturnType<typeof voiceSnapshot>>}
+ */
+async function setVoiceEnabled(enabled) {
+  const want = enabled === true;
+  const currentlyOn = voiceWanted || voiceActive;
+  if (want && !currentlyOn) {
+    await startVoice();
+  } else if (!want && currentlyOn) {
+    stopVoice();
+  }
+  return voiceSnapshot();
 }
 
 /** Tray label reflects the Beta feature's current state. */
@@ -785,6 +1087,8 @@ function voiceMenuLabel() {
       return "Voice translation (Beta): Listening";
     case "needs-setup":
       return "Voice translation (Beta): Setup needed";
+    case "server-error":
+      return "Voice translation (Beta): Voice server error";
     case "error":
       return "Voice translation (Beta): Error";
     default:
@@ -792,43 +1096,135 @@ function voiceMenuLabel() {
   }
 }
 
-/** Tray items: the Beta trigger + a setup item when components are missing. */
+/**
+ * Tray items: the Beta trigger, a "Download model" action when the ASR model is
+ * missing (with a live "Downloading… N%" label while in flight), and a setup
+ * dialog entry when any component is missing.
+ */
 function buildVoiceMenuItems() {
   const items = [
     {
       label: voiceMenuLabel(),
       type: "checkbox",
       checked: voiceActive,
+      icon: menuIcon("mic"),
       click: toggleVoice,
     },
   ];
-  if (!voiceSetupStatus().ready) {
-    items.push({ label: "Voice setup required…", click: showVoiceSetupDialog });
+  const setup = voiceSetupStatus();
+  if (!setup.ready) {
+    if (!setup.modelPresent) {
+      if (voiceDownload.active) {
+        items.push({
+          label: `Downloading… ${voiceDownload.percent}%`,
+          enabled: false,
+          icon: menuIcon("download"),
+        });
+      } else {
+        items.push({
+          label: "Download model (≈142 MB)",
+          icon: menuIcon("download"),
+          click: () => void downloadModel(DEFAULT_MODEL_ID),
+        });
+      }
+    }
+    items.push({ label: "Voice setup required…", icon: menuIcon("gear"), click: showVoiceSetupDialog });
   }
   return items;
 }
 
-/** Explain what to install when the whisper.cpp components are missing. */
+/** Explain what to install (and offer the model download) when setup is missing. */
 function showVoiceSetupDialog() {
   const p = voicePaths();
   const setup = voiceSetupStatus();
   const lines = [
     "Voice translation (Beta) needs whisper.cpp running locally.",
     "",
-    `Install the whisper-server binary at:\n  ${p.bin}`,
-    `Download the model to:\n  ${p.model}`,
+    `whisper-server binary:\n  ${p.bin}`,
+    `ASR model (ggml-base.en.bin):\n  ${p.model}`,
+    `Silero VAD model (optional, better silence handling):\n  ${p.silero}`,
     "",
-    setup.missing.length ? `Missing: ${setup.missing.join(", ")}` : "All components present.",
+    setup.missing.length ? `Missing: ${setup.missing.join(", ")}` : "All required components present.",
   ];
+  const buttons = ["OK"];
+  if (!setup.modelPresent) buttons.unshift("Download model (≈142 MB)");
   void dialog
     .showMessageBox({
       type: "info",
       title: "Voice translation — setup required",
       message: "whisper.cpp components not found.",
       detail: lines.join("\n"),
-      buttons: ["OK"],
+      buttons,
+      defaultId: 0,
+      cancelId: buttons.length - 1,
+    })
+    .then((result) => {
+      if (String(buttons[result.response] || "").startsWith("Download")) {
+        void downloadModel(DEFAULT_MODEL_ID);
+      }
     })
     .catch(() => {});
+}
+
+/** CLI args for whisper-server (adds Silero VAD when its model is present). */
+function whisperServerArgs(port) {
+  const p = voicePaths();
+  const args = ["-m", p.model, "--host", "127.0.0.1", "--port", String(port), "-l", "en", "-t", "4"];
+  if (fs.existsSync(p.silero)) {
+    args.push("--vad", "-vm", p.silero);
+  }
+  return args;
+}
+
+/** Spawn whisper-server and resolve true once it answers HTTP. */
+async function spawnWhisperServer() {
+  const p = voicePaths();
+  const port = await getFreePort();
+  const args = whisperServerArgs(port);
+  const proc = spawn(p.bin, args, { stdio: "pipe" });
+  whisper.proc = proc;
+  whisper.port = port;
+  whisper.pid = proc.pid || 0;
+  console.log(
+    `[voice] whisper-server pid=${whisper.pid} port=${port} vad=${args.includes("--vad")}`,
+  );
+  if (proc.stdout) proc.stdout.on("data", (c) => process.stdout.write(`[whisper] ${c}`));
+  if (proc.stderr) proc.stderr.on("data", (c) => process.stderr.write(`[whisper] ${c}`));
+  proc.on("exit", (code) => onWhisperExit(code));
+
+  try {
+    const base = `http://127.0.0.1:${port}`;
+    const deadline = Date.now() + 30000;
+    for (;;) {
+      if (Date.now() > deadline) throw new Error("whisper-server did not become ready in 30s");
+      if (!whisper.proc) throw new Error("whisper-server exited during startup");
+      try {
+        const res = await fetch(`${base}/`, { method: "GET" });
+        if (res.ok) break;
+      } catch {
+        // not up yet
+      }
+      await delay(200);
+    }
+    whisper.ready = true;
+    console.log(`[voice] whisper-server ready on ${base}`);
+    return true;
+  } catch (error) {
+    console.warn(
+      "[voice] whisper-server start failed:",
+      error && error.message ? error.message : error,
+    );
+    whisper.ready = false;
+    try {
+      if (whisper.proc) whisper.proc.kill();
+    } catch {
+      // ignore
+    }
+    whisper.proc = null;
+    whisper.pid = 0;
+    whisper.port = 0;
+    return false;
+  }
 }
 
 /** Spawn (once) and warm whisper-server; resolves when it answers HTTP. */
@@ -840,55 +1236,54 @@ function ensureWhisperServer() {
     setVoiceStatus("needs-setup");
     return Promise.resolve(false);
   }
-  whisper.starting = (async () => {
-    try {
-      const p = voicePaths();
-      const port = await getFreePort();
-      const proc = spawn(
-        p.bin,
-        ["-m", p.model, "--host", "127.0.0.1", "--port", String(port), "-l", "en", "-t", "4"],
-        { stdio: "pipe" },
-      );
-      whisper.proc = proc;
-      whisper.port = port;
-      if (proc.stdout) proc.stdout.on("data", (c) => process.stdout.write(`[whisper] ${c}`));
-      if (proc.stderr) proc.stderr.on("data", (c) => process.stderr.write(`[whisper] ${c}`));
-      proc.on("exit", (code) => {
-        console.log(`[whisper] server exited (${code})`);
-        whisper.ready = false;
-        whisper.proc = null;
-      });
-
-      const base = `http://127.0.0.1:${port}`;
-      const deadline = Date.now() + 30000;
-      for (;;) {
-        if (Date.now() > deadline) throw new Error("whisper-server did not become ready in 30s");
-        try {
-          const res = await fetch(`${base}/`, { method: "GET" });
-          if (res.ok) break;
-        } catch {
-          // not up yet
-        }
-        await delay(200);
-      }
-      whisper.ready = true;
-      console.log(`[voice] whisper-server ready on ${base}`);
-      return true;
-    } catch (error) {
-      console.warn(
-        "[voice] whisper-server start failed:",
-        error && error.message ? error.message : error,
-      );
-      whisper.ready = false;
-      return false;
-    } finally {
-      whisper.starting = null;
-    }
-  })();
+  whisper.stopping = false;
+  whisper.starting = spawnWhisperServer().finally(() => {
+    whisper.starting = null;
+  });
   return whisper.starting;
 }
 
+/** Handle an unexpected whisper-server exit: bounded auto-restart during a session. */
+function onWhisperExit(code) {
+  const wasReady = whisper.ready;
+  whisper.ready = false;
+  whisper.proc = null;
+  whisper.pid = 0;
+  whisper.port = 0;
+  console.log(`[whisper] server exited (code=${code})`);
+  if (whisper.stopping || quitting) return;
+  if (!voiceWanted && !voiceActive) return;
+  // Only auto-restart a server that had actually come up (i.e. crashed mid-session).
+  if (wasReady) void restartWhisperServer();
+}
+
+/** Restart the server after a crash, bounded by WHISPER_MAX_RESTARTS. */
+async function restartWhisperServer() {
+  if (whisper.restarts >= WHISPER_MAX_RESTARTS) {
+    console.warn(`[voice] whisper-server crashed ${whisper.restarts}× — giving up`);
+    voiceActive = false;
+    if (voiceHopTimer) {
+      clearInterval(voiceHopTimer);
+      voiceHopTimer = null;
+    }
+    setVoiceStatus("server-error");
+    return;
+  }
+  whisper.restarts += 1;
+  setVoiceStatus("starting");
+  console.log(
+    `[voice] restarting whisper-server (attempt ${whisper.restarts}/${WHISPER_MAX_RESTARTS})`,
+  );
+  const ok = await ensureWhisperServer();
+  if (ok) {
+    if (voiceActive) setVoiceStatus("listening");
+  } else {
+    setVoiceStatus("server-error");
+  }
+}
+
 function stopWhisperServer() {
+  whisper.stopping = true;
   if (whisper.proc) {
     try {
       whisper.proc.kill();
@@ -898,6 +1293,8 @@ function stopWhisperServer() {
   }
   whisper.proc = null;
   whisper.ready = false;
+  whisper.pid = 0;
+  whisper.port = 0;
 }
 
 /** POST a 16 kHz mono PCM window to whisper-server /inference, return text. */
@@ -948,6 +1345,9 @@ async function runVoicePass() {
     const samples = voiceRing.takeLast(wantSamples);
     voiceLastRms = voicePipeline.rms(samples);
 
+    // Energy gate (fast pre-filter): silent windows never reach whisper-server.
+    // Silero VAD runs server-side too (--vad) when its model is present; silent
+    // windows still feed "" so the 2-pass commit/utterance-end logic is intact.
     if (voiceLastRms < 0.002) {
       const result = voiceCommitter.feed("");
       console.log(
@@ -1030,6 +1430,7 @@ async function startVoice() {
   if (voiceWanted && voiceActive) return;
 
   voiceWanted = true;
+  whisper.restarts = 0;
   setVoiceStatus("starting");
   console.log("[voice] start requested");
   try {
@@ -1108,6 +1509,19 @@ function applyRendererVoiceStatus(value) {
     console.warn("[voice] renderer reported error; stopping");
     return;
   }
+  // Renderer statuses arrive asynchronously. Ignore progress states ("starting"/
+  // "listening") once the session is no longer on, so a late shim report can't
+  // resurrect a stale "listening" label after stop. (Symmetric counterpart to the
+  // "off while active" guard below — the old code only guarded the "off" side.)
+  if ((value === "starting" || value === "listening") && !voiceActive && !voiceWanted) {
+    console.log(`[voice] renderer status=${value} (ignored; session inactive)`);
+    return;
+  }
+  // Never regress an already-active session back to "starting".
+  if (value === "starting" && voiceActive) {
+    console.log("[voice] renderer status=starting (ignored; already active)");
+    return;
+  }
   voiceStatus = value === "off" && voiceActive ? voiceStatus : value;
   console.log(`[voice] renderer status=${value}`);
 }
@@ -1156,6 +1570,20 @@ function registerVoiceIpc() {
   });
 
   ipcMain.handle("subtr:voice-setup", () => voiceSetupStatus());
+
+  // Renderer-driven master toggle (settings Voice section). Same code path as
+  // the tray item; returns the fresh voice snapshot for an immediate UI refresh.
+  ipcMain.handle("subtr:voice-set-enabled", (event, enabled) => {
+    if (!isFromOurWindow(event)) return { ...voiceSnapshot(), error: "unauthorized" };
+    return setVoiceEnabled(enabled === true);
+  });
+
+  // Model catalog + download (driven by the settings UI lane).
+  ipcMain.handle("subtr:voice-models", () => listModels());
+  ipcMain.handle("subtr:voice-download-model", (event, id) => {
+    if (!isFromMainWindow(event)) return { ok: false, error: "unauthorized" };
+    return downloadModel(typeof id === "string" && id ? id : DEFAULT_MODEL_ID);
+  });
 }
 
 /** Inject the loopback capture shim into the reader window (idempotent). */
@@ -1603,23 +2031,21 @@ async function start() {
     globalThis.__subtrTrayMenuLabels = () => trayMenuLabels();
 
     // --- Voice (Beta) automation hooks -------------------------------------
-    globalThis.__subtrVoice = () => ({
-      status: voiceStatus,
-      active: voiceActive,
-      wanted: voiceWanted,
-      shimReady: voiceShimReady,
-      serverReady: whisper.ready,
-      serverPort: whisper.port,
-      passes: voicePassCount,
-      commits: voiceCommitCount,
-      pcmSamples: voicePcmSeen,
-      lastRms: voiceLastRms,
-      lastTranscript: voiceLastTranscript,
-      lastCommit: voiceLastCommit,
-      lastCommitAt: voiceLastCommitAt,
-      setup: voiceSetupStatus(),
-    });
+    globalThis.__subtrVoice = () => voiceSnapshot();
     globalThis.__subtrVoiceSetup = () => voiceSetupStatus();
+    globalThis.__subtrVoiceModels = () => listModels();
+    globalThis.__subtrVoiceDownload = (id) => downloadModel(id);
+    globalThis.__subtrVoiceEnsureServer = () => ensureWhisperServer();
+    globalThis.__subtrVoiceKillServer = () => {
+      if (!whisper.proc) return 0;
+      const pid = whisper.pid;
+      try {
+        whisper.proc.kill("SIGKILL");
+      } catch {
+        // ignore
+      }
+      return pid;
+    };
     globalThis.__subtrVoiceStart = () => startVoice();
     globalThis.__subtrVoiceStop = () => stopVoice();
     globalThis.__subtrVoiceToggle = () => toggleVoice();
