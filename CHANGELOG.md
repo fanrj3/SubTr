@@ -91,9 +91,9 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | 0.2.9 follow-up 5: two-zone stable captions (append-only transcript + frozen/tentative translations) | 0.2.9 | `ec07ebb` | `src/app/overlay/page.tsx`, `src/components/subtitle-overlay.tsx` |
 | Plugin API v2: host bridge + capture.region / overlay.regions / overlay.subtitle / translate.text / hotkey.register | 0.2.10 | `2204fb8` | `desktop/main.cjs`, `desktop/host-*.html`, `desktop/host-preload.cjs`, `src/lib/server/plugins.ts`, `src/app/api/plugin-events/` |
 | Image-translate plugin project P0 (spec + skeleton + plan) | 0.2.10 | `2204fb8` | `examples/plugins/image-translate/`, `docs/image-translate-plugin.md` |
-| Image-translate result card: contain-fit sizing, Esc/click-away/✕ dismiss (global Esc), Live-Text highlights, subtitle above card | 0.2.10 | *(follow-up 2)* | `desktop/host-regions.html`, `desktop/main.cjs` |
-| App icon (SVG source + sips/iconutil pipeline wired into electron-builder) | 0.2.10 | *(follow-up 2)* | `build/icon.svg`, `scripts/build-icon.mjs`, `electron-builder.yml` |
-| Update check in About + `docs/UPDATES.md` plan | 0.2.10 | *(follow-up 2)* | `src/app/settings/page.tsx`, `src/lib/version.ts`, `docs/UPDATES.md` |
+| Image-translate result card: contain-fit sizing, Esc/click-away/✕ dismiss (global Esc), Live-Text highlights, subtitle above card | 0.2.10 | `4322702` | `desktop/host-regions.html`, `desktop/main.cjs` |
+| App icon (SVG source + sips/iconutil pipeline wired into electron-builder) | 0.2.10 | `4322702` | `build/icon.svg`, `scripts/build-icon.mjs`, `electron-builder.yml` |
+| Update check in About + `docs/UPDATES.md` plan | 0.2.10 | `4322702` | `src/app/settings/page.tsx`, `src/lib/version.ts`, `docs/UPDATES.md` |
 
 ---
 
