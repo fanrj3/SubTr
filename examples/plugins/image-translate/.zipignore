@@ -1,0 +1,7 @@
+# Image Translate — distributable-zip exclusions.
+# These paths are produced locally (build output / deps / runtime config) and
+# must never be bundled. The Swift source IS shipped so the Vision helper can be
+# compiled on first use.
+bin/
+node_modules/
+.config.json

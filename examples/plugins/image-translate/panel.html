@@ -206,7 +206,90 @@
     return dict[key];
   }
 
-  /* ---------- bridge (init + resize only; no fetches yet) ---------- */
+  /* ---------- bridge (init + host fetch relay) ---------- */
+
+  var pendingFetches = {};
+  var ridSeq = 0;
+
+  // GET/POST through the host relay (only /api/… paths are allowed).
+  function fetchApi(path, options) {
+    options = options || {};
+    return new Promise(function (resolve, reject) {
+      var rid = ++ridSeq;
+      pendingFetches[rid] = { resolve: resolve };
+      try {
+        parent.postMessage(
+          {
+            type: "subtr-plugin-fetch",
+            rid: rid,
+            url: path,
+            method: options.method || "GET",
+            body: options.body,
+          },
+          "*"
+        );
+      } catch (e) {
+        delete pendingFetches[rid];
+        reject(e);
+        return;
+      }
+      setTimeout(function () {
+        if (pendingFetches[rid]) {
+          delete pendingFetches[rid];
+          reject(new Error("timeout"));
+        }
+      }, 12000);
+    });
+  }
+
+  var API = "/api/plugin-api/image-translate/";
+
+  function loadStatus() {
+    fetchApi(API + "status")
+      .then(function (res) {
+        if (!res.ok || !res.data) {
+          state.status = "error";
+          render();
+          return;
+        }
+        var s = res.data;
+        if (s.config) {
+          CONFIG.accelerator = s.config.accelerator || CONFIG.accelerator;
+          CONFIG.targetLang = s.config.targetLang || CONFIG.targetLang;
+          state.engine = s.config.engine || state.engine;
+          state.highlight = s.config.highlight || state.highlight;
+          state.wired = true;
+        }
+        if (s.vision) {
+          state.vision = s.vision;
+          CONFIG.model.name = "vision-ocr";
+          CONFIG.model.size = s.vision.version ? s.vision.version : s.vision.reason || "—";
+          CONFIG.model.status = s.vision.built ? "ready" : "error";
+        }
+        state.version = s.version || "";
+        state.status = "ready";
+        render();
+      })
+      .catch(function () {
+        state.status = "error";
+        render();
+      });
+  }
+
+  function postConfig(patch) {
+    return fetchApi(API + "config", { method: "POST", body: patch })
+      .then(function (res) {
+        if (res.ok && res.data && res.data.config) {
+          CONFIG.accelerator = res.data.config.accelerator || CONFIG.accelerator;
+          state.engine = res.data.config.engine || state.engine;
+          state.highlight = res.data.config.highlight || state.highlight;
+        }
+        return res;
+      })
+      .catch(function () {
+        return { ok: false };
+      });
+  }
 
   window.addEventListener("message", function (event) {
     var data = event.data;
@@ -217,6 +300,20 @@
       document.documentElement.classList.toggle("dark", state.theme === "dark");
       document.documentElement.lang = state.lang;
       render();
+      loadStatus();
+      return;
+    }
+    if (data.type === "subtr-plugin-fetch-result") {
+      var p = pendingFetches[data.rid];
+      if (!p) return;
+      delete pendingFetches[data.rid];
+      var parsed = null;
+      try {
+        parsed = data.body ? JSON.parse(data.body) : null;
+      } catch (e) {
+        parsed = null;
+      }
+      p.resolve({ ok: data.ok, status: data.status, data: parsed, text: data.body });
     }
   });
 
@@ -318,9 +415,9 @@
       t("sub") +
       "</p>" +
       "</div>" +
-      '<span class="pk-badge pk-badge--warn">' +
-      t("shellBadge") +
-      "</span>" +
+      (state.wired
+        ? '<span class="pk-badge pk-badge--ok">' + esc(state.version || "ready") + "</span>"
+        : '<span class="pk-badge pk-badge--warn">' + t("shellBadge") + "</span>") +
       "</header>"
     );
   }
@@ -532,28 +629,34 @@
     if (action === "engine") {
       if (value === state.engine) return;
       state.engine = value;
-      // TODO(P2): api.storage.set("engine", value) + re-check model status.
       render();
+      postConfig({ engine: value });
       return;
     }
     if (action === "highlight") {
       if (value === state.highlight) return;
       state.highlight = value;
-      // TODO(P2): api.storage.set("highlight", value); host reads it via overlay.regions style.
       state.feedback = "";
       render();
+      postConfig({ highlight: value });
       return;
     }
     if (action === "test-hotkey") {
       state.testing = true;
       state.feedback = "";
       render();
-      // TODO(P2): await api.hotkey.register({ accelerator: CONFIG.accelerator, onTrigger });
-      setTimeout(function () {
-        state.testing = false;
-        render();
-        showFeedback(t("testPending"));
-      }, 900);
+      fetchApi(API + "test-hotkey", { method: "POST", body: {} })
+        .then(function (res) {
+          state.testing = false;
+          render();
+          var ok = res.ok && res.data && res.data.ok;
+          showFeedback(ok ? "Shortcut armed ✓" : "Shortcut unavailable — pick another.");
+        })
+        .catch(function () {
+          state.testing = false;
+          render();
+          showFeedback(t("testPending"));
+        });
       return;
     }
     if (action === "download") {

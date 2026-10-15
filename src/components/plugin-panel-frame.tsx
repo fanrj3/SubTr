@@ -63,8 +63,18 @@ export function PluginPanelFrame({
         const rid = data.rid;
         const url = data.url;
         if (!isSafeApiUrl(url)) return;
+        const method =
+          typeof data.method === "string" && /^(GET|POST|PUT|PATCH|DELETE)$/.test(data.method.toUpperCase())
+            ? data.method.toUpperCase()
+            : "GET";
+        const init: RequestInit = { cache: "no-store", method };
+        if (method !== "GET" && data.body !== undefined) {
+          init.headers = { "content-type": "application/json" };
+          init.body =
+            typeof data.body === "string" ? data.body : JSON.stringify(data.body);
+        }
         try {
-          const res = await fetch(url, { cache: "no-store" });
+          const res = await fetch(url, init);
           const body = await res.text();
           win.postMessage(
             {

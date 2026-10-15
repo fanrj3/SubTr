@@ -70,6 +70,7 @@ global hotkeys live there, not in the server). Each is granted separately.
 | `overlay.subtitle`  | `api.overlay.subtitle.show({ text, tone?: "normal"\|"muted", stickyMs? })` / `.clear()` — the normal subtitle line. Internally the host sends the overlay `{ pluginText: true, text, tone?, stickyMs? }` (and `{ pluginOverlay: "clear" }` to clear), so the overlay renders plugin text verbatim rather than as a translation input |
 | `translate.text`    | `api.translate.text({ texts, targetLang?, sourceLang?, context? }) → { ok: true, translations: [{ text }] } \| { ok: false, reason: "no-profile"\|"upstream"\|"timeout"\|"cancelled", message? }` — batch translate through the app's **active profile**. Plugins never see keys/base URLs. If no profile is configured (or the reader window is gone) the host returns `{ ok: false, reason: "no-profile" }` — it never hangs |
 | `hotkey.register`   | `api.hotkey.register({ accelerator, onTrigger, when? })` / `.unregister` / `.isRegistered` — a plugin-owned global shortcut; `when: "translation-mode"` only fires while translate mode is on |
+| `http.route`        | `api.http.serve({ method?, path, handler })` (or export `module.handlers = [{method,path,handler}]`) — registers JSON endpoints served at `/api/plugin-api/<pluginId>/<path…>` (loopback-only, enabled+granted plugins, method-matched). The panel reaches them through the host fetch relay; handlers get `{ method, path, params, query, body }` and never any host token |
 
 Granted namespaces only: if you were not granted `dictionary.source`, then
 `api.dictionary` is **absent** (calling it throws). Same for every v2 namespace.
@@ -88,6 +89,25 @@ Limitation: if the reader window has never loaded the app (so no profile is in
 resolves `{ ok: false, reason: "no-profile" }`. It degrades cleanly rather than
 hanging; the plugin should show "Add a profile to translate." and retry on the
 next hover.
+
+### Plugin-owned settings + HTTP namespace (`http.route`)
+
+Plugins own their folder. Persist plugin settings in **`<pluginDir>/.config.json`**
+(read + merge with defaults; the host has no storage capability yet) and exclude
+it from distributable zips. The settings panel reaches the plugin through
+`http.route`:
+
+```js
+api.http.serve({ method: "GET", path: "status", handler: () => ({ ok: true, config }) });
+api.http.serve({ method: "POST", path: "config", handler: (ctx) => save(ctx.body) });
+// or: module.exports.handlers = [{ method: "GET", path: "status", handler }]
+```
+
+Served at `/api/plugin-api/<pluginId>/<path…>` (e.g. `/api/plugin-api/usage-stats/status`).
+Rules: loopback callers only; only enabled + `http.route`-granted plugins; method
+must match; POST bodies are JSON; handler failures become HTTP 500, never a
+crash. The handler receives `{ method, path, params, query, body }` — never a host
+token.
 
 ## Plugin-local dependencies
 

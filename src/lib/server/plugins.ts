@@ -26,6 +26,7 @@ export const KNOWN_CAPABILITIES = [
   "overlay.subtitle",
   "translate.text",
   "hotkey.register",
+  "http.route",
 ] as const;
 
 export type Capability = (typeof KNOWN_CAPABILITIES)[number];
@@ -136,8 +137,19 @@ type Runtime = {
   events: Map<string, Array<(event: unknown) => unknown>>;
   /** Plugin-owned hotkey handlers, keyed by accelerator (apiVersion 2). */
   hotkeys: Map<string, (event: unknown) => unknown>;
+  /** Plugin-owned HTTP routes served under /api/plugin-api/<id>/… (apiVersion 2). */
+  httpRoutes: Array<{ method: string; path: string; handler: HttpRouteHandler }>;
   deactivate?: () => void;
 };
+
+/** A plugin HTTP route handler (never receives host tokens). */
+export type HttpRouteHandler = (ctx: {
+  method: string;
+  path: string;
+  params: Record<string, string>;
+  query: Record<string, string>;
+  body: unknown;
+}) => unknown;
 
 type PluginRecord = {
   folder: string;
@@ -493,6 +505,7 @@ async function deactivateRecord(record: PluginRecord): Promise<void> {
   }
   runtime.hotkeys.clear();
   runtime.events.clear();
+  runtime.httpRoutes.length = 0;
   try {
     runtime.deactivate?.();
   } catch (error) {
@@ -567,6 +580,26 @@ function addEventHandler(record: PluginRecord, type: string, fn: unknown): void 
   const list = runtime.events.get(type) ?? [];
   list.push(fn as (event: unknown) => unknown);
   runtime.events.set(type, list);
+}
+
+function normalizeRoutePath(p: string): string {
+  return String(p || "").replace(/^\/+/, "").replace(/\/+$/, "");
+}
+
+/** Match a registered route path (with `:param` segments) against a request. */
+function matchRoute(routePath: string, reqPath: string): Record<string, string> | null {
+  const rp = routePath.split("/").filter(Boolean);
+  const qp = reqPath.split("/").filter(Boolean);
+  if (rp.length !== qp.length) return null;
+  const params: Record<string, string> = {};
+  for (let i = 0; i < rp.length; i++) {
+    if (rp[i].startsWith(":")) {
+      params[rp[i].slice(1)] = decodeURIComponent(qp[i]);
+    } else if (rp[i] !== qp[i]) {
+      return null;
+    }
+  }
+  return params;
 }
 
 /**
@@ -686,6 +719,28 @@ function buildApi(record: PluginRecord, granted: Set<string>): Record<string, un
         },
       };
     }
+
+    if (granted.has("http.route")) {
+      api.http = {
+        serve: (route: unknown) => {
+          if (
+            !isRecord(route) ||
+            typeof route.path !== "string" ||
+            typeof route.handler !== "function"
+          ) {
+            return { ok: false, error: "http.serve needs { path, handler }" };
+          }
+          const runtime = record.runtime;
+          if (!runtime) return { ok: false, error: "inactive" };
+          runtime.httpRoutes.push({
+            method: typeof route.method === "string" ? route.method.toUpperCase() : "GET",
+            path: normalizeRoutePath(route.path),
+            handler: route.handler as HttpRouteHandler,
+          });
+          return { ok: true };
+        },
+      };
+    }
   }
 
   return api;
@@ -699,6 +754,7 @@ async function loadRecord(record: PluginRecord): Promise<void> {
     lookup: [],
     events: new Map(),
     hotkeys: new Map(),
+    httpRoutes: [],
   };
   record.runtime = runtime;
   try {
@@ -717,6 +773,18 @@ async function loadRecord(record: PluginRecord): Promise<void> {
       runtime.deactivate = result.deactivate as () => void;
     } else if (isRecord(mod) && typeof mod.deactivate === "function") {
       runtime.deactivate = mod.deactivate as () => void;
+    }
+    // Collect declarative `module.handlers` (alternative to api.http.serve).
+    if (granted.has("http.route") && Array.isArray((mod as { handlers?: unknown }).handlers)) {
+      for (const h of (mod as { handlers: unknown[] }).handlers) {
+        if (isRecord(h) && typeof h.path === "string" && typeof h.handler === "function") {
+          runtime.httpRoutes.push({
+            method: typeof h.method === "string" ? h.method.toUpperCase() : "GET",
+            path: normalizeRoutePath(h.path),
+            handler: h.handler as HttpRouteHandler,
+          });
+        }
+      }
     }
     record.failures = 0;
   } catch (error) {
@@ -1227,6 +1295,44 @@ export async function dispatchPluginEvent(
 /** Current revision (bumped on reload/enable/disable). */
 export function getPluginsRevision(): number {
   return revision;
+}
+
+/**
+ * Dispatch a plugin-owned HTTP request (apiVersion 2, `http.route`).
+ *
+ * Served under `/api/plugin-api/<pluginId>/<path>`. Only enabled+ok plugins that
+ * were granted the capability can be reached; the handler receives method/params/
+ * query/body only — never host tokens. A handler failure is a 500, never a throw.
+ */
+export async function dispatchPluginHttp(
+  pluginId: string,
+  method: string,
+  reqPath: string,
+  opts: { query?: Record<string, string>; body?: unknown } = {},
+): Promise<{ status: number; body: unknown }> {
+  await ensureScanned();
+  const record = records.get(pluginId);
+  if (!record || !record.runtime || record.info.status !== "ok") {
+    return { status: 404, body: { ok: false, error: "unknown or inactive plugin" } };
+  }
+  if (!record.info.grantedCapabilities.includes("http.route")) {
+    return { status: 403, body: { ok: false, error: "capability not granted" } };
+  }
+  const want = normalizeRoutePath(reqPath);
+  const m = String(method || "GET").toUpperCase();
+  for (const route of record.runtime.httpRoutes) {
+    if (route.method !== m && route.method !== "ANY" && route.method !== "*") continue;
+    const params = matchRoute(route.path, want);
+    if (!params) continue;
+    const result = await runHook(record, () =>
+      route.handler({ method: m, path: want, params, query: opts.query ?? {}, body: opts.body }),
+    );
+    if (result.ok) {
+      return { status: 200, body: result.value === undefined ? { ok: true } : result.value };
+    }
+    return { status: 500, body: { ok: false, error: record.lastError ?? "handler failed" } };
+  }
+  return { status: 404, body: { ok: false, error: "no route" } };
 }
 
 /**

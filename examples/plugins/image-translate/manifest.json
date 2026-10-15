@@ -2,7 +2,7 @@
   "id": "image-translate",
   "name": "Image Translate",
   "version": "0.1.0",
-  "apiVersion": 1,
+  "apiVersion": 2,
   "minAppVersion": "0.2.9",
   "description": "Capture a region of the screen, read the text with on-device OCR, and show Live Text-style highlights whose translations appear in the subtitle line on hover.",
   "author": "SubTr",
@@ -13,6 +13,7 @@
     "overlay.subtitle",
     "translate.text",
     "hotkey.register",
+    "http.route",
     "ui.panel"
   ],
   "panels": [

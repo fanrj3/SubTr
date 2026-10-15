@@ -1,74 +1,432 @@
-// Image Translate — plugin entry (SKELETON, phase P0).
+// Image Translate — plugin entry (phase P2).
 //
-// This file is a placeholder for the Node-side half of the plugin: OCR
-// orchestration, translation batching, and region state. It deliberately does
-// nothing yet, because the host capabilities it depends on do not exist in the
-// host at the time of writing:
+// Capture a frozen screen region → Apple Vision OCR → pre-translate every block
+// through the app's active profile → draw Live Text-style highlights → show the
+// translation of the hovered/selected box in the subtitle line.
 //
-//   capture.region, overlay.regions, overlay.subtitle, translate.text,
-//   hotkey.register
-//
-// Until the host wave ships those capabilities, the loader reports this plugin
-// as `error` with "unknown capabilities: …". See README.md ("Build status") for
-// the exact behaviour and the version that will enable it.
-//
-// Planned wiring (phases P2/P3) — the shape the entry will take once the
-// capabilities are granted:
-//
-//   module.exports = {
-//     async activate(api) {
-//       const state = { boxes: [], translations: new Map() };
-//
-//       // 5) Global shortcut (default CommandOrControl+Shift+P).
-//       const reg = await api.hotkey.register({
-//         accelerator: "CommandOrControl+Shift+P",
-//         when: "translation-mode", // only while the app is translating
-//         onTrigger: () => runCapture(),
-//       });
-//
-//       // 1) Host shows the frozen-snapshot selection UI, returns a crop.
-//       async function runCapture() {
-//         const shot = await api.capture.region({ mode: "freeze" });
-//         if (!shot.ok) return; // cancelled / no-permission / error
-//         const ocr = await recognise(shot);              // P2: Vision or PP-OCRv6
-//         if (ocr.boxes.length === 0) return api.overlay.subtitle.show({ text: "No text found" });
-//         state.boxes = ocr.boxes;
-//
-//         // 2) Host draws the image + highlights (hot path, no wait on translation).
-//         const handle = await api.overlay.regions.show({
-//           imageDataUrl: shot.imageDataUrl,
-//           widthPx: shot.widthPx,
-//           heightPx: shot.heightPx,
-//           boxes: ocr.boxes,
-//           style: { highlight: "glow", numbered: true },
-//         });
-//
-//         // 3) Pre-translate every box so hover is instant (hover→subtitle ≤150ms).
-//         void pretranslate(ocr.boxes);
-//
-//         api.overlay.regions.onRegionHover((e) => {
-//           const t = state.translations.get(e.boxId);
-//           api.overlay.subtitle.show({ text: t ?? "…", tone: "muted" });
-//         });
-//         api.overlay.regions.onRegionSelect((e) => api.overlay.subtitle.show({ text: state.translations.get(e.boxId) ?? "" }));
-//         api.overlay.regions.onRegionDismiss(() => api.overlay.subtitle.clear());
-//       }
-//
-//       // 4) Batch translate through the app's ACTIVE profile (keys never exposed).
-//       async function pretranslate(boxes) {
-//         const res = await api.translate.text({ texts: boxes.map((b) => b.text) });
-//         if (!res.ok) return; // fall back to on-demand translation on hover
-//         boxes.forEach((b, i) => state.translations.set(b.id, res.translations[i]?.text ?? ""));
-//       }
-//     },
-//   };
+// All heavy work is host-brokered (api.capture / api.overlay / api.translate /
+// api.hotkey). The image never leaves the machine; only recognised text is sent
+// for translation, through the app's own profile.
+/* eslint-disable @typescript-eslint/no-require-imports -- plugin entry points are CommonJS by contract */
+"use strict";
 
-module.exports = {
-  activate(api) {
-    api.log.info(
-      "image-translate skeleton loaded — waiting for host capabilities " +
-        "(capture.region, overlay.regions, overlay.subtitle, translate.text, hotkey.register)"
-    );
-  },
-  deactivate() {},
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const { spawnSync } = require("node:child_process");
+
+const PLUGIN_DIR = __dirname;
+const CONFIG_PATH = path.join(PLUGIN_DIR, ".config.json");
+const VISION_SRC = path.join(PLUGIN_DIR, "vision-ocr.swift");
+const VISION_BIN = path.join(PLUGIN_DIR, "bin", "vision-ocr");
+const VISION_STAMP = path.join(PLUGIN_DIR, "bin", ".build.json");
+
+const DEFAULT_CONFIG = {
+  engine: "auto", // "auto" | "vision" (PP-OCRv6 is a later phase)
+  accelerator: "CommandOrControl+Shift+P",
+  when: "translation-mode",
+  targetLang: "auto",
+  highlight: "glow", // "glow" | "box" | "underline"
+  numbered: true,
+  autoTranslate: true,
 };
+
+// --- config (plugin owns its folder) ---------------------------------------
+
+function loadConfig() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+    return { ...DEFAULT_CONFIG, ...(raw && typeof raw === "object" ? raw : {}) };
+  } catch {
+    return { ...DEFAULT_CONFIG };
+  }
+}
+
+function saveConfig(next) {
+  const merged = { ...DEFAULT_CONFIG, ...(next && typeof next === "object" ? next : {}) };
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(merged, null, 2));
+  return merged;
+}
+
+// --- Vision OCR helper (build on first use, source-hash cached) ------------
+
+function sha256(buf) {
+  return crypto.createHash("sha256").update(buf).digest("hex");
+}
+
+let visionCache = null;
+
+function ensureVisionBuilt() {
+  if (visionCache && visionCache.ok) return visionCache;
+  let hash;
+  try {
+    hash = sha256(fs.readFileSync(VISION_SRC));
+  } catch (error) {
+    return { ok: false, reason: "no-source", message: String(error) };
+  }
+  let stamp = null;
+  try {
+    stamp = JSON.parse(fs.readFileSync(VISION_STAMP, "utf8"));
+  } catch {
+    stamp = null;
+  }
+  if (stamp && stamp.hash === hash && fs.existsSync(VISION_BIN)) {
+    visionCache = { ok: true, bin: VISION_BIN, version: stamp.version || "unknown", cached: true };
+    return visionCache;
+  }
+  try {
+    fs.mkdirSync(path.dirname(VISION_BIN), { recursive: true });
+  } catch {
+    // ignore
+  }
+  const built = spawnSync("swiftc", ["-O", "-o", VISION_BIN, VISION_SRC], { encoding: "utf8" });
+  if (built.status !== 0 || !fs.existsSync(VISION_BIN)) {
+    return {
+      ok: false,
+      reason: "build-failed",
+      message: String(built.stderr || built.error || "swiftc failed").slice(0, 400),
+    };
+  }
+  let version = "unknown";
+  const v = spawnSync(VISION_BIN, ["--version"], { encoding: "utf8" });
+  if (v.status === 0) version = String(v.stdout || "").trim();
+  try {
+    fs.writeFileSync(VISION_STAMP, JSON.stringify({ hash, version, builtAt: new Date().toISOString() }, null, 2));
+  } catch {
+    // ignore
+  }
+  visionCache = { ok: true, bin: VISION_BIN, version, cached: false, rebuilt: true };
+  return visionCache;
+}
+
+function runVision(imagePath) {
+  const built = ensureVisionBuilt();
+  if (!built.ok) return { ok: false, reason: "no-engine", message: built.message };
+  const res = spawnSync(built.bin, [imagePath], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+  if (res.status !== 0) {
+    return { ok: false, reason: "ocr-failed", message: String(res.stderr || "").slice(0, 300) };
+  }
+  try {
+    const parsed = JSON.parse(res.stdout);
+    return { ok: true, blocks: Array.isArray(parsed.blocks) ? parsed.blocks : [], version: built.version };
+  } catch {
+    return { ok: false, reason: "ocr-failed", message: "invalid helper output" };
+  }
+}
+
+// --- helpers ---------------------------------------------------------------
+
+function writeTempImage(imageDataUrl) {
+  const comma = String(imageDataUrl).indexOf(",");
+  const b64 = comma >= 0 ? imageDataUrl.slice(comma + 1) : imageDataUrl;
+  const file = path.join(os.tmpdir(), `subtr-image-translate-${process.pid}-${Date.now()}.png`);
+  fs.writeFileSync(file, Buffer.from(b64, "base64"));
+  return file;
+}
+
+function chunk(array, size) {
+  const out = [];
+  for (let i = 0; i < array.length; i += size) out.push(array.slice(i, i + size));
+  return out;
+}
+
+// --- TEST affordances (SUBTR_TEST only; no-ops in normal use) --------------
+
+const TEST_LOG = process.env.SUBTR_IT_TEST_LOG || null;
+function record(event) {
+  if (!TEST_LOG) return;
+  try {
+    fs.appendFileSync(TEST_LOG, `${JSON.stringify({ at: Date.now(), ...event })}\n`);
+  } catch {
+    // ignore
+  }
+}
+
+/** Read a PNG's pixel size from its IHDR (test image path only). */
+function pngSize(buf) {
+  try {
+    if (buf.length >= 24 && buf.toString("ascii", 12, 16) === "IHDR") {
+      return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+    }
+  } catch {
+    // ignore
+  }
+  return { width: 0, height: 0 };
+}
+
+function testImageShot() {
+  const file = process.env.SUBTR_IT_TEST_IMAGE;
+  if (!file) return null;
+  try {
+    const buf = fs.readFileSync(file);
+    const size = pngSize(buf);
+    return {
+      ok: true,
+      imageDataUrl: `data:image/png;base64,${buf.toString("base64")}`,
+      widthPx: size.width,
+      heightPx: size.height,
+      scaleFactor: 1,
+      rect: { x: 0, y: 0, w: size.width, h: size.height },
+      displayId: 0,
+      __test: true,
+    };
+  } catch (error) {
+    record({ type: "error", where: "testImage", message: String(error) });
+    return null;
+  }
+}
+
+// --- activate --------------------------------------------------------------
+
+async function activate(api) {
+  let cfg = loadConfig();
+  const state = { sessionId: null, boxes: [], translations: new Map(), hovered: null };
+  const translationCache = new Map(); // text → translation (across sessions)
+
+  api.log.info(`image-translate ${api.plugin.version} activating`);
+
+  async function showError(text) {
+    try {
+      await api.overlay.regions.hide();
+    } catch {
+      // ignore
+    }
+    try {
+      await api.overlay.subtitle.show({ text, tone: "normal" });
+    } catch {
+      // ignore
+    }
+  }
+
+  function reasonMessage(reason) {
+    if (reason === "no-permission") {
+      return "Screen recording is off — enable it in System Settings.";
+    }
+    if (reason === "no-display") return "Couldn't capture the screen.";
+    return "Capture failed.";
+  }
+
+  async function pretranslate(boxes) {
+    const pending = boxes.filter((b) => !translationCache.has(b.text));
+    for (const group of chunk(pending, 8)) {
+      let res;
+      try {
+        res = await api.translate.text({
+          texts: group.map((b) => b.text),
+          ...(cfg.targetLang && cfg.targetLang !== "auto" ? { targetLang: cfg.targetLang } : {}),
+        });
+      } catch (error) {
+        res = { ok: false, reason: "error", message: String(error) };
+      }
+      if (res && res.ok && Array.isArray(res.translations)) {
+        res.translations.forEach((t, i) => {
+          const src = group[i];
+          if (src && t && typeof t.text === "string") translationCache.set(src.text, t.text);
+        });
+      } else if (res && res.reason === "no-profile") {
+        await showError("Add a profile to translate.");
+        return;
+      }
+    }
+    for (const b of boxes) {
+      const t = translationCache.get(b.text);
+      if (t) state.translations.set(b.id, t);
+    }
+    record({
+      type: "translated",
+      ready: state.translations.size,
+      total: boxes.length,
+      translations: boxes.map((b) => translationCache.get(b.text) || null),
+    });
+  }
+
+  async function runCapture() {
+    try {
+      const testShot = testImageShot();
+      const rectRaw = process.env.SUBTR_IT_TEST_RECT;
+      const shot = testShot
+        ? testShot
+        : await api.capture.region(
+            rectRaw ? { mode: "freeze", testRect: JSON.parse(rectRaw) } : { mode: "freeze" },
+          );
+      record({ type: "shot", source: testShot ? "test-image" : "capture", ok: !!(shot && shot.ok), reason: shot && shot.reason });
+      if (!shot || !shot.ok) {
+        if (!shot || shot.reason !== "cancelled") await showError(reasonMessage(shot && shot.reason));
+        return;
+      }
+      let imagePath = null;
+      let ocr;
+      try {
+        imagePath = writeTempImage(shot.imageDataUrl);
+        ocr = runVision(imagePath);
+      } finally {
+        if (imagePath) {
+          try {
+            fs.unlinkSync(imagePath);
+          } catch {
+            // ignore
+          }
+        }
+      }
+      if (!ocr.ok) {
+        record({ type: "ocr", ok: false, reason: ocr.reason, message: ocr.message });
+        await showError(
+          ocr.reason === "no-engine"
+            ? "Text engine unavailable (Vision helper could not build)."
+            : "Text engine unavailable.",
+        );
+        return;
+      }
+      record({ type: "ocr", ok: true, version: ocr.version, blocks: (ocr.blocks || []).length });
+      const boxes = ocr.blocks
+        .filter((b) => b && typeof b.text === "string" && b.text.trim().length > 0)
+        .map((b, i) => ({
+          id: `b${i}`,
+          xPct: Number(b.xPct) || 0,
+          yPct: Number(b.yPct) || 0,
+          wPct: Number(b.wPct) || 0,
+          hPct: Number(b.hPct) || 0,
+          text: b.text.trim(),
+        }));
+      if (boxes.length === 0) {
+        record({ type: "boxes", count: 0 });
+        await showError("No text found in that area.");
+        return;
+      }
+      record({ type: "boxes", count: boxes.length, texts: boxes.map((b) => b.text) });
+      const shown = await api.overlay.regions.show({
+        imageDataUrl: shot.imageDataUrl,
+        widthPx: shot.widthPx,
+        heightPx: shot.heightPx,
+        boxes,
+        style: { highlight: cfg.highlight, numbered: cfg.numbered },
+        ...(process.env.SUBTR_IT_TEST_HOVER === "1" && boxes.length ? { testHoverId: boxes[0].id } : {}),
+      });
+      state.sessionId = shown && shown.ok ? shown.id : null;
+      record({ type: "regionsShown", id: state.sessionId, boxes: boxes.length, ok: !!(shown && shown.ok) });
+      state.boxes = boxes;
+      state.translations = new Map();
+      if (cfg.autoTranslate) void pretranslate(boxes);
+    } catch (error) {
+      api.log.error("capture flow failed:", String(error));
+      await showError("Image translate failed.");
+    }
+  }
+
+  // --- overlay interactions ------------------------------------------------
+  api.overlay.regions.onRegionHover((e) => {
+    if (!e || !e.boxId) {
+      state.hovered = null;
+      void api.overlay.subtitle.clear();
+      return;
+    }
+    state.hovered = e.boxId;
+    const t = state.translations.get(e.boxId);
+    record({ type: "hover", boxId: e.boxId, subtitle: t || "Translating…" });
+    void api.overlay.subtitle.show({ text: t || "Translating…", tone: t ? "normal" : "muted" });
+  });
+  api.overlay.regions.onRegionSelect((e) => {
+    if (!e || !e.boxId) return;
+    const t = state.translations.get(e.boxId);
+    record({ type: "select", boxId: e.boxId, index: e.index, subtitle: t || "Translating…" });
+    void api.overlay.subtitle.show({ text: t || "Translating…" });
+  });
+  api.overlay.regions.onRegionDismiss((e) => {
+    state.sessionId = null;
+    state.hovered = null;
+    record({ type: "dismiss", reason: e && e.reason });
+    void api.overlay.regions.hide();
+    void api.overlay.subtitle.clear();
+  });
+
+  // --- hotkey --------------------------------------------------------------
+  async function registerHotkey(accel = cfg.accelerator, when = cfg.when) {
+    const res = await api.hotkey.register({ accelerator: accel, when, onTrigger: () => void runCapture() });
+    return res;
+  }
+  const hotkey = await registerHotkey();
+
+  // --- plugin-owned HTTP namespace (settings panel bridge) -----------------
+  api.http.serve({
+    method: "GET",
+    path: "status",
+    handler: () => {
+      const vision = ensureVisionBuilt();
+      return {
+        ok: true,
+        version: api.plugin.version,
+        config: cfg,
+        engine: cfg.engine,
+        hotkey: { accelerator: cfg.accelerator, when: cfg.when, registered: !!(hotkey && hotkey.ok) },
+        vision: {
+          built: vision.ok === true,
+          version: vision.ok ? vision.version : null,
+          reason: vision.ok ? null : vision.reason,
+          message: vision.ok ? null : vision.message,
+        },
+      };
+    },
+  });
+
+  api.http.serve({
+    method: "POST",
+    path: "config",
+    handler: async (ctx) => {
+      cfg = saveConfig({ ...cfg, ...(ctx.body && typeof ctx.body === "object" ? ctx.body : {}) });
+      let hotkeyResult = { ok: true, accelerator: cfg.accelerator };
+      if (ctx.body && (ctx.body.accelerator || ctx.body.when)) {
+        hotkeyResult = await registerHotkey(cfg.accelerator, cfg.when);
+      }
+      return { ok: true, config: cfg, hotkey: hotkeyResult };
+    },
+  });
+
+  api.http.serve({
+    method: "POST",
+    path: "test-hotkey",
+    handler: async () => {
+      const res = await registerHotkey(cfg.accelerator, cfg.when);
+      return { ok: !!(res && res.ok), result: res };
+    },
+  });
+
+  api.http.serve({
+    method: "POST",
+    path: "ocr",
+    handler: (ctx) => {
+      const imageDataUrl = ctx.body && typeof ctx.body.imageDataUrl === "string" ? ctx.body.imageDataUrl : "";
+      if (!imageDataUrl) return { ok: false, reason: "no-image" };
+      let imagePath = null;
+      try {
+        imagePath = writeTempImage(imageDataUrl);
+        const ocr = runVision(imagePath);
+        if (!ocr.ok) return { ok: false, reason: ocr.reason, message: ocr.message };
+        return { ok: true, version: ocr.version, blocks: ocr.blocks };
+      } finally {
+        if (imagePath) {
+          try {
+            fs.unlinkSync(imagePath);
+          } catch {
+            // ignore
+          }
+        }
+      }
+    },
+  });
+
+  api.log.info(`image-translate ready (hotkey ${cfg.accelerator}${hotkey && hotkey.ok ? "" : ` — ${hotkey && hotkey.reason}`})`);
+
+  return {
+    deactivate() {
+      api.log.info("image-translate deactivated");
+      try {
+        api.overlay.regions.hide();
+      } catch {
+        // ignore
+      }
+    },
+  };
+}
+
+module.exports = { activate };

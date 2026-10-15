@@ -2183,7 +2183,14 @@ function hotkeyRegister(params, pluginId) {
   if (RESERVED_ACCELERATORS.has(accel) || accel === toggleHotkeyAccel) {
     return { ok: false, reason: "reserved", conflicting: accel };
   }
-  if (pluginHotkeys.has(accel) || globalShortcut.isRegistered(accel)) {
+  const existing = pluginHotkeys.get(accel);
+  if (existing) {
+    // Re-registering the same accelerator for the same plugin is a no-op success
+    // (the settings panel "Test hotkey" re-arms the current shortcut).
+    if (existing.pluginId === (pluginId || "")) return { ok: true, accelerator: accel };
+    return { ok: false, reason: "conflict", conflicting: accel };
+  }
+  if (globalShortcut.isRegistered(accel)) {
     return { ok: false, reason: "conflict", conflicting: accel };
   }
   const when = params.when === "always" ? "always" : "translation-mode";
