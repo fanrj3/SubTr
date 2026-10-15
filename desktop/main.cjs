@@ -1571,6 +1571,12 @@ function registerVoiceIpc() {
 
   ipcMain.handle("subtr:voice-setup", () => voiceSetupStatus());
 
+  // Read-only voice state (settings pane re-mount). No side effects.
+  ipcMain.handle("subtr:voice-get-state", (event) => {
+    if (!isFromOurWindow(event)) return { ...voiceSnapshot(), error: "unauthorized" };
+    return voiceSnapshot();
+  });
+
   // Renderer-driven master toggle (settings Voice section). Same code path as
   // the tray item; returns the fresh voice snapshot for an immediate UI refresh.
   ipcMain.handle("subtr:voice-set-enabled", (event, enabled) => {
@@ -2032,6 +2038,7 @@ async function start() {
 
     // --- Voice (Beta) automation hooks -------------------------------------
     globalThis.__subtrVoice = () => voiceSnapshot();
+    globalThis.__subtrVoiceState = () => voiceSnapshot();
     globalThis.__subtrVoiceSetup = () => voiceSetupStatus();
     globalThis.__subtrVoiceModels = () => listModels();
     globalThis.__subtrVoiceDownload = (id) => downloadModel(id);

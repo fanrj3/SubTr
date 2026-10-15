@@ -82,6 +82,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | Pace log-symmetric slider + 1-decimal px/s readout | 0.2.9 | `7f5c4e5` | `src/components/position-player.tsx`, `src/lib/client/position-preview.ts` |
 | About section (version/runtime/paths/licenses/links) | 0.2.9 | `7f5c4e5` | `src/app/settings/page.tsx`, i18n |
 | Voice (Beta) phase 2: settings section, model downloads, VAD, crash-restart | 0.2.9 | `7f5c4e5` | `src/components/voice-settings.tsx`, `desktop/main.cjs` |
+| 0.2.9 follow-up: pace = speed factor, tooltip/description rewrite, voice remount state, scrub retarget | 0.2.9 | *(follow-up commit)* | `src/components/subtitle-overlay.tsx`, `src/components/voice-settings.tsx`, `src/components/position-player.tsx`, `desktop/preload.cjs` |
 
 ---
 
@@ -120,6 +121,8 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 - **Voice (Beta) phase 2**: settings **Voice** section with an interactive master toggle (wired to the tray state and idempotent), live status, **model list with per-model download + progress** (sha256 + size verified, resume-safe atomic installs), setup hints, and a desktop-only note on web; **Silero VAD** layered over the energy gate; whisper-server **crash auto-restart** (bounded, then an explicit error state). Fixed an ON→OFF race that could leave the tray label claiming "Listening" — 6/6 convergence + a negative control confirming the probe.
 - i18n: 272 keys in parity (en/zh).
 - Verified: browser 23/23; Electron 13/14 → race fixed → 6/6 cycles.
+- **Follow-up (same 0.2.9):** the reading-pace multiplier is now a **speed factor** — durations are `base ÷ pace`, so **5.00× scrolls 5× faster** and 0.20× is 5× slower (the direction was inverted before; the initial/final holds stay fixed by design and the tooltip now says so explicitly). The row description and the "?" tooltip were rewritten (no longer duplicates; the tooltip documents the scale endpoints, the scroll-phase scope, and what the px/s figure means). The Voice master toggle now reads the live state on remount via the new `voiceGetState()` bridge — it no longer resets when you switch settings sections or pages. The position player's scrub total now tracks the current timeline whenever a run isn't in flight, so the Total row and the scrubber can no longer disagree after a pace change.
+- Verified additions: pace direction/readout measured (scroll phase 52.8s → 15.2s at 5×, 240.8s at 0.2× — exact 1/scale), preset direction, copy diffs en/zh, voice remount across rail/section/page switches (still Listening), scrub retarget (52.8 ↔ 39.4 s) + real seek in the new range, snapshot/resume rules intact.
 
 ### 0.2.8 — plugin DX · home widgets · scroll/layout fixes · voice (Beta) phase 1
 - Home: plugin panels with `location:"home"` now render **directly below the reader** at full reader width as collapsible cards (default collapsed, lazy mount, zero footprint when none) — moved from the bottom strip; the same plugins no longer render inline in Settings (only the show-on-home toggle).

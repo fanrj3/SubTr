@@ -238,7 +238,10 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
     POSITION_TEST_TEXT_KEY,
     DEFAULT_POSITION_TEST_TEXT
   );
-  const sessionSnapshotRef = useRef<{ text: string; timing: SubtitleTiming } | null>(null);
+  const [sessionSnapshot, setSessionSnapshot] = useState<{
+    text: string;
+    timing: SubtitleTiming;
+  } | null>(null);
 
   // Adopt the longer default when the stored value is absent or is the old default.
   useEffect(() => {
@@ -324,7 +327,13 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
     return () => cancelAnimationFrame(raf);
   }, [isDesktopPlayer, playState.active, playState.playing]);
 
-  const totalMs = playState.active ? playState.totalMs : timeline.totalMs;
+  // Scrub total must always agree with the "Total display time" row. While a
+  // run is actively playing, the session's own total drives progress (so an
+  // in-flight run isn't retargeted mid-flight); once paused/ended — or before
+  // any session — retarget to the current timeline so a pace change applies
+  // immediately.
+  const runInFlight = playState.active && playState.playing;
+  const totalMs = runInFlight ? playState.totalMs : timeline.totalMs;
   const displayTimeMs = Math.min(playState.timeMs, totalMs);
 
   function handlePlayPause() {
@@ -332,7 +341,7 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
     if (!trimmed) return;
 
     const ended = playState.timeMs >= playState.totalMs;
-    const snapshot = sessionSnapshotRef.current;
+    const snapshot = sessionSnapshot;
     const changed =
       !snapshot || snapshot.text !== trimmed || !sameTiming(snapshot.timing, timing);
     const hasSession = playState.active && !ended && !changed;
@@ -343,7 +352,7 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
       } else if (hasSession) {
         window.subtrDesktop?.controlTestPlay?.({ action: "play" });
       } else {
-        sessionSnapshotRef.current = { text: trimmed, timing: { ...timing } };
+        setSessionSnapshot({ text: trimmed, timing: { ...timing } });
         window.subtrDesktop?.showTestSubtitle?.(trimmed);
         window.subtrDesktop?.controlTestPlay?.({ action: "play" });
       }
@@ -355,7 +364,7 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
     } else if (hasSession) {
       setPlayState((prev) => ({ ...prev, playing: true }));
     } else {
-      sessionSnapshotRef.current = { text: trimmed, timing: { ...timing } };
+      setSessionSnapshot({ text: trimmed, timing: { ...timing } });
       setPlayState({
         active: true,
         playing: true,
@@ -479,7 +488,7 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
           <div>
             <p className="text-muted">{t("settings.position.totalTime")}</p>
             <p className="font-medium tabular-nums">
-              {formatSeconds(metrics.totalSeconds * 1000)}
+              {formatSeconds(totalMs)}
             </p>
           </div>
           <div>

@@ -180,7 +180,7 @@ export function SubtitleOverlay({
       }
 
       const maxScroll = content.scrollHeight - viewport.clientHeight;
-      const scaledReadMs = computeReadMs(textRef.current) * timingRef.current.textScale;
+      const scaledReadMs = computeReadMs(textRef.current) / timingRef.current.textScale;
 
       if (phaseRef.current === "hold") {
         posRef.current = 0;
@@ -223,7 +223,7 @@ export function SubtitleOverlay({
         // Short content and stream ended → stay visible for the configured minimum/read time.
         const totalStaticMs = Math.max(
           timingRef.current.minDisplayMs,
-          computeReadMs(textRef.current) * timingRef.current.textScale
+          computeReadMs(textRef.current) / timingRef.current.textScale
         );
         const elapsed = now - mountStartTimeRef.current;
         const remainingStaticMs = Math.max(0, totalStaticMs - elapsed);
@@ -436,7 +436,7 @@ export function SubtitleOverlay({
       phaseRef.current = "static";
       const staticMs = Math.max(
         timingRef.current.minDisplayMs,
-        computeReadMs(textRef.current) * timingRef.current.textScale
+        computeReadMs(textRef.current) / timingRef.current.textScale
       );
       timersRef.current.static = window.setTimeout(() => {
         phaseRef.current = "final";
@@ -449,7 +449,7 @@ export function SubtitleOverlay({
       phaseRef.current = "static";
       const staticMs = Math.max(
         timingRef.current.minDisplayMs,
-        computeReadMs(textRef.current) * timingRef.current.textScale
+        computeReadMs(textRef.current) / timingRef.current.textScale
       );
       timersRef.current.static = window.setTimeout(() => {
         phaseRef.current = "final";

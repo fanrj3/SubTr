@@ -26,14 +26,15 @@ export function writeSubtitleTiming(timing: SubtitleTiming): void {
 
 export type ReadingPace = "slow" | "normal" | "fast";
 
+// Pace is a SPEED factor: higher = faster scroll. Slow < 1 < Fast.
 export const READING_PACE_SCALE: Record<ReadingPace, number> = {
-  slow: 1.4,
+  slow: 0.7,
   normal: 1.0,
-  fast: 0.7,
+  fast: 1.4,
 };
 
 export function paceFromScale(scale: number): ReadingPace {
-  if (scale >= 1.2) return "slow";
-  if (scale <= 0.85) return "fast";
+  if (scale >= 1.2) return "fast";
+  if (scale <= 0.85) return "slow";
   return "normal";
 }

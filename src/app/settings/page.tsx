@@ -918,7 +918,7 @@ export default function SettingsPage() {
                   <HelpTooltip>{t("settings.subtitle.readingPace.help")}</HelpTooltip>
                 </span>
               }
-              description={t("settings.subtitle.readingPace.help")}
+              description={t("settings.subtitle.readingPace.description")}
             >
               <div className="flex min-w-[15rem] flex-col items-end gap-1.5">
                 <div className="flex w-full items-center gap-2">

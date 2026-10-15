@@ -114,6 +114,8 @@ Closed by default; discovery stays one click away.
 
 ## Pace slider mapping
 
+- `textScale` is a **speed factor**: scroll/display durations are
+  `base / textScale`, so `5.00×` scrolls 5× faster and `0.20×` is 5× slower.
 - The reading-pace slider is log-symmetric: position maps
   `scale = exp(ln 0.2 + p·(ln 5 − ln 0.2))`, so `1.00×` is exactly centered,
   `0.20×` far left, `5.00×` far right, with ticks at 0.2/0.5/1/2/5.

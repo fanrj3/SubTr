@@ -30,7 +30,8 @@ export function computeTimeline(
 ): PositionTimeline {
   const { latinWords, cjkChars } = getTextMetrics(text);
   const readMs = computeReadMs(text);
-  const scaledReadMs = readMs * timing.textScale;
+  // Pace is a SPEED factor: higher = faster scroll = shorter duration.
+  const scaledReadMs = readMs / timing.textScale;
   const scrollMs = Math.max(timing.minDisplayMs, scaledReadMs);
   const totalMs = timing.initialHoldMs + scrollMs + timing.finalHoldMs;
   return { readMs, scaledReadMs, scrollMs, totalMs, latinWords, cjkChars };

@@ -256,6 +256,15 @@ contextBridge.exposeInMainWorld("subtrDesktop", {
     return ipcRenderer.invoke("subtr:voice-set-enabled", enabled === true);
   },
 
+  /**
+   * Read the current voice state (no side effects). Lets the settings Voice pane
+   * recover the live state after it unmounts/re-mounts.
+   * @returns {Promise<Record<string, unknown>>} the current voice snapshot
+   */
+  voiceGetState() {
+    return ipcRenderer.invoke("subtr:voice-get-state");
+  },
+
   /** List the downloadable voice models with presence info. */
   voiceModels() {
     return ipcRenderer.invoke("subtr:voice-models");

@@ -65,6 +65,19 @@ export function VoiceSettings() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
     const b = window.subtrDesktop;
+    // Read the current state on (re)mount so the toggle/status don't reset.
+    if (b?.voiceGetState) {
+      void b
+        .voiceGetState()
+        .then((snap) => {
+          setSnapshot(snap);
+          if (snap.setup) setSetup(snap.setup);
+          setEnabled(snap.active === true || snap.wanted === true);
+        })
+        .catch(() => {
+          /* getter missing/failed → keep previous behavior */
+        });
+    }
     const offProgress = b?.onVoiceDownloadProgress?.((p) => {
       setProgress(p);
       if (!p.active) void refresh();

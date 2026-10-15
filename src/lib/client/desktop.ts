@@ -61,6 +61,7 @@ export type DesktopBridge = {
     cb: (state: { playing: boolean; timeMs: number; totalMs: number }) => void
   ): () => void;
   voiceSetup?(): Promise<VoiceSetup>;
+  voiceGetState?(): Promise<VoiceSnapshot>;
   voiceSetEnabled?(enabled: boolean): Promise<VoiceSnapshot>;
   voiceModels?(): Promise<VoiceModel[]>;
   downloadVoiceModel?(
