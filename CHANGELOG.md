@@ -82,7 +82,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | Pace log-symmetric slider + 1-decimal px/s readout | 0.2.9 | `7f5c4e5` | `src/components/position-player.tsx`, `src/lib/client/position-preview.ts` |
 | About section (version/runtime/paths/licenses/links) | 0.2.9 | `7f5c4e5` | `src/app/settings/page.tsx`, i18n |
 | Voice (Beta) phase 2: settings section, model downloads, VAD, crash-restart | 0.2.9 | `7f5c4e5` | `src/components/voice-settings.tsx`, `desktop/main.cjs` |
-| 0.2.9 follow-up: pace = speed factor, tooltip/description rewrite, voice remount state, scrub retarget | 0.2.9 | *(follow-up commit)* | `src/components/subtitle-overlay.tsx`, `src/components/voice-settings.tsx`, `src/components/position-player.tsx`, `desktop/preload.cjs` |
+| 0.2.9 follow-up: pace = speed factor, tooltip/description rewrite, voice remount state, scrub retarget | 0.2.9 | `9713277` | `src/components/subtitle-overlay.tsx`, `src/components/voice-settings.tsx`, `src/components/position-player.tsx`, `desktop/preload.cjs` |
 
 ---
 
