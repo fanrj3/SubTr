@@ -85,7 +85,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | 0.2.9 follow-up: pace = speed factor, tooltip/description rewrite, voice remount state, scrub retarget | 0.2.9 | `9713277` | `src/components/subtitle-overlay.tsx`, `src/components/voice-settings.tsx`, `src/components/position-player.tsx`, `desktop/preload.cjs` |
 | 0.2.9 follow-up 2: SCK loopback forced on macOS (Core Audio tap returns a dead track) | 0.2.9 | `0b88a24` | `desktop/main.cjs` |
 | 0.2.9 follow-up 2: settings rows full-width result slot (test connection) | 0.2.9 | `0b88a24` | `src/components/settings-ui.tsx`, `src/app/settings/page.tsx` |
-| 0.2.9 follow-up 3: continuous voice captions (growing utterance buffer + in-place overlay updates) | 0.2.9 | *(follow-up 3)* | `desktop/voice-pipeline.cjs`, `desktop/main.cjs`, `src/app/overlay/page.tsx`, `src/components/subtitle-overlay.tsx` |
+| 0.2.9 follow-up 3: continuous voice captions (growing utterance buffer + in-place overlay updates) | 0.2.9 | `8538ddd` | `desktop/voice-pipeline.cjs`, `desktop/main.cjs`, `src/app/overlay/page.tsx`, `src/components/subtitle-overlay.tsx` |
 
 ---
 
