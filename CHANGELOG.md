@@ -16,6 +16,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | **0.2.1** | `66af67f` | Settings page, profiles v2, thinking control, subtitle customization |
 | **0.2.2** | `4c10810` · docs `0efc776` | Theme + UI language, compact window, position player |
 | **0.2.3** | `cb855ca` · docs `3650ab3` | Native theme, display-aspect preview, Test button, fade-out, caps, capture handshake |
+| **0.2.8** | *(release commit)* | Home widgets below reader, scroll isolation, position layout, plugin kit + preview, tray usage, voice (Beta) phase 1 |
 | **0.2.7** | `7fe1bf1` | Settings refactor (nav rail + setting rows), Base UI primitives, DESIGN.md |
 | **0.2.6** | `c4260d8` | Usage-stats plugin, panel capability, settings polish |
 | **0.2.5** | `34d13b5` | Plugins v1, cost meter + status bar, encrypted config export/import, player polish |
@@ -67,6 +68,13 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | Plugin home widgets + `location` split (settings vs home) | 0.2.6 | `44de54e` | `src/components/home-widgets.tsx`, `src/components/plugin-panel-frame.tsx`, `location`/`visiblePanels` in `src/lib/server/plugins.ts` |
 | Settings shell refactor (grouped nav rail + row primitive + sticky pane) | 0.2.7 | `7fe1bf1` | `src/app/settings/page.tsx`, `src/components/settings-ui.tsx`, `DESIGN.md` |
 | Base UI primitives adopted (Tabs/Switch/Slider/Select/Dialog/Collapsible) | 0.2.7 | `7fe1bf1` | `package.json`, `src/components/settings-ui.tsx` |
+| Plugin home widgets below the reader (full width, collapsible) | 0.2.8 | *(release commit)* | `src/components/home-widgets.tsx`, `src/components/subtr-app.tsx` |
+| Settings scroll isolation (pane-only scroll, independent rail) | 0.2.8 | *(release commit)* | `src/app/settings/page.tsx`, `DESIGN.md` |
+| Position player responsive rows + breakpoints | 0.2.8 | *(release commit)* | `src/components/position-player.tsx` |
+| Plugin kit (`/plugin-kit/panel.css`) + panel preview (live theme) | 0.2.8 | *(release commit)* | `public/plugin-kit/panel.css`, `src/app/panel-preview/`, `src/components/panel-preview.tsx` |
+| Usage-stats panel redesign on the kit | 0.2.8 | *(release commit)* | `examples/plugins/usage-stats/panel.html` |
+| Tray usage menu + 838×556 default window | 0.2.8 | *(release commit)* | `desktop/main.cjs` |
+| Voice→subtitles Beta phase 1 (loopback capture + whisper.cpp + 2-pass commit + overlay) | 0.2.8 | *(release commit)* | `desktop/voice-*.cjs`, `src/lib/client/voice/`, `desktop/main.cjs` |
 
 ---
 
@@ -94,6 +102,15 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 
 ### 0.2.3 (`cb855ca`) — native theme · preview rework · test · robustness
 - Title bar follows theme (`setNativeTheme`); canvas = real display aspect + double-click enlarge; drag without text selection; appearance row responsive; base pace 220 wpm / 400 cpm with 0.2–5.0× slider; **Test** button (real-screen playback with live style); fade-out on every dismissal; caps raised (10000/12000); capture delivery handshake + latest-wins pending queue; dismissal aborts in-flight translation.
+
+### 0.2.8 — plugin DX · home widgets · scroll/layout fixes · voice (Beta) phase 1
+- Home: plugin panels with `location:"home"` now render **directly below the reader** at full reader width as collapsible cards (default collapsed, lazy mount, zero footprint when none) — moved from the bottom strip; the same plugins no longer render inline in Settings (only the show-on-home toggle).
+- Settings **scroll isolation**: the pane is the only scroll region, the nav rail scrolls independently, the wheel never leaks between sides, the document never scrolls.
+- Subtitle → Position **responsive rework**: preview text, Play and the scrubber are full-width rows under the board; metrics get their own row; presets sit adjacent to the board (container-query breakpoints <560 / ≥560 / ≥720 px).
+- Plugin DX: **`/plugin-kit/panel.css`** — theme-aware component kit (surfaces, stats, badges, segmented, buttons, table, bars, heatmap, tooltip, states, themed scrollbars), empirically verified to apply inside the sandboxed panel iframe; **panel preview** at `/panel-preview/<id>/<panelId>` with live preview theme (Follow app / Light / Dark), width switcher (always reachable), reload and identity metadata (no popups); the usage-stats example panel was fully redesigned on the kit (axis ticks, gridlines, date labels, hover tooltips, weekday/month labels, loading/empty/error states).
+- Desktop: default window **838×556**; the **tray menu now shows usage** (Today / All time · cost · calls · translations, `~` when estimated; "No usage data yet" fallback) above the existing items; the menu rebuilds on every click.
+- **Voice → translated subtitles (Beta, phase 1)**: tray toggle (Off / Starting / Listening / Setup needed); macOS **system-audio loopback** capture (`electron-audio-loopback` flags, no virtual device), 16 kHz PCM → rolling-window transcription via a local **whisper.cpp `whisper-server`** (Metal; model stays loaded) → two-pass stable-prefix commit → existing overlay → existing `/api/translate` (your configured profile; no extra key). Assets live in `~/Library/Application Support/subtr/whisper/` (`bin/whisper-server`, `models/ggml-base.en.bin`; missing → "Setup needed"). Verified: real-clip transcription returns the exact expected sentence (~0.5 s warm inference, M3 Metal) and the commit→overlay hand-off fires. **Known limitation:** live loopback audio was silent on the dev machine (audio routing; both macOS backends), so live audio→subtitle was not observed there — to test manually: grant Screen Recording, play audio, toggle Voice from the tray, watch `[voice] pass#` logs.
+- Also: preview theme control + always-reachable width switcher, tooltip date/value split (was “…20260 Calls”), 229 i18n keys in parity. Verified: browser 53/55 (1 fixed + 1 accepted design) → micro-pass verified; Electron 16/16.
 
 ### 0.2.7 — settings page normative refactor
 - Settings rebuilt as a **modern settings shell**: grouped **vertical nav rail + single pane** (Translate / Subtitle / Plugins / App), 48 px icon-only below 700 px, labels at ≥ 700 px (the default 714×480 window shows labels; the rail stays usable down to 400 px), remembered active section, sticky pane header with a gradient fade.

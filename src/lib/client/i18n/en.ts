@@ -226,8 +226,31 @@ export const en = {
   "settings.plugins.uninstalling": "Uninstalling…",
   "settings.plugins.uninstallFailed": "Could not uninstall this plugin.",
   "settings.plugins.showOnHome": "Show “{title}” on home page",
+  "settings.plugins.preview": "Preview",
+  "settings.plugins.previewAria": "Preview “{title}”",
   "home.widgets.expand": "Expand",
   "home.widgets.collapse": "Collapse",
+
+  // Panel preview (plugin developers)
+  "panelPreview.title": "Panel preview",
+  "panelPreview.back": "Back to plugins",
+  "panelPreview.reload": "Reload",
+  "panelPreview.loading": "Loading panel…",
+  "panelPreview.notFound": "Panel not found",
+  "panelPreview.notFoundHint":
+    "Enable this plugin in Settings → Plugins, then try again.",
+  "panelPreview.loadError": "This plugin could not be loaded.",
+  "panelPreview.freshHint": "Panel files are served fresh — reload to see your edits.",
+  "panelPreview.previewLabel": "Live preview",
+  "panelPreview.widthLabel": "Preview width",
+  "panelPreview.themeLabel": "Preview theme",
+  "panelPreview.theme.follow": "Follow app",
+  "panelPreview.width.narrow": "Narrow",
+  "panelPreview.width.medium": "Medium",
+  "panelPreview.width.full": "Full",
+  "panelPreview.pluginId": "Plugin",
+  "panelPreview.panelId": "Panel",
+  "panelPreview.entry": "Entry",
 
   // Tooltip
   "tooltip.moreInfo": "More info",

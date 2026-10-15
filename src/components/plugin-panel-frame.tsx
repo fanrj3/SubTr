@@ -16,6 +16,10 @@ type PluginPanelFrameProps = {
   theme: "light" | "dark";
   lang: "en" | "zh-CN";
   className?: string;
+  /** Lower clamp for the reported content height. */
+  minHeight?: number;
+  /** Upper clamp for the reported content height (preview raises this). */
+  maxHeight?: number;
 };
 
 function isSafeApiUrl(url: unknown): url is string {
@@ -32,6 +36,8 @@ export function PluginPanelFrame({
   theme,
   lang,
   className = "",
+  minHeight = 120,
+  maxHeight = 720,
 }: PluginPanelFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(400);
@@ -82,13 +88,13 @@ export function PluginPanelFrame({
       if (data.type === "subtr-plugin-resize") {
         const raw = Number(data.height);
         if (!Number.isFinite(raw)) return;
-        setHeight(Math.max(120, Math.min(720, raw)));
+        setHeight(Math.max(minHeight, Math.min(maxHeight, raw)));
       }
     }
 
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, []);
+  }, [minHeight, maxHeight]);
 
   return (
     <div

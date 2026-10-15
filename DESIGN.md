@@ -57,8 +57,28 @@ Never decorate with gradients/glow. Plugin iframes stay `sandbox="allow-scripts"
 ## Pane
 
 - Sticky pane header (`Title`) with a gradient fade below it (no hard border).
-- Scrollable content, `max-w-3xl`, centered, no horizontal scroll.
+- Scrollable content, centered, no horizontal scroll.
 - Sections stack with `16px` gap; each section is one surface.
+
+## Scroll isolation (settings)
+
+- `/settings` is a viewport-height, `overflow-hidden` shell — the document
+  itself never scrolls (`h-[100dvh]`).
+- The pane (`main`) is the only normal scroll region; the sticky pane header
+  lives inside it.
+- The nav rail scrolls independently when it overflows; both scroll regions use
+  `overscroll-contain` so wheel/trackpad gestures never chain between them.
+- Holds at 400px, 714px, and 1440px.
+
+## Position player breakpoints (container queries)
+
+- `<560px`: fully stacked — board, presets (2-col), preview text, play + scrubber,
+  metrics.
+- `≥560px`: board left with the 2×3 preset grid adjacent (`w-56`); preview text,
+  play + scrubber, and metrics stay **full-width rows under the board**.
+- `≥720px`: same layout with a wider preset column (`w-64`).
+- No permanent narrow rail; the board keeps its aspect block and no control
+  collides at 400/714/838/1440.
 
 ## Row primitive
 

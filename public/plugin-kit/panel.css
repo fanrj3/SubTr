@@ -1,0 +1,744 @@
+/* ============================================================================
+   SubTr Plugin UI Kit — panel.css
+   ----------------------------------------------------------------------------
+   A tiny, theme-aware stylesheet that makes plugin panels look native inside
+   SubTr. Link it from your panel HTML:
+
+       <link rel="stylesheet" href="/plugin-kit/panel.css" />
+
+   How it works
+   ------------
+   Panels render in a sandboxed iframe with an opaque origin. A linked stylesheet
+   is a "no-cors" subresource, so it loads fine from there (do NOT use web fonts
+   — those require CORS and will be blocked; this kit uses the system stack).
+
+   The host sends an init message after load:
+
+       { type: "subtr-plugin-init", theme: "light" | "dark", lang: "en" | "zh-CN" }
+
+   Toggle theming by mirroring `theme` onto the root element:
+
+       document.documentElement.classList.toggle("dark", theme === "dark")
+
+   Everything is driven by the custom properties below, so you only need the
+   `.dark` class — no other setup.
+
+   Class map
+   ---------
+   Layout      .pk-section  .pk-section-title  .pk-row  .pk-hr
+   Surface     .pk-card  .pk-surface  .pk-card-title
+   Stats       .pk-stats  .pk-stat  .pk-stat-label  .pk-stat-value  .pk-stat-hint
+   Badge       .pk-badge  .pk-badge--ok/--warn/--danger/--accent/--muted
+   Segmented   .pk-segmented  .pk-segmented__item[aria-pressed]
+   Buttons     .pk-btn  .pk-btn--primary  .pk-btn--ghost  .pk-btn--danger  .pk-btn--sm
+   Table       .pk-table
+   Bars        .pk-chart  .pk-chart__yaxis  .pk-chart__canvas  .pk-chart__grid
+               .pk-chart__gridline  .pk-bars  .pk-bar  .pk-bar__fill
+               .pk-chart__xaxis  .pk-xcell
+   Heatmap     .pk-heat-wrap  .pk-heat-days  .pk-heat-body  .pk-heat-months
+               .pk-heat  .pk-cell  .pk-lvl-0..5  .pk-legend  .pk-legend__item
+   Tooltip     .pk-tooltip  .pk-tooltip__date  .pk-tooltip__value
+               .pk-tooltip--visible
+   States      .pk-empty  .pk-loading  .pk-error  .pk-spinner  .pk-scroll
+   Helpers     .pk-muted  .pk-faint  .pk-mono  .pk-row-between  .pk-cluster
+   ============================================================================ */
+
+:root {
+  color-scheme: light;
+
+  /* Palette ---------------------------------------------------------------- */
+  --pk-bg: #fafaf9;
+  --pk-surface: #ffffff;
+  --pk-card: #f5f5f4;
+  --pk-border: rgba(28, 25, 23, 0.1);
+  --pk-border-strong: rgba(28, 25, 23, 0.16);
+
+  --pk-fg: #1c1917;
+  --pk-muted: #57534e;
+  --pk-faint: #a8a29e;
+
+  --pk-accent: #4f46e5;
+  --pk-accent-fg: #ffffff;
+  --pk-accent-soft: #e0e7ff;
+
+  --pk-danger: #dc2626;
+  --pk-danger-soft: #fee2e2;
+  --pk-success: #16a34a;
+  --pk-success-soft: #dcfce7;
+  --pk-warning: #b45309;
+  --pk-warning-soft: #fef3c7;
+
+  --pk-grid-empty: rgba(28, 25, 23, 0.07);
+
+  --pk-tooltip-bg: rgba(24, 24, 27, 0.95);
+  --pk-tooltip-fg: #fafafa;
+  --pk-tooltip-surface: rgba(255, 255, 255, 0.92);
+
+  --pk-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --pk-shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+
+  --pk-radius-sm: 8px;
+  --pk-radius: 10px;
+  --pk-radius-lg: 14px;
+
+  --pk-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --pk-dur: 120ms;
+
+  --pk-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --pk-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --pk-bg: #0c0a09;
+  --pk-surface: #1c1917;
+  --pk-card: #191614;
+  --pk-border: rgba(255, 255, 255, 0.09);
+  --pk-border-strong: rgba(255, 255, 255, 0.16);
+
+  --pk-fg: #f5f5f4;
+  --pk-muted: #b8b2ad;
+  --pk-faint: #78716c;
+
+  --pk-accent: #818cf8;
+  --pk-accent-fg: #0c0a09;
+  --pk-accent-soft: rgba(129, 140, 248, 0.16);
+
+  --pk-danger: #f87171;
+  --pk-danger-soft: rgba(248, 113, 113, 0.14);
+  --pk-success: #4ade80;
+  --pk-success-soft: rgba(74, 222, 128, 0.14);
+  --pk-warning: #fbbf24;
+  --pk-warning-soft: rgba(251, 191, 36, 0.14);
+
+  --pk-grid-empty: rgba(255, 255, 255, 0.07);
+
+  --pk-tooltip-bg: rgba(245, 245, 244, 0.96);
+  --pk-tooltip-fg: #1c1917;
+  --pk-tooltip-surface: rgba(12, 10, 9, 0.92);
+
+  --pk-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --pk-shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.4), 0 2px 6px -1px rgba(0, 0, 0, 0.2);
+}
+
+/* Base --------------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  /* The host controls the iframe size; never grow your own scrollbars. */
+  overflow: hidden;
+}
+
+body {
+  background: var(--pk-bg);
+  color: var(--pk-fg);
+  font: 13px/1.5 var(--pk-font);
+  -webkit-font-smoothing: antialiased;
+  padding: 14px;
+}
+
+/* Scrollbars: thin, themed, never a white flash — matches the app chrome. */
+html,
+.pk-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--pk-muted) 40%, transparent) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--pk-muted) 40%, transparent);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--pk-muted) 62%, transparent);
+}
+.pk-scroll {
+  overflow: auto;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--pk-bg), 0 0 0 4px var(--pk-accent);
+  border-radius: var(--pk-radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Helpers ------------------------------------------------------------------ */
+
+.pk-muted { color: var(--pk-muted); }
+.pk-faint { color: var(--pk-faint); }
+.pk-mono { font-family: var(--pk-mono); font-variant-numeric: tabular-nums; }
+
+.pk-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.pk-row-between {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pk-hr {
+  height: 1px;
+  margin: 14px 0;
+  border: 0;
+  background: var(--pk-border);
+}
+
+/* Layout ------------------------------------------------------------------- */
+
+.pk-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pk-section + .pk-section {
+  margin-top: 16px;
+}
+
+/* Section title: small uppercase label above a block (matches app group titles). */
+.pk-section-title {
+  margin: 0;
+  padding: 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pk-muted);
+}
+
+/* Surface ------------------------------------------------------------------ */
+
+/* Outer, raised card: one per logical section. */
+.pk-surface {
+  border: 1px solid var(--pk-border);
+  border-radius: var(--pk-radius);
+  background: var(--pk-card);
+  box-shadow: var(--pk-shadow-sm);
+  overflow: hidden;
+}
+
+/* Inset card used for individual blocks inside a surface. */
+.pk-card {
+  border: 1px solid var(--pk-border);
+  border-radius: var(--pk-radius);
+  background: var(--pk-surface);
+  padding: 12px;
+}
+.dark .pk-card {
+  background: color-mix(in srgb, var(--pk-surface) 70%, transparent);
+}
+
+.pk-card-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Rows (list / table primitives) ------------------------------------------ */
+
+.pk-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--pk-border);
+}
+.pk-row:last-child {
+  border-bottom: 0;
+}
+
+/* Dense table for numeric breakdowns. */
+.pk-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.pk-table th,
+.pk-table td {
+  padding: 8px 10px;
+  text-align: right;
+  border-bottom: 1px solid var(--pk-border);
+}
+.pk-table th:first-child,
+.pk-table td:first-child {
+  text-align: left;
+}
+.pk-table thead th {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pk-muted);
+}
+.pk-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Stats -------------------------------------------------------------------- */
+
+.pk-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (min-width: 560px) {
+  .pk-stats--4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.pk-stat {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--pk-border);
+  border-radius: var(--pk-radius);
+  background: var(--pk-card);
+}
+.pk-stat-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pk-muted);
+}
+.pk-stat-value {
+  display: block;
+  margin-top: 4px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.pk-stat-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--pk-faint);
+}
+
+/* Badge -------------------------------------------------------------------- */
+
+.pk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--pk-muted) 14%, transparent);
+  color: var(--pk-muted);
+  white-space: nowrap;
+}
+.pk-badge--ok {
+  background: var(--pk-success-soft);
+  color: var(--pk-success);
+}
+.pk-badge--warn {
+  background: var(--pk-warning-soft);
+  color: var(--pk-warning);
+}
+.pk-badge--danger {
+  background: var(--pk-danger-soft);
+  color: var(--pk-danger);
+}
+.pk-badge--accent {
+  background: var(--pk-accent-soft);
+  color: var(--pk-accent);
+}
+
+/* Segmented control -------------------------------------------------------- */
+
+.pk-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--pk-border);
+  border-radius: var(--pk-radius);
+  background: var(--pk-card);
+}
+.pk-segmented__item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--pk-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background var(--pk-dur) var(--pk-ease), color var(--pk-dur) var(--pk-ease);
+  white-space: nowrap;
+}
+.pk-segmented__item:hover {
+  color: var(--pk-fg);
+  background: color-mix(in srgb, var(--pk-muted) 12%, transparent);
+}
+.pk-segmented__item[aria-pressed="true"],
+.pk-segmented__item.is-active {
+  background: var(--pk-accent);
+  color: var(--pk-accent-fg);
+}
+
+/* Buttons ------------------------------------------------------------------ */
+
+.pk-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--pk-radius-sm);
+  border: 1px solid var(--pk-border-strong);
+  background: var(--pk-surface);
+  color: var(--pk-fg);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--pk-dur) var(--pk-ease), border-color var(--pk-dur) var(--pk-ease),
+    color var(--pk-dur) var(--pk-ease), opacity var(--pk-dur) var(--pk-ease);
+}
+.pk-btn:hover {
+  background: color-mix(in srgb, var(--pk-muted) 10%, var(--pk-surface));
+}
+.pk-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pk-btn--primary {
+  border-color: transparent;
+  background: var(--pk-accent);
+  color: var(--pk-accent-fg);
+}
+.pk-btn--primary:hover {
+  background: color-mix(in srgb, var(--pk-accent) 88%, black);
+}
+
+.pk-btn--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--pk-muted);
+}
+.pk-btn--ghost:hover {
+  background: color-mix(in srgb, var(--pk-muted) 12%, transparent);
+  color: var(--pk-fg);
+}
+
+.pk-btn--danger {
+  border-color: transparent;
+  background: transparent;
+  color: var(--pk-danger);
+}
+.pk-btn--danger:hover {
+  background: var(--pk-danger-soft);
+}
+
+.pk-btn--sm {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+/* Bar chart ---------------------------------------------------------------- */
+
+/* Grid: [y-axis labels | plot area] on row 1, [ (empty) | x-axis ] on row 2.
+   Markup order:
+     <div class="pk-chart">
+       <div class="pk-chart__yaxis">…ticks…</div>
+       <div class="pk-chart__canvas">
+         <div class="pk-chart__grid">…gridlines…</div>
+         <div class="pk-bars">…bars…</div>
+       </div>
+       <div class="pk-chart__xaxis">…ticks…</div>
+     </div> */
+.pk-chart {
+  --pk-chart-h: 132px;
+  --pk-bar-gap: 3px;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 6px;
+}
+.pk-chart__yaxis {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: var(--pk-chart-h);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--pk-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pk-chart__canvas {
+  grid-column: 2;
+  grid-row: 1;
+  position: relative;
+  min-width: 0;
+}
+.pk-chart__grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pk-chart__gridline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--pk-border);
+}
+.pk-bars {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--pk-bar-gap);
+  height: var(--pk-chart-h);
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--pk-border-strong);
+}
+.pk-bar {
+  flex: 1 0 4px;
+  min-width: 4px;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  cursor: default;
+}
+.pk-bar__fill {
+  width: 100%;
+  min-height: 2px;
+  height: var(--pk-h, 2%);
+  background: var(--pk-accent);
+  border-radius: 3px 3px 0 0;
+  transition: height 200ms var(--pk-ease), opacity var(--pk-dur) var(--pk-ease);
+}
+.pk-bar:hover .pk-bar__fill {
+  opacity: 0.78;
+}
+.pk-bar.is-empty .pk-bar__fill {
+  background: var(--pk-grid-empty);
+}
+
+/* X-axis: one cell per bar so labels line up with the bars. */
+.pk-chart__xaxis {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  gap: var(--pk-bar-gap);
+  font-size: 10px;
+  color: var(--pk-faint);
+}
+.pk-xcell {
+  flex: 1 0 4px;
+  min-width: 4px;
+  text-align: center;
+  white-space: nowrap;
+}
+/* Edge labels: align inward so they don't spill past the chart at narrow widths. */
+.pk-xcell--start { text-align: left; }
+.pk-xcell--end { text-align: right; }
+
+/* Heatmap ------------------------------------------------------------------ */
+
+.pk-heat-wrap {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px;
+}
+/* Weekday labels: 7 rows, offset by the month label row height above. */
+.pk-heat-days {
+  display: grid;
+  grid-template-rows: repeat(7, var(--pk-cell, 12px));
+  gap: 3px;
+  padding-top: var(--pk-heat-top, 17px);
+  font-size: 10px;
+  line-height: var(--pk-cell, 12px);
+  color: var(--pk-faint);
+  text-align: right;
+}
+.pk-heat-body {
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+/* Month labels sit above the grid and scroll together with it. */
+.pk-heat-months {
+  position: relative;
+  height: 12px;
+  margin-bottom: 5px;
+  width: max-content;
+}
+.pk-heat-months span {
+  position: absolute;
+  top: 0;
+  font-size: 10px;
+  color: var(--pk-faint);
+  white-space: nowrap;
+}
+.pk-heat {
+  --pk-cell: 12px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, var(--pk-cell));
+  gap: 3px;
+  width: max-content;
+}
+.pk-cell {
+  width: var(--pk-cell, 12px);
+  height: var(--pk-cell, 12px);
+  border-radius: 3px;
+  background: var(--pk-grid-empty);
+}
+.pk-cell.is-today {
+  outline: 1.5px solid var(--pk-accent);
+  outline-offset: 1px;
+}
+.pk-lvl-0 { background: var(--pk-grid-empty); }
+.pk-lvl-1 { background: color-mix(in srgb, var(--pk-accent) 26%, var(--pk-grid-empty)); }
+.pk-lvl-2 { background: color-mix(in srgb, var(--pk-accent) 46%, var(--pk-grid-empty)); }
+.pk-lvl-3 { background: color-mix(in srgb, var(--pk-accent) 66%, var(--pk-grid-empty)); }
+.pk-lvl-4 { background: color-mix(in srgb, var(--pk-accent) 84%, var(--pk-grid-empty)); }
+.pk-lvl-5 { background: var(--pk-accent); }
+
+.pk-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--pk-faint);
+}
+.pk-legend__item {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+}
+
+/* Tooltip ------------------------------------------------------------------ */
+
+/* Position it with JS: left/top in px, then add .pk-tooltip--visible. */
+.pk-tooltip {
+  position: fixed;
+  z-index: 40;
+  pointer-events: none;
+  padding: 5px 8px;
+  border-radius: var(--pk-radius-sm);
+  background: var(--pk-tooltip-bg);
+  color: var(--pk-tooltip-fg);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+  box-shadow: var(--pk-shadow-md);
+  opacity: 0;
+  transform: translate(-50%, calc(-100% - 8px)) scale(0.98);
+  transition: opacity var(--pk-dur) var(--pk-ease), transform var(--pk-dur) var(--pk-ease);
+}
+.pk-tooltip--visible {
+  opacity: 1;
+  transform: translate(-50%, calc(-100% - 8px)) scale(1);
+}
+.pk-tooltip__date {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 10px;
+  opacity: 0.72;
+}
+.pk-tooltip__value {
+  display: block;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* States ------------------------------------------------------------------- */
+
+.pk-empty,
+.pk-loading,
+.pk-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 22px 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--pk-muted);
+  border: 1px dashed var(--pk-border-strong);
+  border-radius: var(--pk-radius);
+}
+.pk-error {
+  color: var(--pk-danger);
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--pk-danger) 34%, transparent);
+  background: var(--pk-danger-soft);
+}
+.pk-empty strong,
+.pk-error strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pk-fg);
+}
+.pk-error strong {
+  color: var(--pk-danger);
+}
+
+.pk-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--pk-muted) 35%, transparent);
+  border-top-color: var(--pk-accent);
+  animation: pk-spin 0.7s linear infinite;
+}
+@keyframes pk-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

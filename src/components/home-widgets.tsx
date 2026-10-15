@@ -68,7 +68,7 @@ export function HomeWidgets() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[75rem] space-y-2 px-4 pb-2 sm:px-6">
+    <div className="mx-auto w-full max-w-[65ch] space-y-2 px-6 pb-4 pt-2">
       {widgets.map((widget) => {
         const open = !!expanded[widget.key];
         return (

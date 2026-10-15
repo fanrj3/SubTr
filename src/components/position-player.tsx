@@ -417,53 +417,53 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
     !!window.subtrDesktop?.captureDesktopThumbnail;
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-col gap-4 md:flex-row">
-        <PositionPreview
-          style={style}
-          onChange={onChange}
-          aspect={aspect}
-          thumbnail={thumbnail}
-          onDoubleClick={() => {
-            if (!isModalOpen) setIsModalOpen(true);
-          }}
-          className="cursor-pointer self-start md:flex-1"
-        />
+    <div className="@container space-y-3">
+      <div className="flex flex-col gap-4 @min-[560px]:flex-row @min-[560px]:items-start">
+        <div className="min-w-0 @min-[560px]:flex-1">
+          <PositionPreview
+            style={style}
+            onChange={onChange}
+            aspect={aspect}
+            thumbnail={thumbnail}
+            onDoubleClick={() => {
+              if (!isModalOpen) setIsModalOpen(true);
+            }}
+            className="cursor-pointer"
+          />
+        </div>
 
-        <div className="flex flex-col gap-3 md:w-40">
-          <div className="space-y-1.5">
-            <label
-              htmlFor="position-test-text"
-              className="block text-sm font-medium"
-            >
-              {t("settings.position.testText")}
-            </label>
-            <textarea
-              id="position-test-text"
-              rows={3}
-              value={testText}
-              onChange={(e) => setTestText(e.target.value)}
-              className="w-full resize-none rounded-xl border border-card-border bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="grid grid-cols-2 gap-2 @min-[560px]:w-56 @min-[720px]:w-64">
+          {presets.map((preset) => (
             <button
+              key={preset.label}
               type="button"
-              onClick={handlePlayPause}
-              disabled={!testText.trim()}
-              className="inline-flex min-w-[6.5rem] items-center justify-center gap-1.5 rounded-xl border border-card-border bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 dark:hover:bg-white/5"
+              onClick={() => onChange({ ...style, xPct: preset.xPct, yPct: preset.yPct })}
+              className="min-w-0 break-words rounded-lg border border-card-border bg-background px-2 py-1.5 text-center text-xs font-medium leading-tight transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
             >
-              {playState.playing ? t("settings.position.pause") : t("settings.position.play")}
+              {preset.label}
             </button>
-            <span className="text-xs tabular-nums text-muted">
-              {t("settings.position.time", {
-                current: formatSeconds(displayTimeMs),
-                total: formatSeconds(totalMs),
-              })}
-            </span>
-          </div>
+          ))}
+        </div>
+      </div>
 
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <label
+            htmlFor="position-test-text"
+            className="block text-[13px] font-medium"
+          >
+            {t("settings.position.testText")}
+          </label>
+          <textarea
+            id="position-test-text"
+            rows={3}
+            value={testText}
+            onChange={(e) => setTestText(e.target.value)}
+            className="w-full resize-none rounded-lg border border-card-border bg-background px-3 py-2 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+          />
+        </div>
+
+        <div className="space-y-1.5">
           <input
             type="range"
             min={0}
@@ -477,42 +477,45 @@ export function PositionPlayer({ style, timing, onChange }: PositionPlayerProps)
               total: formatSeconds(totalMs),
             })}
           />
-
-          <div className="grid grid-cols-2 gap-2 rounded-xl border border-card-border bg-background p-3 text-xs">
-            <div>
-              <p className="text-muted">{t("settings.position.totalTime")}</p>
-              <p className="font-medium tabular-nums">
-                {formatSeconds(metrics.totalSeconds * 1000)}
-              </p>
-            </div>
-            <div>
-              <p className="text-muted">{t("settings.position.scrollSpeed")}</p>
-              <p className="font-medium tabular-nums">
-                {Math.round(metrics.scrollSpeedPxPerS)} px/s
-              </p>
-            </div>
-            <div className="col-span-2">
-              <p className="text-muted">{t("settings.position.readingSpeed")}</p>
-              <p className="font-medium tabular-nums">
-                {metrics.wpm > 0 && t("settings.position.wpm", { n: metrics.wpm })}
-                {metrics.wpm > 0 && metrics.cpm > 0 && " · "}
-                {metrics.cpm > 0 && t("settings.position.cpm", { n: metrics.cpm })}
-                {metrics.wpm === 0 && metrics.cpm === 0 && "—"}
-              </p>
-            </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs tabular-nums text-muted">
+              {t("settings.position.time", {
+                current: formatSeconds(displayTimeMs),
+                total: formatSeconds(totalMs),
+              })}
+            </span>
+            <button
+              type="button"
+              onClick={handlePlayPause}
+              disabled={!testText.trim()}
+              className="inline-flex min-w-[6.5rem] items-center justify-center gap-1.5 rounded-lg border border-card-border bg-background px-3 py-1.5 text-[13px] font-medium shadow-sm transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 dark:hover:bg-white/5"
+            >
+              {playState.playing ? t("settings.position.pause") : t("settings.position.play")}
+            </button>
           </div>
+        </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            {presets.map((preset) => (
-              <button
-                key={preset.label}
-                type="button"
-                onClick={() => onChange({ ...style, xPct: preset.xPct, yPct: preset.yPct })}
-                className="min-w-0 break-words rounded-lg border border-card-border bg-background px-2 py-1.5 text-center text-xs font-medium leading-tight transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
-              >
-                {preset.label}
-              </button>
-            ))}
+        <div className="grid grid-cols-2 gap-2 rounded-lg border border-card-border bg-background p-3 text-xs @min-[560px]:grid-cols-3">
+          <div>
+            <p className="text-muted">{t("settings.position.totalTime")}</p>
+            <p className="font-medium tabular-nums">
+              {formatSeconds(metrics.totalSeconds * 1000)}
+            </p>
+          </div>
+          <div>
+            <p className="text-muted">{t("settings.position.scrollSpeed")}</p>
+            <p className="font-medium tabular-nums">
+              {Math.round(metrics.scrollSpeedPxPerS)} px/s
+            </p>
+          </div>
+          <div className="col-span-2 @min-[560px]:col-span-1">
+            <p className="text-muted">{t("settings.position.readingSpeed")}</p>
+            <p className="font-medium tabular-nums">
+              {metrics.wpm > 0 && t("settings.position.wpm", { n: metrics.wpm })}
+              {metrics.wpm > 0 && metrics.cpm > 0 && " · "}
+              {metrics.cpm > 0 && t("settings.position.cpm", { n: metrics.cpm })}
+              {metrics.wpm === 0 && metrics.cpm === 0 && "—"}
+            </p>
           </div>
         </div>
       </div>

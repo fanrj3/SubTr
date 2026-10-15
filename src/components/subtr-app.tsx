@@ -194,12 +194,12 @@ export function SubTrApp() {
         onTargetLangChange={handleTargetLangChange}
       />
       <Reader onSelect={handleSelect} mode={mode} />
+      <HomeWidgets />
       <SubtitleOverlay
         key={subtitle.kind === "idle" ? "idle" : subtitle.original}
         state={subtitle}
         onDismiss={dismissSubtitle}
       />
-      <HomeWidgets />
       <StatusBar />
     </div>
   );

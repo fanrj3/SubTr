@@ -14,6 +14,7 @@ files:
   - package.json
   - node_modules/selection-hook/**/*
   - node_modules/node-gyp-build/**/*
+  - node_modules/electron-audio-loopback/**/*
 extraResources:
   - from: .next/standalone
     to: app
@@ -35,6 +36,11 @@ mac:
         - arm64
   category: public.app-category.productivity
   identity: null
+  # macOS 14.2+ system-audio loopback capture (whisper-server voice mode).
+  extendInfo:
+    NSAudioCaptureUsageDescription: >-
+      SubTr captures system audio to transcribe it locally and display translated
+      subtitles.
 win:
   target:
     - target: nsis

@@ -68,15 +68,17 @@ Notes:
 - Linux: selection monitoring works on X11; Wayland support is limited (always-on-top and global shortcuts depend on the compositor).
 - Closing the app window quits the app (v1 behavior).
 
+**Voice → translated subtitles (Beta, phase 1):** click the **tray icon** and enable **Voice translation (Beta)** — SubTr captures system audio (no virtual device needed), transcribes it locally with whisper.cpp (Metal) and shows the translation through the same subtitle overlay, so an English video plays with subtitles in your language. The local assets live in `~/Library/Application Support/subtr/whisper/` (`bin/whisper-server` + `models/ggml-base.en.bin`); when missing, the tray item says **Setup needed**. Needs the Screen Recording permission. (Live-audio was silent on our test machine — audio routing — so treat this as a working Beta that needs a real-audio retest; the tray state, transcription and overlay hand-off are verified.)
+
 ## Plugins
 
-SubTr loads local plugins from a folder (desktop: the app's data folder `plugins/`; development: `.subtr-plugins/`) — or install them right in **Settings → Plugins → Import plugin…** (pick a `.zip` built from a plugin folder), with enable/disable and uninstall per plugin. Panels declared `location: "home"` appear on the home page as collapsible cards (toggle them under Settings → Plugins); `location: "settings"` panels render inside Settings for parameter control. Each plugin is a folder with a `manifest.json` and optionally an `index.cjs` entry. Capabilities are granted per plugin at enable time in **Settings → Plugins**:
+SubTr loads local plugins from a folder (desktop: the app's data folder `plugins/`; development: `.subtr-plugins/`) — or install them right in **Settings → Plugins → Import plugin…** (pick a `.zip` built from a plugin folder), with enable/disable and uninstall per plugin. Panels declared `location: "home"` appear on the home page directly below the reader as collapsible cards (toggle them under Settings → Plugins); `location: "settings"` panels render inside Settings for parameter control. Each plugin is a folder with a `manifest.json` and optionally an `index.cjs` entry. Capabilities are granted per plugin at enable time in **Settings → Plugins**:
 
 - **translate.transformInput / translate.transformOutput** — rewrite the selected text before translation, or the translation before it is shown
 - **dictionary.source** — provide dictionary lookups (used when the bundled dictionary misses)
 - **Provider presets** — a plugin can contribute a provider declaratively (no code)
 
-Plugins run as local Node code with full access to your machine — only enable plugins you trust. See `examples/plugins/` for a starter (uppercase), a declarative provider, and a **usage-stats panel** (charts + calendar heatmap via the sandboxed panel host). Ready-to-import packages live in **`examples/plugin-zips/`** (`usage-stats.zip`, `uppercase.zip`, `acme-translate.zip`); regenerate them with `npm run plugins:zip` after editing the examples.
+Plugins run as local Node code with full access to your machine — only enable plugins you trust. Panel authors get a theme-aware **component kit** at `/plugin-kit/panel.css` and a live **panel preview** (`/panel-preview/<id>/<panelId>`, with theme and width switchers reachable from the **Preview** action in Settings) — see `examples/plugins/README.md`. Ready-to-import packages live in **`examples/plugin-zips/`** (`usage-stats.zip`, `uppercase.zip`, `acme-translate.zip`); regenerate them with `npm run plugins:zip` after editing the examples.
 
 ## Security notes
 

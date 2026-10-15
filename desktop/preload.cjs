@@ -183,4 +183,75 @@ contextBridge.exposeInMainWorld("subtrDesktop", {
     ipcRenderer.on("subtr:test-play-state", listener);
     return () => ipcRenderer.removeListener("subtr:test-play-state", listener);
   },
+
+  // --- Voice→subtitle (Beta, phase 1) -------------------------------------
+
+  /**
+   * Ask the main process to install the loopback display-media handler
+   * (electron-audio-loopback). Call before getDisplayMedia({audio:true}).
+   * @returns {Promise<void>}
+   */
+  voiceEnableLoopback() {
+    return ipcRenderer.invoke("enable-loopback-audio");
+  },
+
+  /** Tear down the loopback display-media handler after getDisplayMedia. */
+  voiceDisableLoopback() {
+    return ipcRenderer.invoke("disable-loopback-audio");
+  },
+
+  /**
+   * Forward a chunk of 16 kHz mono s16le PCM to the main process pipeline.
+   * @param {ArrayBuffer} buffer
+   */
+  voiceAudio(buffer) {
+    if (!(buffer instanceof ArrayBuffer)) return;
+    ipcRenderer.send("subtr:voice-audio", buffer);
+  },
+
+  /**
+   * Report voice-capture status: "starting" | "listening" | "off" | "error".
+   * @param {string} value
+   */
+  voiceStatus(value) {
+    if (typeof value !== "string") return;
+    ipcRenderer.send("subtr:voice-status", value);
+  },
+
+  /** Forward a diagnostic line to the main process log. @param {string} message */
+  voiceLog(message) {
+    if (typeof message !== "string") return;
+    ipcRenderer.send("subtr:voice-log", message);
+  },
+
+  /**
+   * Subscribe to voice-toggle requests from the tray menu (Beta trigger).
+   * @param {(on: boolean) => void} callback
+   * @returns {() => void} unsubscribe
+   */
+  onVoiceToggle(callback) {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, on) => {
+      try {
+        callback(on === true);
+      } catch (error) {
+        console.error("[subtrDesktop] onVoiceToggle callback failed", error);
+      }
+    };
+    ipcRenderer.on("subtr:voice-toggle", listener);
+    return () => ipcRenderer.removeListener("subtr:voice-toggle", listener);
+  },
+
+  /** Query voice setup availability (whisper-server + model present). */
+  voiceSetup() {
+    return ipcRenderer.invoke("subtr:voice-setup");
+  },
+
+  /**
+   * Handshake: the injected capture shim is installed and listening for
+   * voice-toggle events. Lets the main process flush a queued toggle.
+   */
+  voiceShimReady() {
+    ipcRenderer.send("subtr:voice-shim-ready");
+  },
 });

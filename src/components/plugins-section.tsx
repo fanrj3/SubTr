@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useT } from "@/lib/client";
 import {
@@ -12,7 +13,7 @@ import {
   type PluginsResponse,
   type TKey,
 } from "@/lib/client";
-import { LoaderIcon } from "./icons";
+import { LoaderIcon, PanelIcon } from "./icons";
 import { PluginPanelFrame } from "./plugin-panel-frame";
 import { SettingsDialog, SettingsSwitch } from "./settings-ui";
 
@@ -57,6 +58,30 @@ function statusClasses(status: PluginInfo["status"]): string {
     default:
       return "bg-muted/10 text-muted";
   }
+}
+
+function PanelPreviewLink({
+  pluginId,
+  panelId,
+  title,
+}: {
+  pluginId: string;
+  panelId: string;
+  title: string;
+}) {
+  const { t } = useT();
+  return (
+    <Link
+      href={`/panel-preview/${encodeURIComponent(pluginId)}/${encodeURIComponent(
+        panelId
+      )}`}
+      aria-label={t("settings.plugins.previewAria", { title })}
+      className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-white/5"
+    >
+      <PanelIcon className="h-3.5 w-3.5" />
+      {t("settings.plugins.preview")}
+    </Link>
+  );
 }
 
 export function PluginsSection({
@@ -381,35 +406,53 @@ export function PluginsSection({
                     {plugin.panels
                       .filter((panel) => panel.location !== "home")
                       .map((panel) => (
-                        <PluginPanelFrame
-                          key={panel.id}
-                          pluginId={plugin.id}
-                          panel={panel}
-                          theme={theme}
-                          lang={lang}
-                        />
+                        <div key={panel.id} className="space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="min-w-0 truncate text-[11px] font-medium uppercase tracking-wide text-muted">
+                              {panel.title}
+                            </span>
+                            <PanelPreviewLink
+                              pluginId={plugin.id}
+                              panelId={panel.id}
+                              title={panel.title}
+                            />
+                          </div>
+                          <PluginPanelFrame
+                            pluginId={plugin.id}
+                            panel={panel}
+                            theme={theme}
+                            lang={lang}
+                          />
+                        </div>
                       ))}
                     {plugin.panels
                       .filter((panel) => panel.location === "home")
                       .map((panel) => (
-                        <label
+                        <div
                           key={panel.id}
                           className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-background px-2.5 py-2 text-xs"
                         >
                           <span className="min-w-0 truncate text-muted">
                             {t("settings.plugins.showOnHome", { title: panel.title })}
                           </span>
-                          <SettingsSwitch
-                            checked={panel.visible !== false}
-                            disabled={busy}
-                            aria-label={t("settings.plugins.showOnHome", {
-                              title: panel.title,
-                            })}
-                            onCheckedChange={(checked) =>
-                              void togglePanelVisibility(plugin, panel.id, checked)
-                            }
-                          />
-                        </label>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <PanelPreviewLink
+                              pluginId={plugin.id}
+                              panelId={panel.id}
+                              title={panel.title}
+                            />
+                            <SettingsSwitch
+                              checked={panel.visible !== false}
+                              disabled={busy}
+                              aria-label={t("settings.plugins.showOnHome", {
+                                title: panel.title,
+                              })}
+                              onCheckedChange={(checked) =>
+                                void togglePanelVisibility(plugin, panel.id, checked)
+                              }
+                            />
+                          </div>
+                        </div>
                       ))}
                   </div>
                 )}

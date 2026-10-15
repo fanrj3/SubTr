@@ -4,135 +4,22 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Usage Stats</title>
+<!-- Shared plugin UI kit: cards, stats, badges, charts, heatmap, states. -->
+<link rel="stylesheet" href="/plugin-kit/panel.css" />
 <style>
-  :root {
-    --bg: #ffffff;
-    --fg: #18181b;
-    --muted: #71717a;
-    --border: #e4e4e7;
-    --card: #f4f4f5;
-    --accent: #4f46e5;
-    --grid-empty: #ebebef;
-    --tooltip-bg: rgba(24, 24, 27, 0.94);
-    --tooltip-fg: #fafafa;
-  }
-  html.dark {
-    --bg: #09090b;
-    --fg: #fafafa;
-    --muted: #a1a1aa;
-    --border: #27272a;
-    --card: #18181b;
-    --accent: #818cf8;
-    --grid-empty: #1f1f23;
-  }
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(113, 113, 122, 0.45) transparent;
-  }
-  html.dark, html.dark body {
-    scrollbar-color: rgba(161, 161, 170, 0.45) transparent;
-  }
-  ::-webkit-scrollbar { width: 8px; height: 8px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb {
-    background: rgba(113, 113, 122, 0.45);
-    border-radius: 8px;
-  }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(113, 113, 122, 0.65); }
-  html.dark ::-webkit-scrollbar-thumb { background: rgba(161, 161, 170, 0.45); }
-  html.dark ::-webkit-scrollbar-thumb:hover { background: rgba(161, 161, 170, 0.65); }
-  body {
-    background: var(--bg);
-    color: var(--fg);
-    font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    padding: 14px;
-  }
-  .row { display: flex; flex-wrap: wrap; gap: 8px; }
-  .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  @media (min-width: 520px) { .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-  .stat {
-    min-width: 0;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 8px 10px;
-    background: var(--card);
-  }
-  .stat .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
-  .stat .value { font-size: 16px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
-  h2 { font-size: 13px; margin: 16px 0 8px; }
-  .switcher { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-  .switcher button {
-    border: 1px solid var(--border);
-    background: var(--bg);
-    color: var(--fg);
-    border-radius: 7px;
-    padding: 4px 9px;
-    font: inherit;
-    font-size: 12px;
-    cursor: pointer;
-  }
-  .switcher button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .bars {
-    display: flex;
-    align-items: flex-end;
-    gap: 2px;
-    height: 120px;
-    padding: 4px 0;
-    border-bottom: 1px solid var(--border);
-    overflow-x: auto;
-  }
-  .bar-wrap { flex: 0 0 8px; height: 100%; display: flex; align-items: flex-end; }
-  .bar { width: 100%; min-height: 2px; background: var(--accent); border-radius: 2px 2px 0 0; }
-  .heat {
-    display: grid;
-    grid-auto-flow: column;
-    grid-template-rows: repeat(7, 11px);
-    gap: 2px;
-    overflow-x: auto;
-    padding-bottom: 4px;
-  }
-  .cell { width: 11px; height: 11px; border-radius: 2px; background: var(--grid-empty); }
-  .cell.today { outline: 1.5px solid var(--accent); outline-offset: 1px; }
-  .lvl1 { background: color-mix(in srgb, var(--accent) 25%, var(--grid-empty)); }
-  .lvl2 { background: color-mix(in srgb, var(--accent) 45%, var(--grid-empty)); }
-  .lvl3 { background: color-mix(in srgb, var(--accent) 65%, var(--grid-empty)); }
-  .lvl4 { background: color-mix(in srgb, var(--accent) 82%, var(--grid-empty)); }
-  .lvl5 { background: var(--accent); }
-  .legend { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 11px; margin-top: 6px; }
-  .legend .cell { width: 9px; height: 9px; }
-  .empty { color: var(--muted); font-size: 12px; padding: 12px 0; }
-  #tooltip {
-    position: fixed;
-    z-index: 10;
-    pointer-events: none;
-    background: var(--tooltip-bg);
-    color: var(--tooltip-fg);
-    padding: 4px 7px;
-    border-radius: 6px;
-    font-size: 11px;
-    white-space: nowrap;
-    opacity: 0;
-    transform: translate(-50%, -120%);
-    transition: opacity 0.08s ease;
-  }
+  /* A little local polish on top of the kit. */
+  .app { display: flex; flex-direction: column; gap: 14px; }
+  .app-head { align-items: flex-start; }
+  .app-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .app-sub { margin: 2px 0 0; font-size: 11px; color: var(--pk-muted); }
+  .app-sub b { color: var(--pk-fg); font-weight: 600; }
+  .chart-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .chart-head .pk-segmented { flex-wrap: wrap; }
 </style>
 </head>
 <body>
-  <div class="stats" id="stats"></div>
-
-  <h2 id="chart-title">Last 30 days</h2>
-  <div class="switcher" id="switcher"></div>
-  <div class="bars" id="bars"></div>
-
-  <h2 id="calendar-title">Calendar</h2>
-  <div class="heat" id="heat"></div>
-  <div class="legend" id="legend"></div>
-
-  <div id="tooltip"></div>
+  <div class="app" id="view"></div>
+  <div class="pk-tooltip" id="tip" role="tooltip"></div>
 
 <script>
 (function () {
@@ -143,29 +30,57 @@
     lang: "en",
     metric: "calls",
     data: null,
-    loading: false,
+    status: "loading", // loading | ready | empty | error
   };
+
+  var METRICS = ["calls", "translations", "tokens", "cost"];
+  var WEEKS = 26;
+  var CELL_STEP = 15; // --pk-cell (12) + gap (3): used to align month labels.
 
   var COPY = {
     en: {
+      title: "Usage",
+      range30: "Last 30 days",
+      calendar: "Calendar · 26 weeks",
       cost: "Cost",
       calls: "Calls",
       translations: "Translations",
       tokens: "Tokens",
-      last30: "Last 30 days",
-      calendar: "Calendar (26 weeks)",
-      empty: "No usage data yet.",
+      inTok: "in",
+      outTok: "out",
+      updated: "updated",
+      est: "estimated",
+      loading: "Loading usage…",
+      emptyTitle: "No usage yet",
+      emptyHint: "Translate something and your usage will appear here.",
+      errorTitle: "Could not load usage data",
+      errorHint: "The stats endpoint did not respond.",
+      retry: "Retry",
+      refresh: "Refresh",
+      noActivity: "No activity in this period",
       less: "Less",
       more: "More",
     },
     "zh-CN": {
+      title: "用量",
+      range30: "最近 30 天",
+      calendar: "日历 · 26 周",
       cost: "花费",
       calls: "调用",
       translations: "翻译",
       tokens: "Token",
-      last30: "最近 30 天",
-      calendar: "日历（26 周）",
-      empty: "暂无使用数据。",
+      inTok: "输入",
+      outTok: "输出",
+      updated: "更新于",
+      est: "估算",
+      loading: "正在加载用量…",
+      emptyTitle: "暂无使用记录",
+      emptyHint: "翻译内容后，用量会显示在这里。",
+      errorTitle: "无法加载用量数据",
+      errorHint: "统计接口没有响应。",
+      retry: "重试",
+      refresh: "刷新",
+      noActivity: "该时间段内没有活动",
       less: "少",
       more: "多",
     },
@@ -201,19 +116,15 @@
       state.theme = data.theme === "dark" ? "dark" : "light";
       state.lang = data.lang === "zh-CN" ? "zh-CN" : "en";
       document.documentElement.classList.toggle("dark", state.theme === "dark");
+      document.documentElement.lang = state.lang;
       render();
-      if (!state.data && !state.loading) loadStats();
       return;
     }
     if (data.type === "subtr-plugin-fetch-result") {
       var entry = pending[data.rid];
       if (!entry) return;
       delete pending[data.rid];
-      try {
-        entry.resolve(data);
-      } catch (e) {
-        entry.reject(e);
-      }
+      entry.resolve(data);
     }
   });
 
@@ -234,172 +145,452 @@
     });
   }
 
-  /* ---------- data ---------- */
+  /* ---------- formatting ---------- */
 
-  function loadStats() {
-    state.loading = true;
-    bridgeFetch("/api/stats")
-      .then(function (res) {
-        if (!res.ok) throw new Error("bad");
-        state.data = normalize(JSON.parse(res.body));
-      })
-      .catch(function () {
-        state.data = null;
-      })
-      .then(function () {
-        state.loading = false;
-        render();
-      });
+  function fmtInt(n) {
+    return Math.round(n).toLocaleString(state.lang);
   }
 
-  function normalize(raw) {
-    var totals = raw.totals || raw;
-    var map = {};
-    var daily = raw.daily;
-    if (Array.isArray(daily)) {
-      daily.forEach(function (d) {
-        var date = (d.date || d.day || d.ts || "").slice(0, 10);
-        if (!date) return;
-        map[date] = pick(d);
-      });
-    } else if (daily && typeof daily === "object") {
-      Object.keys(daily).forEach(function (date) {
-        map[date.slice(0, 10)] = pick(daily[date]);
-      });
-    }
-    return {
-      totals: {
-        costUsd: Number(totals.costUsd || 0),
-        calls: Number(totals.calls || 0),
-        translations: Number(totals.translations || 0),
-        inTokens: Number(totals.inTokens || 0),
-        outTokens: Number(totals.outTokens || 0),
-        estimatedCount: Number(totals.estimatedCount || 0),
-      },
-      daily: map,
-    };
+  function fmtCompact(n) {
+    var v = Math.round(n);
+    if (v >= 1e9) return trim(v / 1e9) + "B";
+    if (v >= 1e6) return trim(v / 1e6) + "M";
+    if (v >= 1e3) return trim(v / 1e3) + "k";
+    return String(v);
   }
 
-  function pick(d) {
-    return {
-      calls: Number(d.calls || 0),
-      translations: Number(d.translations || 0),
-      tokens: Number(d.inTokens || 0) + Number(d.outTokens || 0),
-      cost: Number(d.costUsd || 0),
-    };
+  function trim(v) {
+    return v.toFixed(1).replace(/\.0$/, "");
+  }
+
+  function fmtCost(v) {
+    if (v >= 1000) return "$" + trim(v / 1000) + "k";
+    if (v >= 1) return "$" + v.toFixed(v < 10 ? 2 : 0);
+    if (v > 0) return "$" + v.toFixed(3);
+    return "$0";
+  }
+
+  // Precise value for stat cards and tooltips.
+  function fmtFull(metric, v) {
+    if (metric === "cost") return "$" + (v < 1 ? v.toFixed(4) : v.toFixed(2));
+    return fmtInt(v);
+  }
+
+  // Short value for axis ticks.
+  function fmtShort(metric, v) {
+    if (metric === "cost") return fmtCost(v);
+    return fmtCompact(v);
   }
 
   function metricValue(day) {
     if (!day) return 0;
+    if (state.metric === "tokens") return day.tokens;
     return day[state.metric] || 0;
   }
 
-  function formatValue(value) {
-    if (state.metric === "cost") return "$" + value.toFixed(4);
-    if (value >= 1000) return (value / 1000).toFixed(1) + "k";
-    return String(Math.round(value));
+  function parseKey(key) {
+    var p = key.split("-");
+    return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
   }
 
   function dateKey(d) {
-    var y = d.getFullYear();
-    var m = String(d.getMonth() + 1).padStart(2, "0");
-    var day = String(d.getDate()).padStart(2, "0");
-    return y + "-" + m + "-" + day;
+    return (
+      d.getFullYear() +
+      "-" +
+      String(d.getMonth() + 1).padStart(2, "0") +
+      "-" +
+      String(d.getDate()).padStart(2, "0")
+    );
   }
 
-  function lastNDays(n) {
-    var out = [];
-    var today = new Date();
-    for (var i = n - 1; i >= 0; i--) {
-      var d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
-      out.push(d);
+  var dayFmt, dayFullFmt, monthFmt, weekdayFmt, relFmt;
+  function formatters() {
+    dayFmt = new Intl.DateTimeFormat(state.lang, { month: "short", day: "numeric" });
+    dayFullFmt = new Intl.DateTimeFormat(state.lang, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    monthFmt = new Intl.DateTimeFormat(state.lang, { month: "short" });
+    weekdayFmt = new Intl.DateTimeFormat(state.lang, { weekday: "short" });
+    relFmt = new Intl.RelativeTimeFormat(state.lang, { numeric: "auto" });
+  }
+
+  function fmtDay(key) {
+    return dayFmt.format(parseKey(key));
+  }
+
+  function fmtDayFull(key) {
+    return dayFullFmt.format(parseKey(key));
+  }
+
+  function fmtRelative(iso) {
+    if (!iso) return "";
+    var ts = new Date(iso).getTime();
+    if (isNaN(ts)) return "";
+    var diff = ts - Date.now();
+    var abs = Math.abs(diff);
+    var units = [
+      ["year", 31536e6],
+      ["month", 2592e6],
+      ["day", 864e5],
+      ["hour", 36e5],
+      ["minute", 6e4],
+    ];
+    for (var i = 0; i < units.length; i++) {
+      if (abs >= units[i][1] || units[i][0] === "minute") {
+        return relFmt.format(Math.round(diff / units[i][1]), units[i][0]);
+      }
     }
-    return out;
+    return "";
+  }
+
+  /* ---------- data ---------- */
+
+  function normalize(raw) {
+    var src = raw || {};
+    var daily = {};
+    var list = src.daily;
+    if (Array.isArray(list)) {
+      list.forEach(function (p) {
+        var k = String(p.date || "").slice(0, 10);
+        if (k) daily[k] = pick(p);
+      });
+    } else if (list && typeof list === "object") {
+      Object.keys(list).forEach(function (k) {
+        daily[k.slice(0, 10)] = pick(list[k]);
+      });
+    }
+    return {
+      totals: {
+        costUsd: num(src.costUsd),
+        calls: num(src.calls),
+        translations: num(src.translations),
+        inTok: num(src.inTokens),
+        outTok: num(src.outTokens),
+        estimated: num(src.estimatedCount),
+      },
+      daily: daily,
+      lastRecordAt: src.lastRecordAt || null,
+    };
+  }
+
+  function num(v) {
+    return typeof v === "number" && isFinite(v) ? v : 0;
+  }
+
+  function pick(d) {
+    return {
+      calls: num(d.calls),
+      translations: num(d.translations),
+      tokens: num(d.inTok) + num(d.outTok),
+      cost: num(d.costUsd),
+    };
+  }
+
+  function load() {
+    if (!state.data) {
+      state.status = "loading";
+      render();
+    }
+    bridgeFetch("/api/stats")
+      .then(function (res) {
+        if (!res || !res.ok) throw new Error("HTTP " + (res && res.status));
+        state.data = normalize(JSON.parse(res.body));
+        var hasData =
+          state.data.totals.calls > 0 || Object.keys(state.data.daily).length > 0;
+        state.status = hasData ? "ready" : "empty";
+      })
+      .catch(function () {
+        state.status = state.data ? "ready" : "error";
+      })
+      .then(render);
   }
 
   /* ---------- render ---------- */
 
   function render() {
-    var root = document.getElementById("stats");
-    if (!root) return;
-    if (!state.data) {
-      root.innerHTML = '<div class="empty" style="grid-column:1/-1">' +
-        (state.loading ? "…" : t("empty")) + "</div>";
-      document.getElementById("bars").innerHTML = "";
-      document.getElementById("heat").innerHTML = "";
-      document.getElementById("legend").innerHTML = "";
-      document.getElementById("switcher").innerHTML = "";
+    var root = document.getElementById("view");
+    formatters();
+
+    if (state.status === "loading") {
+      root.innerHTML = loadingHTML();
+      scheduleResize();
+      return;
+    }
+    if (state.status === "error") {
+      root.innerHTML = errorHTML();
+      scheduleResize();
+      return;
+    }
+    if (state.status === "empty") {
+      root.innerHTML = emptyHTML();
       scheduleResize();
       return;
     }
 
     var totals = state.data.totals;
-    var tokenTotal = totals.inTokens + totals.outTokens;
-    var est = totals.estimatedCount > 0 ? "~" : "";
     root.innerHTML =
-      stat(t("cost"), est + "$" + totals.costUsd.toFixed(4)) +
-      stat(t("calls"), est + formatValue(totals.calls)) +
-      stat(t("translations"), est + formatValue(totals.translations)) +
-      stat(t("tokens"), est + formatValue(tokenTotal));
+      headerHTML(totals) +
+      statsHTML(totals) +
+      chartHTML() +
+      calendarHTML();
 
-    document.getElementById("chart-title").textContent = t("last30");
-    document.getElementById("calendar-title").textContent = t("calendar");
-
-    renderSwitcher();
-    renderBars();
+    renderChart();
     renderHeat();
     scheduleResize();
   }
 
-  function stat(label, value) {
-    return '<div class="stat"><div class="label">' + label +
-      '</div><div class="value">' + value + "</div></div>";
+  function refreshIcon() {
+    return (
+      '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
+      'stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>'
+    );
   }
 
-  function renderSwitcher() {
-    var el = document.getElementById("switcher");
-    var metrics = ["calls", "translations", "tokens", "cost"];
-    el.innerHTML = metrics
-      .map(function (m) {
-        return '<button type="button" data-metric="' + m + '" class="' +
-          (state.metric === m ? "active" : "") + '">' + t(m) + "</button>";
-      })
-      .join("");
-    Array.prototype.forEach.call(el.querySelectorAll("button"), function (btn) {
-      btn.addEventListener("click", function () {
-        state.metric = btn.getAttribute("data-metric");
-        render();
-      });
-    });
+  function headerHTML(totals) {
+    var rel = fmtRelative(state.data.lastRecordAt);
+    var sub =
+      t("range30") + (rel ? " · " + t("updated") + " <b>" + rel + "</b>" : "");
+    var badge =
+      totals.estimated > 0
+        ? '<span class="pk-badge pk-badge--warn" title="' +
+          fmtInt(totals.estimated) +
+          " / " +
+          fmtInt(totals.calls) +
+          '">~ ' +
+          t("est") +
+          "</span>"
+        : "";
+    return (
+      '<header class="pk-row-between app-head">' +
+      '<div style="min-width:0">' +
+      '<div class="pk-cluster" style="gap:8px">' +
+      '<span class="app-title">' +
+      t("title") +
+      "</span>" +
+      badge +
+      "</div>" +
+      '<p class="app-sub">' +
+      sub +
+      "</p>" +
+      "</div>" +
+      '<button type="button" class="pk-btn pk-btn--sm" data-action="reload">' +
+      refreshIcon() +
+      t("refresh") +
+      "</button>" +
+      "</header>"
+    );
   }
 
-  function renderBars() {
-    var el = document.getElementById("bars");
+  function statHTML(label, value, hint) {
+    return (
+      '<div class="pk-stat">' +
+      '<span class="pk-stat-label">' +
+      label +
+      "</span>" +
+      '<span class="pk-stat-value">' +
+      value +
+      "</span>" +
+      (hint ? '<span class="pk-stat-hint">' + hint + "</span>" : "") +
+      "</div>"
+    );
+  }
+
+  function statsHTML(totals) {
+    var tokenTotal = totals.inTok + totals.outTok;
+    var est = totals.estimated > 0 ? "~" : "";
+    return (
+      '<section class="pk-stats pk-stats--4">' +
+      statHTML(t("cost"), est + fmtFull("cost", totals.costUsd)) +
+      statHTML(t("calls"), est + fmtInt(totals.calls)) +
+      statHTML(t("translations"), est + fmtInt(totals.translations)) +
+      statHTML(
+        t("tokens"),
+        est + fmtInt(tokenTotal),
+        "↓ " +
+          fmtCompact(totals.inTok) +
+          " · ↑ " +
+          fmtCompact(totals.outTok)
+      ) +
+      "</section>"
+    );
+  }
+
+  function chartHTML() {
+    var items = METRICS.map(function (m) {
+      return (
+        '<button type="button" class="pk-segmented__item" data-action="metric" data-metric="' +
+        m +
+        '" aria-pressed="' +
+        (state.metric === m) +
+        '">' +
+        t(m) +
+        "</button>"
+      );
+    }).join("");
+    return (
+      '<section class="pk-section">' +
+      '<div class="chart-head">' +
+      '<h2 class="pk-section-title">' +
+      t("range30") +
+      "</h2>" +
+      '<div class="pk-segmented" role="group" aria-label="' +
+      t("range30") +
+      '">' +
+      items +
+      "</div>" +
+      "</div>" +
+      '<div class="pk-chart" id="chart">' +
+      '<div class="pk-chart__yaxis" id="yaxis"></div>' +
+      '<div class="pk-chart__canvas">' +
+      '<div class="pk-chart__grid" id="grid"></div>' +
+      '<div class="pk-bars" id="bars"></div>' +
+      "</div>" +
+      '<div class="pk-chart__xaxis" id="xaxis"></div>' +
+      "</div>" +
+      "</section>"
+    );
+  }
+
+  function calendarHTML() {
+    return (
+      '<section class="pk-section">' +
+      '<h2 class="pk-section-title">' +
+      t("calendar") +
+      "</h2>" +
+      '<div class="pk-heat-wrap">' +
+      '<div class="pk-heat-days" id="heatDays"></div>' +
+      '<div class="pk-heat-body">' +
+      '<div class="pk-heat-months" id="heatMonths"></div>' +
+      '<div class="pk-heat" id="heat"></div>' +
+      "</div>" +
+      "</div>" +
+      '<div class="pk-legend" id="legend"></div>' +
+      "</section>"
+    );
+  }
+
+  function loadingHTML() {
+    return (
+      '<div class="pk-loading"><span class="pk-spinner"></span>' + t("loading") + "</div>"
+    );
+  }
+
+  function emptyHTML() {
+    return (
+      '<div class="pk-empty"><strong>' +
+      t("emptyTitle") +
+      "</strong><span>" +
+      t("emptyHint") +
+      "</span></div>"
+    );
+  }
+
+  function errorHTML() {
+    return (
+      '<div class="pk-error"><strong>' +
+      t("errorTitle") +
+      "</strong><span>" +
+      t("errorHint") +
+      '</span><button type="button" class="pk-btn pk-btn--sm" style="margin-top:6px" data-action="reload">' +
+      t("retry") +
+      "</button></div>"
+    );
+  }
+
+  /* ---------- chart ---------- */
+
+  function lastNDays(n) {
+    var out = [];
+    var today = new Date();
+    for (var i = n - 1; i >= 0; i--) {
+      out.push(new Date(today.getFullYear(), today.getMonth(), today.getDate() - i));
+    }
+    return out;
+  }
+
+  function renderChart() {
     var days = lastNDays(30);
     var values = days.map(function (d) {
       return metricValue(state.data.daily[dateKey(d)]);
     });
     var max = Math.max.apply(null, values.concat([0]));
-    el.innerHTML = days
+
+    var chart = document.getElementById("chart");
+    if (!chart) return;
+
+    if (max <= 0) {
+      chart.innerHTML =
+        '<div class="pk-empty" style="grid-column:1/-1">' + t("noActivity") + "</div>";
+      return;
+    }
+
+    var barsEl = document.getElementById("bars");
+    barsEl.innerHTML = days
       .map(function (d, i) {
         var v = values[i];
-        var pct = max > 0 ? Math.round((v / max) * 100) : 0;
-        return '<div class="bar-wrap" data-date="' + dateKey(d) +
-          '" data-value="' + v + '"><div class="bar" style="height:' +
-          Math.max(2, pct) + '%"></div></div>';
+        var pct = (v / max) * 100;
+        var cls = "pk-bar" + (v > 0 ? "" : " is-empty");
+        return (
+          '<div class="' +
+          cls +
+          '" data-date="' +
+          dateKey(d) +
+          '" data-value="' +
+          v +
+          '"><div class="pk-bar__fill" style="--pk-h:' +
+          Math.max(pct, v > 0 ? 2 : 1.5) +
+          '%"></div></div>'
+        );
       })
       .join("");
-    bindTooltips(el, days);
+
+    document.getElementById("grid").innerHTML =
+      '<div class="pk-chart__gridline" style="top:0"></div>' +
+      '<div class="pk-chart__gridline" style="top:50%"></div>';
+
+    document.getElementById("yaxis").innerHTML =
+      "<span>" +
+      fmtShort(state.metric, max) +
+      "</span><span>" +
+      fmtShort(state.metric, max / 2) +
+      "</span><span>0</span>";
+
+    var last = days.length - 1;
+    document.getElementById("xaxis").innerHTML = days
+      .map(function (d, i) {
+        var show = (i % 7 === 0 && i <= last - 3) || i === last;
+        var edge = i === 0 ? " pk-xcell--start" : i === last ? " pk-xcell--end" : "";
+        return (
+          '<span class="pk-xcell' +
+          edge +
+          '">' +
+          (show ? fmtDay(dateKey(d)) : "") +
+          "</span>"
+        );
+      })
+      .join("");
+  }
+
+  /* ---------- calendar heatmap ---------- */
+
+  function weekdayNames() {
+    var names = [];
+    // 2024-01-07 is a Sunday, so the array runs Sunday → Saturday.
+    for (var i = 0; i < 7; i++) names.push(weekdayFmt.format(new Date(2024, 0, 7 + i)));
+    return names;
   }
 
   function renderHeat() {
-    var el = document.getElementById("heat");
     var today = new Date();
     var todayKey = dateKey(today);
     var start = new Date(
       today.getFullYear(),
       today.getMonth(),
-      today.getDate() - (26 * 7 - 1)
+      today.getDate() - (WEEKS * 7 - 1)
     );
     start = new Date(
       start.getFullYear(),
@@ -418,52 +609,147 @@
       cursor.setDate(cursor.getDate() + 1);
     }
 
-    el.innerHTML = cells
-      .map(function (c) {
-        var level = max > 0 && c.value > 0 ? Math.ceil((c.value / max) * 5) : 0;
-        level = Math.max(0, Math.min(5, level));
-        var cls = "cell" + (c.value > 0 ? " lvl" + level : "") +
-          (c.key === todayKey ? " today" : "");
-        return '<div class="' + cls + '" data-date="' + c.key +
-          '" data-value="' + c.value + '"></div>';
+    var names = weekdayNames();
+    document.getElementById("heatDays").innerHTML = names
+      .map(function (name, i) {
+        var show = i === 1 || i === 3 || i === 5;
+        return "<span>" + (show ? name : "") + "</span>";
       })
       .join("");
-    bindTooltips(el, cells);
+
+    document.getElementById("heat").innerHTML = cells
+      .map(function (c) {
+        var level = max > 0 && c.value > 0 ? Math.max(1, Math.ceil((c.value / max) * 5)) : 0;
+        level = Math.max(0, Math.min(5, level));
+        var cls = "pk-cell pk-lvl-" + level + (c.key === todayKey ? " is-today" : "");
+        return (
+          '<div class="' +
+          cls +
+          '" data-date="' +
+          c.key +
+          '" data-value="' +
+          c.value +
+          '"></div>'
+        );
+      })
+      .join("");
+
+    renderMonths(cells);
 
     document.getElementById("legend").innerHTML =
-      '<span>' + t("less") + "</span>" +
-      '<div class="cell"></div><div class="cell lvl1"></div><div class="cell lvl2"></div>' +
-      '<div class="cell lvl3"></div><div class="cell lvl4"></div><div class="cell lvl5"></div>' +
-      '<span>' + t("more") + "</span>";
+      "<span>" +
+      t("less") +
+      "</span>" +
+      [1, 2, 3, 4, 5]
+        .map(function (l) {
+          return '<span class="pk-legend__item pk-lvl-' + l + '"></span>';
+        })
+        .join("") +
+      "<span>" +
+      t("more") +
+      "</span>";
   }
 
-  function bindTooltips(container, days) {
-    var tooltip = document.getElementById("tooltip");
-    var byDate = {};
-    days.forEach(function (d) {
-      byDate[d.key || dateKey(d.date || d)] = d;
-    });
-    Array.prototype.forEach.call(
-      container.querySelectorAll("[data-date]"),
-      function (node) {
-        node.addEventListener("mousemove", function (e) {
-          var key = node.getAttribute("data-date");
-          var value = Number(node.getAttribute("data-value") || 0);
-          tooltip.textContent = key + " · " + formatValue(value);
-          tooltip.style.left = e.clientX + "px";
-          tooltip.style.top = e.clientY + "px";
-          tooltip.style.opacity = "1";
-        });
-        node.addEventListener("mouseleave", function () {
-          tooltip.style.opacity = "0";
-        });
-      }
+  function renderMonths(cells) {
+    var months = [];
+    var weekIndex = 0;
+    for (var j = 0; j < cells.length; j += 7) {
+      var label = monthFmt.format(cells[j].date);
+      var prev = months[months.length - 1];
+      if (!prev || prev.label !== label) months.push({ label: label, start: weekIndex });
+      weekIndex++;
+    }
+    document.getElementById("heatMonths").innerHTML = months
+      .map(function (m) {
+        return '<span style="left:' + m.start * CELL_STEP + 'px">' + m.label + "</span>";
+      })
+      .join("");
+  }
+
+  /* ---------- tooltips ---------- */
+
+  function showTip(key, value, x, y) {
+    var tip = document.getElementById("tip");
+    tip.innerHTML = tooltipHTML(key, value);
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
+    tip.classList.add("pk-tooltip--visible");
+    var rect = tip.getBoundingClientRect();
+    var clamped = Math.min(
+      Math.max(x, rect.width / 2 + 6),
+      window.innerWidth - rect.width / 2 - 6
     );
-    void byDate;
+    tip.style.left = clamped + "px";
   }
 
-  window.addEventListener("resize", scheduleResize);
-  document.addEventListener("DOMContentLoaded", scheduleResize);
+  // Two lines: a muted date line, then the value + metric label. The whitespace
+  // between the two block elements keeps the text content readable too.
+  function tooltipHTML(key, value) {
+    return (
+      '<div class="pk-tooltip__date">' +
+      fmtDayFull(key) +
+      "</div>" +
+      "\n" +
+      '<div class="pk-tooltip__value">' +
+      fmtFull(state.metric, value) +
+      " " +
+      t(state.metric) +
+      "</div>"
+    );
+  }
+
+  function hideTip() {
+    document.getElementById("tip").classList.remove("pk-tooltip--visible");
+  }
+
+  /* ---------- events ---------- */
+
+  function boot() {
+    formatters();
+    render();
+    scheduleResize();
+    load();
+  }
+
+  document.getElementById("view").addEventListener("click", function (e) {
+    var el = e.target.closest ? e.target.closest("[data-action]") : null;
+    if (!el) return;
+    var action = el.getAttribute("data-action");
+    if (action === "reload") {
+      load();
+    } else if (action === "metric") {
+      var next = el.getAttribute("data-metric");
+      if (next && next !== state.metric) {
+        state.metric = next;
+        render();
+      }
+    }
+  });
+
+  // Delegated tooltips: the bars/heat nodes are rebuilt on every render, but
+  // the #view container is stable.
+  document.getElementById("view").addEventListener("mousemove", function (e) {
+    var target = e.target.closest ? e.target.closest("[data-date]") : null;
+    if (!target) return hideTip();
+    showTip(
+      target.getAttribute("data-date"),
+      Number(target.getAttribute("data-value") || 0),
+      e.clientX,
+      e.clientY
+    );
+  });
+  document.getElementById("view").addEventListener("mouseleave", hideTip);
+  window.addEventListener("scroll", hideTip, true);
+  window.addEventListener("resize", function () {
+    hideTip();
+    scheduleResize();
+  });
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
 
   if (typeof ResizeObserver !== "undefined") {
     var observer = new ResizeObserver(scheduleResize);

@@ -361,8 +361,8 @@ export default function SettingsPage() {
     railItems.find((item) => item.value === section)?.label ?? t("settings.title");
 
   return (
-    <div className="min-h-full bg-background text-foreground">
-      <header className="sticky top-0 z-30 border-b border-card-border bg-background/80 backdrop-blur-md">
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-background text-foreground">
+      <header className="z-30 shrink-0 border-b border-card-border bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex h-14 min-w-0 max-w-6xl items-center gap-3 px-4 sm:px-6">
           <Link
             href="/"
@@ -379,11 +379,11 @@ export default function SettingsPage() {
         value={section}
         onValueChange={(value) => setSection(value as string)}
         orientation="vertical"
-        className="mx-auto flex w-full max-w-6xl items-start gap-4 px-2 py-4 sm:gap-6 sm:px-6 sm:py-6"
+        className="mx-auto flex w-full max-w-6xl flex-1 min-h-0 items-stretch gap-4 overflow-hidden px-2 py-4 sm:gap-6 sm:px-6 sm:py-6"
       >
         <Tabs.List
           aria-label={t("settings.title")}
-          className="sticky top-16 z-20 flex w-12 shrink-0 flex-col gap-0.5 min-[700px]:w-52"
+          className="flex h-full w-12 shrink-0 flex-col gap-0.5 overflow-y-auto overscroll-contain min-[700px]:w-52"
         >
           {railItems.map((item, index) => (
             <div key={item.value} className="contents">
@@ -411,8 +411,8 @@ export default function SettingsPage() {
           ))}
         </Tabs.List>
 
-        <main className="min-w-0 flex-1">
-          <div className="pointer-events-none sticky top-14 z-10 -mx-1 bg-gradient-to-b from-background via-background to-transparent px-1 pb-3 pt-1">
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="pointer-events-none sticky top-0 z-10 -mx-1 bg-gradient-to-b from-background via-background to-transparent px-1 pb-3 pt-1">
             <h2 className="text-base font-semibold tracking-tight">{paneTitle}</h2>
           </div>
 
