@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-expressions -- injected renderer shim: bare expressions are the audio-worklet/bridge protocol, not dead code */
 // SubTr voice capture shim (Phase 1 prototype).
 //
 // Injected into the main (reader) window by desktop/main.cjs via
