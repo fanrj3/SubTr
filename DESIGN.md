@@ -112,21 +112,25 @@ Closed by default; discovery stays one click away.
 - Respect `prefers-reduced-motion`: collapse/transition to `0ms`, no transforms,
   no navigation fade.
 
-## Voice captions (rolling)
+## Voice captions (two zones)
 
-- One persistent card while voice is on: a rolling transcript of the last ~4
-  lines (bottom-anchored), newest line at the bottom; older lines scroll up.
-  The live line updates in place as text grows; `close` finalizes it and the
-  next utterance starts a new live line.
-- **Never dismiss** between utterances (no idle hide). Only `stop: true`
-  (or leaving the overlay) fades out and clears; Esc/✕ fade locally and the next
-  payload reopens. Pin is a no-op while voice is active.
-- Translation uses the existing 800 ms trailing coalescing and sequence guard,
-  but **streams** into the live line (DOM flushes throttled ~150 ms); finalized
-  lines keep their final translation and are updated by line id.
-- Auto-scroll keeps the newest line at the bottom (`smooth`; `auto` under
-  `prefers-reduced-motion`). The viewport clips to a modest max-height so ~4
-  lines fit; the card box never unmounts mid-session.
+- One persistent card while voice is on, anchored by its **bottom edge** (fixed
+  ±2 px as content grows).
+- **Top zone:** live English transcript for the current sentence — centered,
+  muted, fixed 2-line height with `items-end` so it grows upward and clips at
+  the top; **append-only** within an utterance (regressive payloads ignored).
+- **Bottom zone:** the translation. Finalized sentences are fixed lines (older
+  scroll out upward); the current sentence shows a subdued *tentative*
+  translation in place.
+- Translation boundaries: translate on `close` (final, frozen), and at most one
+  tentative per ~2 s **and** only after ≥20 new source chars. Tentative results
+  replace in place (no fade/scroll/height animation); pending keeps the previous
+  text visible. Per-line sequence guard drops stale results.
+- Scrolling happens only on discrete line appends (`smooth`; `auto` under
+  `prefers-reduced-motion`). No transitions on text updates themselves.
+- **Never dismiss** between utterances. Only `stop: true` (or leaving) fades out
+  (≤300 ms) and clears, keeping the voice flag through teardown (single mount);
+  Esc/✕ fade locally and reopen on the next payload. Pin is a no-op in voice.
 - Non-voice payloads keep the existing show → teleprompter/hold → auto-hide flow.
 
 ## Pace slider mapping

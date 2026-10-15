@@ -346,7 +346,8 @@ export function SubtitleOverlay({
     ).matches;
   }, []);
 
-  // Voice rolling transcript: keep the newest line at the bottom.
+  // Voice rolling translation: scroll only on discrete line appends.
+  const voiceLineCount = voiceLines?.length ?? 0;
   useEffect(() => {
     if (!isVoice) return;
     const vp = viewportRef.current;
@@ -355,7 +356,7 @@ export function SubtitleOverlay({
       top: vp.scrollHeight,
       behavior: prefersReducedMotionRef.current ? "auto" : "smooth",
     });
-  }, [isVoice, voiceLines]);
+  }, [isVoice, voiceLineCount]);
 
   // Cancel an in-flight exit only when a genuinely NEW subtitle arrives during
   // the exit; start exit when parent switches to idle.
@@ -583,6 +584,12 @@ export function SubtitleOverlay({
     wrapperH / 2 + MARGIN,
     metrics.viewportHeight - wrapperH / 2 - MARGIN
   );
+  // Voice: anchor the card by its BOTTOM so growth doesn't move the bottom edge.
+  const voiceTopPx = clampPx(
+    (posY / 100) * metrics.viewportHeight,
+    200,
+    metrics.viewportHeight - MARGIN
+  );
 
   return (
     <>
@@ -601,8 +608,14 @@ export function SubtitleOverlay({
       }`}
       style={{
         left: hasMetrics ? `${leftPx}px` : `${posX}%`,
-        top: hasMetrics ? `${topPx}px` : `${posY}%`,
-        transform: "translate(-50%, -50%)",
+        top: isVoice
+          ? hasMetrics
+            ? `${voiceTopPx}px`
+            : `${posY}%`
+          : hasMetrics
+            ? `${topPx}px`
+            : `${posY}%`,
+        transform: isVoice ? "translate(-50%, -100%)" : "translate(-50%, -50%)",
       }}
       aria-live="polite"
       aria-atomic="true"
@@ -679,23 +692,28 @@ export function SubtitleOverlay({
         )}
 
         {isVoice && (
-          <div
-            ref={viewportRef}
-            className="subtr-scroll max-h-[180px] overflow-y-auto pr-1 text-left"
-            style={{ scrollBehavior: "smooth" }}
-          >
-            <div ref={contentRef} className="space-y-1 leading-snug tracking-wide">
-              {(voiceLines ?? []).map((line, index) => {
-                const isLive = index === (voiceLines ?? []).length - 1;
-                return (
-                  <p
-                    key={line.id}
-                    className={isLive ? "transition-opacity duration-100" : "opacity-70"}
-                  >
-                    {line.text || line.source}
+          <div className="flex flex-col gap-2">
+            <div
+              className="flex h-[2.7em] items-end justify-center overflow-hidden text-center"
+              style={{ color: dimmedColor }}
+              aria-live="polite"
+            >
+              <p className="w-full text-[0.85em] font-normal leading-snug">
+                {(voiceLines ?? [])[(voiceLines ?? []).length - 1]?.source ?? ""}
+              </p>
+            </div>
+            <div
+              ref={viewportRef}
+              className="subtr-scroll max-h-[4.2em] overflow-y-auto text-center"
+              style={{ color: style.textColor }}
+            >
+              <div ref={contentRef} className="space-y-0.5 leading-snug tracking-wide">
+                {(voiceLines ?? []).map((line) => (
+                  <p key={line.id} className={line.final ? "" : "opacity-60"}>
+                    {line.text || "\u00A0"}
                   </p>
-                );
-              })}
+                ))}
+              </div>
             </div>
           </div>
         )}

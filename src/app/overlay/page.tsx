@@ -30,10 +30,11 @@ import {
 const TARGET_LANG_KEY = "subtr.targetLang.v1";
 const DEFAULT_TARGET_LANG = "auto";
 const REPORT_INTERVAL_MS = 200;
-const VOICE_DEBOUNCE_MS = 800;
 const VOICE_STOP_MS = 200;
 const VOICE_MAX_LINES = 4;
 const VOICE_CHUNK_THROTTLE_MS = 150;
+const VOICE_TENTATIVE_MS = 2000;
+const VOICE_TENTATIVE_MIN_CHARS = 20;
 
 type TestState = {
   playing: boolean;
@@ -200,7 +201,7 @@ function Overlay() {
     };
   }, []);
 
-  /** Translate one line; stream chunks into it (throttled) with seq guard. */
+  /** Translate one line; stream chunks into it (throttled) with a per-line seq guard. */
   const translateLine = useCallback(
     (lineId: string, source: string) => {
       const prepared = prepareTranslation(source);
@@ -245,18 +246,9 @@ function Overlay() {
     [prepareTranslation, applyLineText]
   );
 
-  const scheduleTranslate = useCallback(
-    (lineId: string, source: string) => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
-      debounceRef.current = window.setTimeout(() => {
-        debounceRef.current = null;
-        translateLine(lineId, source);
-      }, VOICE_DEBOUNCE_MS);
-    },
-    [translateLine]
-  );
-
   const activeUtteranceRef = useRef<string | null>(null);
+  const lastTentativeAtRef = useRef(0);
+  const lastTentativeLenRef = useRef(0);
 
   const handleVoicePayload = useCallback(
     (
@@ -276,6 +268,7 @@ function Overlay() {
         stopTimerRef.current = null;
       }
       setVoiceStopping(false);
+
       const trimmed = text.trim();
       const lines = linesRef.current;
       const live = lines[lines.length - 1];
@@ -286,31 +279,61 @@ function Overlay() {
         if (!trimmed) return;
         const id = `v${++voiceSeqRef.current}`;
         activeUtteranceRef.current = utteranceId ?? id;
+        lastTentativeAtRef.current = 0;
+        lastTentativeLenRef.current = 0;
         commitLines(
           [...lines, { id, source: trimmed, text: "", final: false }].slice(-VOICE_MAX_LINES)
         );
         setVoiceActive(true);
         setSubtitle({ kind: "success", original: "", text: "" });
-        scheduleTranslate(id, trimmed);
+        if (trimmed.length >= VOICE_TENTATIVE_MIN_CHARS) {
+          lastTentativeAtRef.current = performance.now();
+          lastTentativeLenRef.current = trimmed.length;
+          translateLine(id, trimmed);
+        }
         return;
       }
 
-      const sourceChanged = !!trimmed && trimmed !== live.source;
-      let updated = lines.map((line, index) =>
-        index === lines.length - 1 ? { ...line, source: trimmed || line.source } : line
-      );
+      // Monotonic, append-only source within the utterance.
+      const monotonic = trimmed.length > live.source.length ? trimmed : live.source;
+
       if (close) {
-        updated = updated.map((line, index) =>
-          index === updated.length - 1 ? { ...line, final: true } : line
+        commitLines(
+          lines.map((line, index) =>
+            index === lines.length - 1 ? { ...line, source: monotonic, final: true } : line
+          )
         );
         activeUtteranceRef.current = null;
+        setVoiceActive(true);
+        setSubtitle({ kind: "success", original: "", text: "" });
+        translateLine(live.id, monotonic); // final, frozen
+        return;
       }
-      commitLines(updated);
+
+      if (monotonic.length <= live.source.length) {
+        // Regressive or reworded payload: ignore so display stays stable.
+        return;
+      }
+
+      commitLines(
+        lines.map((line, index) =>
+          index === lines.length - 1 ? { ...line, source: monotonic } : line
+        )
+      );
       setVoiceActive(true);
       setSubtitle({ kind: "success", original: "", text: "" });
-      if (sourceChanged) scheduleTranslate(live.id, trimmed);
+
+      const now = performance.now();
+      if (
+        monotonic.length - lastTentativeLenRef.current >= VOICE_TENTATIVE_MIN_CHARS &&
+        now - lastTentativeAtRef.current >= VOICE_TENTATIVE_MS
+      ) {
+        lastTentativeAtRef.current = now;
+        lastTentativeLenRef.current = monotonic.length;
+        translateLine(live.id, monotonic);
+      }
     },
-    [commitLines, scheduleTranslate, stopVoice]
+    [commitLines, translateLine, stopVoice]
   );
 
   const handleCapture = useCallback(
