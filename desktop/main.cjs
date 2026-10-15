@@ -802,6 +802,15 @@ let voiceShimReady = false;
 /** Toggle queued while the shim was not ready yet (true/false) or null. */
 let voiceTogglePending = null;
 
+/** Open utterance id (created on the first non-silent pass), reused until close. */
+let voiceUtteranceId = null;
+/** Text of the last delivered caption (dedupe identical consecutive payloads). */
+let voiceLastDeliveredText = "";
+let voiceLastDeliveryAt = 0;
+let voiceDeliveryCount = 0;
+/** Ring buffer of recent deliveries (SUBTR_TEST introspection). */
+const voiceDeliveries = [];
+
 /** whisper-server process state (kept warm between voice sessions). */
 const whisper = {
   proc: null,
@@ -1070,6 +1079,9 @@ function voiceSnapshot() {
     lastTranscript: voiceLastTranscript,
     lastCommit: voiceLastCommit,
     lastCommitAt: voiceLastCommitAt,
+    utteranceId: voiceUtteranceId,
+    lastDeliveryAt: voiceLastDeliveryAt,
+    deliveries: voiceDeliveryCount,
     download: voiceDownload.active ? { ...voiceDownload } : null,
     setup: voiceSetupStatus(),
   };
@@ -1338,13 +1350,43 @@ async function transcribeWindow(samples) {
 }
 
 /** Forward one committed transcript to the overlay (translation happens there). */
-function forwardVoiceCommit(text) {
+/** Open (or create) the current utterance id. */
+function ensureUtterance() {
+  if (!voiceUtteranceId) {
+    voiceUtteranceId = `voice-${Date.now()}`;
+    console.log(`[voice] utterance open: ${voiceUtteranceId}`);
+  }
+  return voiceUtteranceId;
+}
+
+/**
+ * Deliver a voice caption IN PLACE. Marks the payload `voice: true` with the
+ * open `utteranceId` so the overlay updates the caption (never dismisses while
+ * updates keep arriving; it auto-hides after its own idle timeout). Identical
+ * consecutive text is deduped so translation cadence stays clean.
+ * @param {string} text
+ * @param {{ close?: boolean }} [opts]
+ * @returns {boolean} true when a payload was sent
+ */
+function deliverVoiceCaption(text, opts = {}) {
   const trimmed = String(text || "").trim();
-  if (!trimmed) return;
-  // Existing overlay capture channel (no `source`): the overlay translates it
-  // through the normal /api/translate path and renders a subtitle result.
-  deliverOverlayCapture({ text: trimmed });
-  console.log(`[voice] → overlay: "${trimmed}"`);
+  if (!trimmed) return false;
+  if (trimmed === voiceLastDeliveredText) return false; // dedupe
+  const utteranceId = ensureUtterance();
+  voiceLastDeliveredText = trimmed;
+  voiceLastDeliveryAt = Date.now();
+  voiceDeliveryCount += 1;
+  voiceDeliveries.push({ text: trimmed, utteranceId, close: opts.close === true, at: voiceLastDeliveryAt });
+  if (voiceDeliveries.length > 200) voiceDeliveries.shift();
+  // Frozen overlay interface: { text, voice: true, utteranceId }.
+  deliverOverlayCapture({ text: trimmed, voice: true, utteranceId });
+  console.log(`[voice] → overlay (${utteranceId}${opts.close ? ", close" : ""}): "${trimmed}"`);
+  return true;
+}
+
+/** Commit hook (also used by the SUBTR_TEST feed driver). */
+function forwardVoiceCommit(text) {
+  return deliverVoiceCaption(text);
 }
 
 /** One rolling-window pass: whisper → commit → maybe forward. */
@@ -1356,42 +1398,78 @@ async function runVoicePass() {
   const pass = voicePassCount;
   const startedAt = Date.now();
   try {
-    const wantSamples = Math.round(
-      (voicePipeline.VOICE_SAMPLE_RATE * voicePipeline.VOICE_WINDOW_MS) / 1000,
+    // Energy gate over a SHORT window so an utterance closes soon after speech
+    // stops (keeps the final delivery within the overlay's ~2.5 s idle window).
+    const gateSamples = Math.round(
+      (voicePipeline.VOICE_SAMPLE_RATE * voicePipeline.VOICE_SILENCE_WINDOW_MS) / 1000,
     );
-    const samples = voiceRing.takeLast(wantSamples);
-    voiceLastRms = voicePipeline.rms(samples);
+    voiceLastRms = voicePipeline.rms(voiceRing.takeLast(gateSamples));
 
-    // Energy gate (fast pre-filter): silent windows never reach whisper-server.
-    // Silero VAD runs server-side too (--vad) when its model is present; silent
-    // windows still feed "" so the 2-pass commit/utterance-end logic is intact.
     if (voiceLastRms < 0.002) {
       const result = voiceCommitter.feed("");
-      console.log(
-        `[voice] pass#${pass} silence (rms=${voiceLastRms.toFixed(5)})${result && result.ended ? ` → ended: "${result.ended}"` : ""}`,
-      );
+      if (result && result.ended) {
+        // Close the open utterance with the complete text (finalizeText may add
+        // trailing words the stable-prefix rule hadn't agreed on yet). The next
+        // utterance gets a fresh id; the overlay hides on its own idle timeout.
+        if (voiceUtteranceId) {
+          deliverVoiceCaption(result.ended, { close: true });
+          console.log(`[voice] pass#${pass} silence → utterance closed: ${voiceUtteranceId}`);
+          voiceUtteranceId = null;
+        }
+        voiceRing.clear(); // next utterance starts from a clean buffer
+      } else if (!voiceUtteranceId) {
+        // No open utterance: drop accumulated silence, keep a short tail only.
+        const keep = voiceRing.takeLast(gateSamples);
+        voiceRing.clear();
+        voiceRing.append(keep);
+        console.log(`[voice] pass#${pass} silence (rms=${voiceLastRms.toFixed(5)})`);
+      } else {
+        console.log(`[voice] pass#${pass} silence (rms=${voiceLastRms.toFixed(5)})`);
+      }
       return;
     }
 
+    // A non-silent pass opens/reuses the utterance (stable id until closed).
+    ensureUtterance();
+    // Transcribe the WHOLE growing utterance buffer: consecutive transcripts are
+    // then prefix-stable, so the 2-pass quality gate works and the caption keeps
+    // extending instead of stalling (a sliding window drifts its start).
+    const samples = voiceRing.takeLast(voiceRing.size);
     const raw = await transcribeWindow(samples);
     const sttMs = Date.now() - startedAt;
+    const bufSec = samples.length / voicePipeline.VOICE_SAMPLE_RATE;
     voiceLastTranscript = voicePipeline.normalizeTranscript(raw);
     const result = voiceCommitter.feed(raw);
-    if (!result) {
-      console.log(`[voice] pass#${pass} stt=${sttMs}ms "${voiceLastTranscript}" (no commit)`);
-      return;
-    }
-    if (result.ended) {
-      console.log(`[voice] pass#${pass} stt=${sttMs}ms ended: "${result.ended}"`);
+    if (!result || !result.committed) {
+      console.log(
+        `[voice] pass#${pass} stt=${sttMs}ms buf=${bufSec.toFixed(1)}s "${voiceLastTranscript}" (no growth)`,
+      );
       return;
     }
     voiceCommitCount += 1;
     voiceLastCommit = result.committed;
     voiceLastCommitAt = Date.now();
     console.log(
-      `[voice] pass#${pass} stt=${sttMs}ms commit="${result.committed}" (+${result.delta})`,
+      `[voice] pass#${pass} stt=${sttMs}ms buf=${bufSec.toFixed(1)}s committed="${result.committed}" (+${result.delta})`,
     );
-    forwardVoiceCommit(result.committed);
+    // Deliver the growing committed text as soon as this pass extends it
+    // (dedupe inside deliverVoiceCaption drops unchanged repeats).
+    deliverVoiceCaption(result.committed);
+
+    // Cap the utterance so the buffer/transcript stay bounded on long speech:
+    // force-close and restart with a fresh utterance id.
+    const capSamples = Math.round(
+      (voicePipeline.VOICE_SAMPLE_RATE * voicePipeline.VOICE_UTTERANCE_MAX_MS) / 1000,
+    );
+    if (voiceRing.size >= capSamples) {
+      if (voiceUtteranceId) {
+        deliverVoiceCaption(result.committed, { close: true });
+        voiceUtteranceId = null;
+      }
+      voiceCommitter.reset();
+      voiceRing.clear();
+      console.log(`[voice] pass#${pass} utterance capped at ${voicePipeline.VOICE_UTTERANCE_MAX_MS}ms → restart`);
+    }
   } catch (error) {
     console.warn(
       `[voice] pass#${pass} error:`,
@@ -1464,13 +1542,18 @@ async function startVoice() {
   }
 
   const maxSamples = Math.round(
-    voicePipeline.VOICE_SAMPLE_RATE * (voicePipeline.VOICE_WINDOW_MS / 1000 + 1),
+    (voicePipeline.VOICE_SAMPLE_RATE * voicePipeline.VOICE_UTTERANCE_MAX_MS) / 1000,
   );
   voiceRing = new voicePipeline.PcmRingBuffer(maxSamples);
   voiceCommitter = new voicePipeline.VoiceCommitter();
   voicePassCount = 0;
   voiceCommitCount = 0;
   voicePcmSeen = 0;
+  voiceUtteranceId = null;
+  voiceLastDeliveredText = "";
+  voiceLastDeliveryAt = 0;
+  voiceDeliveryCount = 0;
+  voiceDeliveries.length = 0;
   voiceActive = true;
 
   requestVoiceCapture(true);
@@ -1479,7 +1562,7 @@ async function startVoice() {
   }
   setVoiceStatus("listening");
   console.log(
-    `[voice] listening (window=${voicePipeline.VOICE_WINDOW_MS}ms hop=${voicePipeline.VOICE_HOP_MS}ms)`,
+    `[voice] listening (utteranceMax=${voicePipeline.VOICE_UTTERANCE_MAX_MS}ms hop=${voicePipeline.VOICE_HOP_MS}ms)`,
   );
 }
 
@@ -2078,7 +2161,12 @@ async function start() {
     globalThis.__subtrVoiceFeed = (transcript) => {
       if (!voiceCommitter) voiceCommitter = new voicePipeline.VoiceCommitter();
       const result = voiceCommitter.feed(transcript);
-      if (result && result.committed) {
+      if (result && result.ended) {
+        if (voiceUtteranceId) {
+          deliverVoiceCaption(result.ended, { close: true });
+          voiceUtteranceId = null;
+        }
+      } else if (result && result.committed) {
         voiceCommitCount += 1;
         voiceLastCommit = result.committed;
         voiceLastCommitAt = Date.now();
@@ -2086,6 +2174,8 @@ async function start() {
       }
       return result;
     };
+    // Recent in-place voice deliveries ({text, utteranceId, close, at}).
+    globalThis.__subtrVoiceDeliveries = () => voiceDeliveries.slice();
     // Transcribe a base64 WAV directly via whisper-server (bypasses capture).
     globalThis.__subtrVoiceTranscribe = async (wavBase64) => {
       const ok = await ensureWhisperServer();

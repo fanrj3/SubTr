@@ -112,6 +112,19 @@ Closed by default; discovery stays one click away.
 - Respect `prefers-reduced-motion`: collapse/transition to `0ms`, no transforms,
   no navigation fade.
 
+## Voice captions (continuous)
+
+- Voice payloads update the card **in place** — no enter animation, no dismiss
+  between updates; the card box stays stable while text grows (scroll position
+  preserved, length re-evaluated).
+- Translation is **trailing-debounced (~800 ms)** and coalesced to the latest
+  text; stale in-flight results are dropped by sequence number. The previous
+  translated text stays visible while a new translation is pending, then swaps
+  with a ≤100 ms cross-fade (`.voice-fade`).
+- Idle auto-hide **~2.5 s** after the last payload, using the normal fade-out;
+  a new payload cancels it.
+- Non-voice payloads keep the existing show → teleprompter/hold → auto-hide flow.
+
 ## Pace slider mapping
 
 - `textScale` is a **speed factor**: scroll/display durations are

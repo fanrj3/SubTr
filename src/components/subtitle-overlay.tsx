@@ -45,6 +45,10 @@ type SubtitleOverlayProps = {
   onRequestInteractive?: (interactive: boolean) => void;
   controlledPlay?: ControlledPlay;
   testMode?: TestMode;
+  /** Continuous voice captions: no internal auto-hide, keep the card stable. */
+  voice?: boolean;
+  /** Bumped when the voice text is replaced, to trigger a short cross-fade. */
+  voiceRevision?: number;
 };
 
 const ERROR_HIDE_MS = 20000;
@@ -74,6 +78,8 @@ export function SubtitleOverlay({
   onRequestInteractive,
   controlledPlay,
   testMode,
+  voice,
+  voiceRevision,
 }: SubtitleOverlayProps) {
   const { t } = useT();
   const [showEscHint, setShowEscHint] = useState(false);
@@ -111,6 +117,7 @@ export function SubtitleOverlay({
   const exitOriginalRef = useRef("");
   const original = state.kind !== "idle" ? state.original : "";
   const isControlled = !!controlledPlay;
+  const isVoice = !!voice;
   const mountStartTimeRef = useRef<number>(0);
   const scrollStartTimeRef = useRef<number>(0);
   const finalStartTimeRef = useRef<number>(0);
@@ -329,11 +336,13 @@ export function SubtitleOverlay({
       if (timersRef.current.exit) clearTimeout(timersRef.current.exit);
       setIsExiting(false);
     }
-    if (state.kind === "idle" && prevKindRef.current !== "idle" && !isExiting) {
+    // Voice captions hard-cut: no re-creating exit animation and no fallback
+    // flash. Non-voice captures keep the normal exit fade.
+    if (state.kind === "idle" && prevKindRef.current !== "idle" && !isExiting && !isVoice) {
       startExit();
     }
     prevKindRef.current = state.kind;
-  }, [state.kind, original, isExiting, startExit]);
+  }, [state.kind, original, isExiting, startExit, isVoice]);
 
   // Externally-controlled clock (desktop test playback / in-window fallback).
   useEffect(() => {
@@ -396,6 +405,7 @@ export function SubtitleOverlay({
   useEffect(() => {
     if (state.kind === "idle") return;
     if (controlledPlay) return;
+    if (isVoice) return;
 
     prefersReducedMotionRef.current = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
@@ -471,7 +481,7 @@ export function SubtitleOverlay({
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [original, isControlled]);
+  }, [original, isControlled, isVoice]);
 
   function pin(showHint: boolean) {
     if (pinned) return;
@@ -512,7 +522,9 @@ export function SubtitleOverlay({
   }
 
   const hasText = rawText.trim().length > 0;
-  const mainText = hasText ? rawText : fallbackText;
+  // Voice captions never flash the fallback while dismissing (or between
+  // updates) — they keep the last content until the fade completes.
+  const mainText = hasText ? rawText : isVoice ? "" : fallbackText;
   const isShort = isDictionary || mainText.trim().length <= 40;
   const contentPad = isShort ? "px-10" : "pr-1";
 
@@ -691,9 +703,14 @@ export function SubtitleOverlay({
                   <span className="subtr-thinking-dots" aria-hidden="true">…</span>
                 </p>
               ) : (
-                <MarkdownRenderer className="leading-snug tracking-wide">
-                  {mainText}
-                </MarkdownRenderer>
+                <div
+                  key={isVoice ? voiceRevision : undefined}
+                  className={isVoice ? "voice-fade" : undefined}
+                >
+                  <MarkdownRenderer className="leading-snug tracking-wide">
+                    {mainText}
+                  </MarkdownRenderer>
+                </div>
               )}
               {state.kind === "streaming" && hasText && (
                 <span
@@ -716,7 +733,8 @@ export function SubtitleOverlay({
             <LockIcon className="h-3.5 w-3.5" />
           </div>
         ) : (
-          !controlledPlay && (
+          !controlledPlay &&
+          !isVoice && (
             <HoldProgress
               phaseRef={phaseRef}
               timingRef={timingRef}

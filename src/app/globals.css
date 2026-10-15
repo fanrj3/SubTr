@@ -140,8 +140,23 @@ body {
   animation: page-fade-in 140ms ease-out both;
 }
 
+/* Voice captions: short in-place cross-fade when the text is replaced. */
+@keyframes voice-fade-in {
+  from {
+    opacity: 0.65;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.voice-fade {
+  animation: voice-fade-in 90ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .page-fade {
+  .page-fade,
+  .voice-fade {
     animation: none;
   }
 }

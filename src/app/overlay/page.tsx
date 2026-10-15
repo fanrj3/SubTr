@@ -26,6 +26,8 @@ import { SubtitleOverlay, type SubtitleState } from "@/components/subtitle-overl
 const TARGET_LANG_KEY = "subtr.targetLang.v1";
 const DEFAULT_TARGET_LANG = "auto";
 const REPORT_INTERVAL_MS = 200;
+const VOICE_DEBOUNCE_MS = 800;
+const VOICE_IDLE_MS = 2500;
 
 type TestState = {
   playing: boolean;
@@ -35,8 +37,36 @@ type TestState = {
   confirmed: boolean;
 };
 
+type VoiceSession = {
+  active: boolean;
+  seq: number;
+  latestText: string;
+  displayed: string;
+  debounce: number | null;
+  idle: number | null;
+  controller: AbortController | null;
+};
+
+type PreparedTranslation = {
+  config: ReturnType<typeof toLlmConfig>;
+  targetLang: string;
+  bodyOverrides?: Record<string, unknown>;
+};
+
 function readTargetLang(): string {
   return readStorage(TARGET_LANG_KEY, DEFAULT_TARGET_LANG);
+}
+
+function createVoiceSession(): VoiceSession {
+  return {
+    active: false,
+    seq: 0,
+    latestText: "",
+    displayed: "",
+    debounce: null,
+    idle: null,
+    controller: null,
+  };
 }
 
 function Overlay() {
@@ -44,7 +74,10 @@ function Overlay() {
   const mode = useModeState();
   const [subtitle, setSubtitle] = useState<SubtitleState>({ kind: "idle" });
   const [test, setTest] = useState<TestState | null>(null);
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceRevision, setVoiceRevision] = useState(0);
   const testRef = useRef<TestState | null>(null);
+  const voiceRef = useRef<VoiceSession | null>(null);
   const wasPlayingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const searchParams = useSearchParams();
@@ -62,6 +95,19 @@ function Overlay() {
   }, []);
 
   const dismissSubtitle = useCallback(() => {
+    const v = voiceRef.current;
+    if (v) {
+      if (v.debounce) window.clearTimeout(v.debounce);
+      if (v.idle) window.clearTimeout(v.idle);
+      v.controller?.abort();
+      voiceRef.current = {
+        ...createVoiceSession(),
+        displayed: v.displayed,
+      };
+    }
+    // Keep `voiceActive` true through the dismissal render: the overlay uses it
+    // to take the hard-cut path (no re-creating fade, no fallback flash). It is
+    // reset when the next non-voice capture begins.
     abortRef.current?.abort();
     abortRef.current = null;
     testRef.current = null;
@@ -77,10 +123,159 @@ function Overlay() {
     window.subtrDesktop?.setOverlayInteractive?.(interactive);
   }, []);
 
-  const handleCapture = useCallback(
-    async (text: string, source?: string) => {
+  const prepareTranslation = useCallback((trimmed: string): PreparedTranslation | null => {
+    const settings = readSettings();
+    const config = toLlmConfig(settings);
+    const preset = PROVIDER_PRESETS.find((p) => p.id === settings.presetId);
+    const needsKey = !config.apiKey && !preset?.keyless;
+    if (needsKey) return null;
+
+    const wordCount = countWords(trimmed);
+    const useFastMode =
+      (settings.thinkingMode ?? "preset") === "preset" &&
+      wordCount <= 20 &&
+      preset?.fastModeParams != null;
+
+    const explicitThinking =
+      (settings.thinkingMode ?? "preset") !== "preset" && preset
+        ? (preset as Record<string, unknown>).thinking
+        : undefined;
+    const thinkingOverrides =
+      explicitThinking &&
+      typeof explicitThinking === "object" &&
+      explicitThinking !== null
+        ? (explicitThinking as Record<string, unknown>)[settings.thinkingMode!]
+        : undefined;
+
+    const bodyOverrides: Record<string, unknown> | undefined =
+      thinkingOverrides && typeof thinkingOverrides === "object"
+        ? { ...(thinkingOverrides as Record<string, unknown>) }
+        : preset?.defaultParams || useFastMode
+          ? {
+              ...(preset?.defaultParams ?? {}),
+              ...(useFastMode ? (preset?.fastModeParams ?? {}) : {}),
+            }
+          : undefined;
+
+    return {
+      config,
+      targetLang: resolveTargetLang(trimmed, readTargetLang()),
+      bodyOverrides,
+    };
+  }, []);
+
+  /** One translation per debounce window; stale results are ignored by seq. */
+  const runVoiceTranslation = useCallback(
+    (seq: number) => {
+      const v = voiceRef.current;
+      if (!v || !v.active) return;
+      const text = v.latestText;
+      if (!text.trim()) return;
+      const prepared = prepareTranslation(text);
+      if (!prepared) return; // keep previous text visible
+
+      v.controller?.abort();
+      const controller = new AbortController();
+      // Replace only the controller; keep idle/debounce handles so the
+      // in-flight idle timer can still be cancelled by the next payload.
+      voiceRef.current = { ...v, controller };
+      let buffer = "";
+
+      streamTranslate(
+        text,
+        prepared.targetLang,
+        prepared.config,
+        controller.signal,
+        {
+          onChunk: (value) => {
+            buffer = value;
+          },
+          onDone: () => {
+            const current = voiceRef.current;
+            if (!current || !current.active || current.seq !== seq) return; // stale
+            const next = buffer.trim() || text;
+            current.displayed = next;
+            setSubtitle({
+              kind: "success",
+              original: text.slice(0, 80),
+              text: next,
+            });
+            setVoiceRevision((r) => r + 1);
+          },
+          onError: () => {
+            // Keep the previous translated text visible.
+          },
+        },
+        prepared.bodyOverrides && Object.keys(prepared.bodyOverrides).length > 0
+          ? prepared.bodyOverrides
+          : undefined
+      );
+    },
+    [prepareTranslation]
+  );
+
+  const handleVoiceCapture = useCallback(
+    (text: string) => {
       const trimmed = text.trim();
       if (!trimmed) return;
+      const prev = voiceRef.current ?? createVoiceSession();
+      if (prev.debounce) window.clearTimeout(prev.debounce);
+      if (prev.idle) window.clearTimeout(prev.idle);
+
+      const seq = prev.seq + 1;
+      setVoiceActive(true);
+
+      // Never blank the caption: show the source text on the first payload
+      // until the first translation arrives; afterwards keep the previous one.
+      if (!prev.displayed) {
+        setSubtitle({ kind: "success", original: trimmed.slice(0, 80), text: trimmed });
+        setVoiceRevision((r) => r + 1);
+      }
+
+      const debounce = window.setTimeout(() => {
+        const cur = voiceRef.current;
+        if (cur) voiceRef.current = { ...cur, debounce: null };
+        runVoiceTranslation(seq);
+      }, VOICE_DEBOUNCE_MS);
+
+      const idle = window.setTimeout(() => {
+        const cur = voiceRef.current;
+        if (cur) voiceRef.current = { ...cur, idle: null };
+        dismissSubtitle();
+      }, VOICE_IDLE_MS);
+
+      voiceRef.current = {
+        active: true,
+        seq,
+        latestText: trimmed,
+        displayed: prev.displayed,
+        debounce,
+        idle,
+        controller: prev.controller,
+      };
+    },
+    [runVoiceTranslation, dismissSubtitle]
+  );
+
+  const handleCapture = useCallback(
+    async (text: string, source?: string, voice?: boolean) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+
+      if (voice) {
+        handleVoiceCapture(trimmed);
+        return;
+      }
+
+      // Any non-voice capture leaves voice mode cleanly.
+      const v = voiceRef.current;
+      if (v?.active) {
+        if (v.debounce) window.clearTimeout(v.debounce);
+        if (v.idle) window.clearTimeout(v.idle);
+        v.controller?.abort();
+        voiceRef.current = { ...createVoiceSession(), displayed: v.displayed };
+        setVoiceActive(false);
+      }
 
       const isTest = source === "test";
       if (!isTest && !mode) return;
@@ -127,12 +322,8 @@ function Overlay() {
         return;
       }
 
-      const settings = readSettings();
-      const config = toLlmConfig(settings);
-      const preset = PROVIDER_PRESETS.find((p) => p.id === settings.presetId);
-      const needsKey = !config.apiKey && !preset?.keyless;
-
-      if (needsKey) {
+      const prepared = prepareTranslation(trimmed);
+      if (!prepared) {
         setSubtitle({
           kind: "error",
           original,
@@ -145,40 +336,12 @@ function Overlay() {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      const resolvedTargetLang = resolveTargetLang(trimmed, readTargetLang());
-      const wordCount = countWords(trimmed);
-      const useFastMode =
-        (settings.thinkingMode ?? "preset") === "preset" &&
-        wordCount <= 20 &&
-        preset?.fastModeParams != null;
-
-      const explicitThinking =
-        (settings.thinkingMode ?? "preset") !== "preset" && preset
-          ? (preset as Record<string, unknown>).thinking
-          : undefined;
-      const thinkingOverrides =
-        explicitThinking &&
-        typeof explicitThinking === "object" &&
-        explicitThinking !== null
-          ? (explicitThinking as Record<string, unknown>)[settings.thinkingMode!]
-          : undefined;
-
-      const bodyOverrides: Record<string, unknown> | undefined =
-        thinkingOverrides && typeof thinkingOverrides === "object"
-          ? { ...(thinkingOverrides as Record<string, unknown>) }
-          : preset?.defaultParams || useFastMode
-            ? {
-                ...(preset?.defaultParams ?? {}),
-                ...(useFastMode ? (preset?.fastModeParams ?? {}) : {}),
-              }
-            : undefined;
-
       setSubtitle({ kind: "loading", original });
 
       streamTranslate(
         trimmed,
-        resolvedTargetLang,
-        config,
+        prepared.targetLang,
+        prepared.config,
         controller.signal,
         {
           onChunk: (value) => {
@@ -199,12 +362,18 @@ function Overlay() {
             setSubtitle({ kind: "error", original, message });
           },
         },
-        bodyOverrides && Object.keys(bodyOverrides).length > 0
-          ? bodyOverrides
+        prepared.bodyOverrides && Object.keys(prepared.bodyOverrides).length > 0
+          ? prepared.bodyOverrides
           : undefined
       );
     },
-    [t, mode, report]
+    [
+      t,
+      mode,
+      report,
+      handleVoiceCapture,
+      prepareTranslation,
+    ]
   );
 
   // Test playback clock.
@@ -318,7 +487,7 @@ function Overlay() {
       if (!bridge) return;
 
       const unsubscribe = bridge.onCapture((payload) => {
-        handleCapture(payload.text, payload.source);
+        handleCapture(payload.text, payload.source, payload.voice);
       });
       return unsubscribe;
     }
@@ -342,9 +511,29 @@ function Overlay() {
     return unsubscribe;
   }, [dismissSubtitle]);
 
+  // Dev-only hook to simulate voice capture payloads in the browser.
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    const w = window as unknown as {
+      __subtrVoiceTest?: (text: string, voice?: boolean) => void;
+    };
+    w.__subtrVoiceTest = (text, voice = true) => {
+      void handleCapture(text, undefined, voice);
+    };
+    return () => {
+      delete w.__subtrVoiceTest;
+    };
+  }, [handleCapture]);
+
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      const v = voiceRef.current;
+      if (v) {
+        if (v.debounce) window.clearTimeout(v.debounce);
+        if (v.idle) window.clearTimeout(v.idle);
+        v.controller?.abort();
+      }
     };
   }, []);
 
@@ -374,6 +563,8 @@ function Overlay() {
       onRequestInteractive={handleRequestInteractive}
       controlledPlay={controllingTest}
       testMode={testMode}
+      voice={voiceActive}
+      voiceRevision={voiceRevision}
     />
   );
 }

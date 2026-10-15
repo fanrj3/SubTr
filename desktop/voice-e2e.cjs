@@ -1,9 +1,10 @@
-// Phase-1 voice E2E driver (SUBTR_TEST).
+// Voice E2E driver (SUBTR_TEST).
 //
 // Boots the real app (desktop/main.cjs) with SUBTR_TEST=1, then drives the
 // main-process automation hooks exposed by main.cjs:
 //   __subtrVoiceSetup / __subtrTrayMenuLabels / __subtrVoiceTranscribe /
-//   __subtrVoiceFeed / __subtrVoiceStart / __subtrVoiceStop / __subtrVoice
+//   __subtrVoiceFeed / __subtrVoiceDeliveries / __subtrVoiceStart /
+//   __subtrVoiceStop / __subtrVoice
 //
 // Usage (from the repo root):
 //   npx electron desktop/voice-e2e.cjs
@@ -23,11 +24,47 @@ const { app } = require("electron");
 
 require("./main.cjs");
 
-const WAV = process.env.SUBTR_VOICE_WAV || "/tmp/subtr-voice-16k.wav";
+const WAV = process.env.SUBTR_VOICE_WAV || "/tmp/subtr-voice-long-16k.wav";
 const LIVE = process.env.SUBTR_VOICE_LIVE === "1";
 
 function log(...args) {
   console.log("[e2e]", ...args);
+}
+
+/** Summarise a delivery log: in-place growth, dedupe, utterance gaps. */
+function analyzeDeliveries(list) {
+  const byUtterance = new Map();
+  let adjacentIdentical = 0;
+  let prevText = null;
+  for (const d of list) {
+    if (prevText !== null && d.text === prevText) adjacentIdentical += 1;
+    prevText = d.text;
+    if (!byUtterance.has(d.utteranceId)) {
+      byUtterance.set(d.utteranceId, { id: d.utteranceId, count: 0, closes: 0, first: d.at, last: d.at, texts: [] });
+    }
+    const u = byUtterance.get(d.utteranceId);
+    u.count += 1;
+    if (d.close) u.closes += 1;
+    u.last = d.at;
+    u.texts.push(d.text);
+  }
+  const utt = [...byUtterance.values()].sort((a, b) => a.first - b.first);
+  let growthViolations = 0;
+  for (const u of utt) {
+    for (let i = 1; i < u.texts.length; i++) {
+      if (!u.texts[i].startsWith(u.texts[i - 1])) growthViolations += 1;
+    }
+  }
+  const gaps = [];
+  for (let i = 1; i < utt.length; i++) gaps.push(utt[i].first - utt[i - 1].last);
+  return {
+    deliveryCount: list.length,
+    utteranceCount: utt.length,
+    adjacentIdentical,
+    growthViolations,
+    interUtteranceGapsMs: gaps,
+    utterances: utt.map((u) => ({ id: u.id, deliveries: u.count, closes: u.closes, firstText: u.texts[0], lastText: u.texts[u.texts.length - 1] })),
+  };
 }
 
 async function waitFor(fn, timeoutMs, label) {
@@ -68,14 +105,21 @@ app.whenReady().then(async () => {
       results.transcribe = { ok: false, error: `missing ${WAV}` };
     }
 
-    // 2) Commit + overlay hand-off using the real committer.
-    const feeds = [
-      "hello world this",
-      "hello world this is a voice",
-      "hello world this is a voice translation",
-      "hello world this is a voice translation test",
+    // 2) Continuous in-place delivery through the real committer + delivery path
+    //    (growth deliveries share one utteranceId; close delivery at silence).
+    const feedSeq = [
+      "the quick brown fox jumps",
+      "the quick brown fox jumps over the lazy dog",
+      "the quick brown fox jumps over the lazy dog it was very fast",
+      "the quick brown fox jumps over the lazy dog it was very fast indeed",
+      "", // first silence pass
+      "", // second silence pass → close
     ];
-    results.feeds = feeds.map((t) => ({ input: t, result: globalThis.__subtrVoiceFeed(t) }));
+    results.continuousFeed = {
+      results: feedSeq.map((t) => globalThis.__subtrVoiceFeed(t)),
+      deliveries: globalThis.__subtrVoiceDeliveries(),
+    };
+    results.continuousFeed.analysis = analyzeDeliveries(results.continuousFeed.deliveries);
 
     // 3) Model catalog + download flow (tiny Silero VAD exercises progress+sha256).
     results.models = globalThis.__subtrVoiceModels();
@@ -85,24 +129,27 @@ app.whenReady().then(async () => {
     // 4) Optional live loopback capture (permission/audio-routing gated).
     if (LIVE) {
       log("starting live loopback capture …");
-      const before = globalThis.__subtrVoice();
       await globalThis.__subtrVoiceStart();
 
-      // Play the reference clip through the system output several times.
-      let player = null;
+      // Play the long multi-sentence passage, let silence close the utterance,
+      // then speak again → a second utterance (exercises continuity + close).
       const playOnce = () =>
         new Promise((resolve) => {
-          player = spawn("afplay", [WAV]);
-          player.on("exit", resolve);
-          player.on("error", resolve);
+          const p = spawn("afplay", [WAV]);
+          p.on("exit", resolve);
+          p.on("error", resolve);
         });
-      for (let i = 0; i < 3; i++) {
-        await playOnce();
-        await sleep(500);
-      }
+      await playOnce();
+      await sleep(5000); // trailing silence → close utterance 1
+      await playOnce();
+      await sleep(4000); // trailing silence → close utterance 2
 
-      await sleep(2000);
-      results.live = { before, after: globalThis.__subtrVoice() };
+      const deliveries = globalThis.__subtrVoiceDeliveries();
+      results.live = {
+        after: globalThis.__subtrVoice(),
+        analysis: analyzeDeliveries(deliveries),
+        deliveries,
+      };
 
       // Hardening: kill whisper-server mid-session → expect a bounded auto-restart.
       results.live.killedPid = globalThis.__subtrVoiceKillServer();

@@ -18,10 +18,12 @@
 
 const VOICE_SAMPLE_RATE = 16000;
 const VOICE_BYTES_PER_SAMPLE = 2;
-/** Rolling analysis window length in milliseconds. */
-const VOICE_WINDOW_MS = 5000;
+/** Max audio buffered per utterance before it is force-closed and restarted (ms). */
+const VOICE_UTTERANCE_MAX_MS = 15000;
 /** Time between rolling analysis passes in milliseconds. */
-const VOICE_HOP_MS = 1500;
+const VOICE_HOP_MS = 1000;
+/** Short window used for the energy gate / silence detection (ms). */
+const VOICE_SILENCE_WINDOW_MS = 1000;
 /** Minimum chars overlap between two passes before a prefix counts as stable. */
 const VOICE_OVERLAP_RATIO = 0.8;
 /** Passes with no speech before the current utterance is considered finished. */
@@ -129,11 +131,12 @@ class PcmRingBuffer {
 }
 
 /**
- * Stateful rolling-window committer.
+ * Stateful utterance committer.
  *
- * A prefix is committed only when two consecutive passes agree on it (classic
- * "stable prefix" rule), it is word-aligned, and it extends what we already
- * committed. Divergence (overlap below the ratio) starts a fresh utterance.
+ * The pipeline feeds it the transcript of a *growing* utterance buffer (see
+ * main.cjs), so consecutive transcripts share a long prefix. A word-aligned
+ * prefix is committed only when two consecutive passes agree on it (the quality
+ * gate); each pass that extends it yields new committed text.
  */
 class VoiceCommitter {
   constructor() {
@@ -144,6 +147,19 @@ class VoiceCommitter {
     this.committed = "";
     this.previous = "";
     this.emptyPasses = 0;
+    /** Latest pass transcript (used to finalize on utterance close). */
+    this.lastTranscript = "";
+  }
+
+  /**
+   * On utterance close, commit the complete latest transcript (single pass, no
+   * 2-pass gate) so trailing words the stable-prefix rule hadn't yet agreed on
+   * are not lost. Falls back to the committed prefix when it does not extend it.
+   */
+  finalizeText() {
+    const t = String(this.lastTranscript || "").replace(/\s+$/, "").trim();
+    if (t && t.length > this.committed.length && t.startsWith(this.committed)) return t;
+    return this.committed;
   }
 
   /**
@@ -159,7 +175,7 @@ class VoiceCommitter {
       this.emptyPasses += 1;
       this.previous = "";
       if (this.emptyPasses >= VOICE_EMPTY_PASSES_TO_END && this.committed) {
-        const ended = this.committed;
+        const ended = this.finalizeText();
         this.reset();
         return { ended };
       }
@@ -170,11 +186,12 @@ class VoiceCommitter {
     const text = normalizeTranscript(rawTranscript);
     const agreed = agreedPrefix(this.previous, text);
     if (this.previous && !agreed) {
-      // Diverged: likely a new utterance. Drop the old committed base but keep
-      // this pass as the new rolling base so the next pass can re-agree.
+      // Diverged (whisper revised the prefix): drop the stale committed base but
+      // keep this pass as the new rolling base so the next pass can re-agree.
       this.committed = "";
     }
     this.previous = text;
+    this.lastTranscript = text;
 
     const stable = stabilizePrefix(agreed, text);
     if (stable && stable.length > this.committed.length && stable.startsWith(this.committed)) {
@@ -223,8 +240,9 @@ function rms(int16) {
 module.exports = {
   VOICE_SAMPLE_RATE,
   VOICE_BYTES_PER_SAMPLE,
-  VOICE_WINDOW_MS,
+  VOICE_UTTERANCE_MAX_MS,
   VOICE_HOP_MS,
+  VOICE_SILENCE_WINDOW_MS,
   VOICE_OVERLAP_RATIO,
   VOICE_EMPTY_PASSES_TO_END,
   normalizeTranscript,
@@ -275,13 +293,39 @@ if (require.main === module && process.argv.includes("--selftest")) {
   assert.deepStrictEqual(c.feed(""), { ended: "hello world how are" }, "silence ends utterance");
   assert.strictEqual(c.committed, "", "utterance reset after silence");
 
-  // --- divergence starts a fresh utterance ---
+  // --- hard divergence with no overlap appends (nothing lost) ---
   const d = new VoiceCommitter();
   d.feed("the quick brown fox");
   d.feed("the quick brown fox jumps");
   assert.strictEqual(d.committed, "the quick brown fox");
   d.feed("completely different words here");
   assert.strictEqual(d.committed, "", "divergence resets committed base");
+
+  // --- growing-buffer transcripts commit progressively (one pass behind) ---
+  const g = new VoiceCommitter();
+  g.feed("the quick brown fox");
+  assert.deepStrictEqual(g.feed("the quick brown fox jumps"), {
+    committed: "the quick brown fox",
+    delta: "the quick brown fox",
+  });
+  assert.deepStrictEqual(g.feed("the quick brown fox jumps over the lazy dog"), {
+    committed: "the quick brown fox jumps",
+    delta: "jumps",
+  });
+  // The 2-pass gate commits one pass behind; a stable repeat then goes quiet.
+  assert.deepStrictEqual(g.feed("the quick brown fox jumps over the lazy dog"), {
+    committed: "the quick brown fox jumps over the lazy dog",
+    delta: "over the lazy dog",
+  });
+  assert.strictEqual(g.feed("the quick brown fox jumps over the lazy dog"), null, "repeat → no growth");
+
+  // --- finalize on silence includes the trailing (not-yet-agreed) text ---
+  const f = new VoiceCommitter();
+  f.feed("the quick brown fox");
+  f.feed("the quick brown fox jumps");
+  assert.strictEqual(f.committed, "the quick brown fox");
+  assert.strictEqual(f.feed("[BLANK_AUDIO]"), null);
+  assert.deepStrictEqual(f.feed(""), { ended: "the quick brown fox jumps" }, "finalize adds trailing words");
 
   // --- overlap helper ---
   assert.strictEqual(agreedPrefix("abcdefgh", "abcdZZZZ"), ""); // <80% overlap

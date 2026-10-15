@@ -44,7 +44,14 @@ export type VoiceSnapshot = {
 
 export type DesktopBridge = {
   isDesktop: true;
-  onCapture(cb: (payload: { text: string; source?: string }) => void): () => void;
+  onCapture(
+    cb: (payload: {
+      text: string;
+      source?: string;
+      voice?: boolean;
+      utteranceId?: string;
+    }) => void
+  ): () => void;
   setOverlayInteractive?(on: boolean): void;
   setEscArmed?(on: boolean): void;
   setNativeTheme?(theme: string): void;
