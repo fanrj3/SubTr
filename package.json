@@ -1,6 +1,6 @@
 {
   "name": "subtr",
-  "version": "0.3.0",
+  "version": "0.2.10",
   "private": true,
   "main": "desktop/main.cjs",
   "scripts": {
@@ -16,7 +16,8 @@
     "desktop:dev": "node desktop/dev.cjs",
     "dist:mac": "electron-builder --mac dmg --arm64",
     "dist:win": "electron-builder --win nsis --x64",
-    "dist:linux": "electron-builder --linux AppImage"
+    "dist:linux": "electron-builder --linux AppImage",
+    "icon:build": "node scripts/build-icon.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

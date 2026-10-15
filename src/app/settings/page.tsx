@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { Tabs } from "@base-ui/react/tabs";
-import { APP_VERSION } from "@/lib/version";
+import {
+  APP_VERSION,
+  compareSemver,
+  DEFAULT_UPDATE_MANIFEST_URL,
+} from "@/lib/version";
 import { PageFade } from "@/components/page-fade";
 import { PROVIDER_PRESETS } from "@/lib/presets";
 import type {
@@ -351,6 +355,48 @@ export default function SettingsPage() {
       .then((s) => setVoicePaths({ server: s.server, model: s.model }))
       .catch(() => setVoicePaths(null));
   }, []);
+
+  type UpdateStatus =
+    | { kind: "idle" }
+    | { kind: "checking" }
+    | { kind: "upToDate" }
+    | { kind: "available"; version: string; url: string }
+    | { kind: "error" };
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ kind: "idle" });
+
+  async function checkForUpdates() {
+    setUpdateStatus({ kind: "checking" });
+    try {
+      const override =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem("subtr.updateManifestUrl")
+          : null;
+      const endpoint =
+        override ||
+        process.env.NEXT_PUBLIC_UPDATE_MANIFEST_URL ||
+        DEFAULT_UPDATE_MANIFEST_URL;
+      const res = await fetch(endpoint, {
+        headers: { Accept: "application/vnd.github+json" },
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error("bad status");
+      const data = (await res.json()) as {
+        tag_name?: unknown;
+        version?: unknown;
+        html_url?: unknown;
+      };
+      const tag = String(data.tag_name ?? data.version ?? "").replace(/^v/i, "");
+      if (!tag) throw new Error("no version");
+      const url = typeof data.html_url === "string" ? data.html_url : endpoint;
+      if (compareSemver(tag, APP_VERSION) > 0) {
+        setUpdateStatus({ kind: "available", version: tag, url });
+      } else {
+        setUpdateStatus({ kind: "upToDate" });
+      }
+    } catch {
+      setUpdateStatus({ kind: "error" });
+    }
+  }
 
   const handleProfileChange = useCallback(
     (patch: Partial<StoredProfile>) => {
@@ -814,6 +860,43 @@ export default function SettingsPage() {
                     {aboutRuntime}
                   </code>
                 </SettingsRowFull>
+                <SettingsRow
+                  title={t("settings.about.checkUpdates")}
+                  below={
+                    updateStatus.kind === "upToDate" ? (
+                      <span className="text-muted">{t("settings.about.upToDate")}</span>
+                    ) : updateStatus.kind === "available" ? (
+                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="text-success">
+                          {t("settings.about.updateAvailable", {
+                            version: updateStatus.version,
+                          })}
+                        </span>
+                        <a
+                          href={updateStatus.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline underline-offset-2 hover:text-foreground"
+                        >
+                          {t("settings.about.openDownload")}
+                        </a>
+                      </span>
+                    ) : updateStatus.kind === "error" ? (
+                      <span className="text-muted">{t("settings.about.updateFailed")}</span>
+                    ) : undefined
+                  }
+                >
+                  <button
+                    type="button"
+                    onClick={() => void checkForUpdates()}
+                    disabled={updateStatus.kind === "checking"}
+                    className="rounded-lg border border-card-border bg-background px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 dark:hover:bg-white/5"
+                  >
+                    {updateStatus.kind === "checking"
+                      ? t("settings.about.checking")
+                      : t("settings.about.checkUpdates")}
+                  </button>
+                </SettingsRow>
                 <SettingsRowFull title={t("settings.about.dataLocations")}>
                   <div className="space-y-1 font-mono text-[11px] text-muted">
                     <p className="break-words">

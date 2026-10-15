@@ -94,6 +94,8 @@ let lastManualAt = 0;
 let manualBusy = false;
 let quitting = false;
 let escArmed = false;
+/** Global Escape armed while the regions card is open (the card never takes focus). */
+let regionsEscArmed = false;
 /** True once the overlay renderer has subscribed via onCapture (ready handshake). */
 let overlayListenerReady = false;
 /** Latest capture that could not be delivered yet (single slot, latest wins). */
@@ -2047,6 +2049,85 @@ function openCaptureWindow(display, sf, image, opts) {
   });
 }
 
+/** Always-on-top levels: regions sit below the subtitle overlay (higher wins). */
+const REGIONS_LEVEL = "floating";
+const OVERLAY_LEVEL = "screen-saver";
+
+/** Re-assert the subtitle overlay above the regions window (called after show). */
+function ensureOverlayOnTop() {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  try {
+    overlayWindow.setAlwaysOnTop(true, OVERLAY_LEVEL);
+  } catch {
+    // ignore
+  }
+}
+
+/** Decode an image data URL's natural pixel size (PNG or JPEG). */
+function decodeImageSize(dataUrl) {
+  try {
+    const comma = String(dataUrl).indexOf(",");
+    const b64 = comma >= 0 ? String(dataUrl).slice(comma + 1) : String(dataUrl);
+    const buf = Buffer.from(b64, "base64");
+    if (buf.length >= 24 && buf.toString("ascii", 12, 16) === "IHDR") {
+      return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+    }
+    if (buf.length >= 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+      let o = 2;
+      while (o + 9 < buf.length) {
+        if (buf[o] !== 0xff) {
+          o += 1;
+          continue;
+        }
+        const marker = buf[o + 1];
+        const len = buf.readUInt16BE(o + 2);
+        if (
+          marker >= 0xc0 &&
+          marker <= 0xcf &&
+          marker !== 0xc4 &&
+          marker !== 0xc8 &&
+          marker !== 0xcc
+        ) {
+          return { height: buf.readUInt16BE(o + 5), width: buf.readUInt16BE(o + 7) };
+        }
+        o += 2 + len;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/**
+ * Bounds for the regions card: sized from the image's NATURAL size (device px /
+ * scaleFactor → logical), capped at ~90 % of the display work area **preserving
+ * aspect** (contain — never crop, never stretch), centered on that display.
+ */
+function regionsBounds(display, params) {
+  const sf = display.scaleFactor || 1;
+  const wa = display.workArea;
+  let pxW = Number(params.widthPx) > 0 ? Number(params.widthPx) : 0;
+  let pxH = Number(params.heightPx) > 0 ? Number(params.heightPx) : 0;
+  if (!pxW || !pxH) {
+    const natural = decodeImageSize(params.imageDataUrl);
+    if (natural) {
+      pxW = pxW || natural.width;
+      pxH = pxH || natural.height;
+    }
+  }
+  const imgW = pxW > 0 ? pxW / sf : wa.width * 0.5;
+  const imgH = pxH > 0 ? pxH / sf : wa.height * 0.4;
+  const maxW = Math.max(160, wa.width * 0.9);
+  const maxH = Math.max(120, wa.height * 0.9);
+  const scale = Math.min(1, maxW / imgW, maxH / imgH);
+  const width = Math.max(120, Math.round(imgW * scale));
+  const height = Math.max(80, Math.round(imgH * scale));
+  const x = Math.round(wa.x + (wa.width - width) / 2);
+  const y = Math.round(wa.y + (wa.height - height) / 2);
+  return { x, y, width, height };
+}
+
 function regionsShow(params, pluginId) {
   if (!params || typeof params.imageDataUrl !== "string" || !params.imageDataUrl) {
     return { ok: false, reason: "no-image" };
@@ -2054,20 +2135,45 @@ function regionsShow(params, pluginId) {
   const display = displayFor(params);
   if (!display) return { ok: false, reason: "no-display" };
   const id = typeof params.id === "string" && params.id ? params.id : `regions-${Date.now()}`;
-  destroyRegions();
+  const bounds = regionsBounds(display, params);
+
+  // Reuse + resize an existing card window for show/update.
+  if (regionsWin && !regionsWin.isDestroyed()) {
+    try {
+      regionsWin.setBounds(bounds);
+      regionsWin.setAlwaysOnTop(true, REGIONS_LEVEL);
+    } catch {
+      // ignore
+    }
+    regionsState = { pluginId: pluginId || "", id, displayId: display.id };
+    attachRegionsEsc(regionsWin);
+    armRegionsEsc();
+    try {
+      regionsWin.webContents.send("subtr:host-regions-init", { ...params, id });
+    } catch {
+      // ignore
+    }
+    ensureOverlayOnTop();
+    try {
+      regionsWin.showInactive();
+    } catch {
+      // ignore
+    }
+    return { ok: true, id, reused: true };
+  }
+
   const win = new BrowserWindow({
-    x: display.bounds.x,
-    y: display.bounds.y,
-    width: display.bounds.width,
-    height: display.bounds.height,
+    ...bounds,
     frame: false,
     transparent: true,
     resizable: false,
-    movable: false,
+    movable: true,
     hasShadow: false,
+    roundedCorners: true,
     skipTaskbar: true,
     alwaysOnTop: true,
     fullscreenable: false,
+    maximizable: false,
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -2078,8 +2184,11 @@ function regionsShow(params, pluginId) {
   });
   regionsWin = win;
   regionsState = { pluginId: pluginId || "", id, displayId: display.id };
+  attachRegionsEsc(win);
+  armRegionsEsc();
   try {
-    win.setAlwaysOnTop(true, "screen-saver");
+    // Below the overlay: the subtitle caption must stay visible over the card.
+    win.setAlwaysOnTop(true, REGIONS_LEVEL);
   } catch {
     // ignore
   }
@@ -2088,6 +2197,7 @@ function regionsShow(params, pluginId) {
       regionsWin = null;
       regionsState = null;
     }
+    disarmRegionsEsc();
   });
   win.webContents.on("did-finish-load", () => {
     try {
@@ -2096,6 +2206,7 @@ function regionsShow(params, pluginId) {
       // ignore
     }
     win.showInactive();
+    ensureOverlayOnTop();
   });
   void win.loadFile(path.join(__dirname, "host-regions.html"));
   return { ok: true, id };
@@ -2103,11 +2214,23 @@ function regionsShow(params, pluginId) {
 
 function regionsUpdate(params) {
   if (!regionsWin || regionsWin.isDestroyed()) return { ok: false, reason: "not-open" };
+  // Re-size the card if the image size changed.
+  if (params && (Number(params.widthPx) > 0 || Number(params.heightPx) > 0)) {
+    const display = displayFor({ displayId: regionsState ? regionsState.displayId : undefined });
+    if (display) {
+      try {
+        regionsWin.setBounds(regionsBounds(display, params));
+      } catch {
+        // ignore
+      }
+    }
+  }
   try {
     regionsWin.webContents.send("subtr:host-regions-update", params || {});
   } catch {
     return { ok: false, reason: "error" };
   }
+  ensureOverlayOnTop();
   return { ok: true };
 }
 
@@ -2121,6 +2244,66 @@ function destroyRegions() {
   }
   regionsWin = null;
   regionsState = null;
+  disarmRegionsEsc();
+}
+
+/**
+ * Dismiss the regions card. Escape must work even though the card is shown with
+ * `showInactive()` (it usually has no keyboard focus, so a page-level `keydown`
+ * never fires). Two paths cover both cases:
+ *   - `before-input-event` on its webContents (used when the window has focus),
+ *   - a one-shot global Escape armed while the card is open (no focus needed).
+ */
+function onRegionsEsc() {
+  if (!regionsWin || regionsWin.isDestroyed()) return false;
+  const st = regionsState;
+  if (st && st.pluginId) {
+    // Let the plugin clear its subtitle. Deliberately do NOT also send the
+    // overlay's own `subtr:esc` here — that would double-fire with voice/subtitle
+    // Esc handling. (The plugin's dismiss handler runs subtitle.clear().)
+    void forwardPluginEvent(st.pluginId, { type: "region.dismiss", id: st.id, reason: "esc" });
+  }
+  destroyRegions();
+  return true;
+}
+
+/** Attach the Escape hook to a regions window (idempotent per window). */
+function attachRegionsEsc(win) {
+  if (!win || win.isDestroyed() || win.__subtrEscHooked) return;
+  win.__subtrEscHooked = true;
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input && input.type === "keyDown" && input.key === "Escape") {
+      event.preventDefault();
+      onRegionsEsc();
+    }
+  });
+}
+
+/** Arm the global Escape for the regions card (skipped if the overlay owns it). */
+function armRegionsEsc() {
+  if (regionsEscArmed) return;
+  if (globalShortcut.isRegistered("Escape")) return;
+  try {
+    if (globalShortcut.register("Escape", onRegionsEsc)) {
+      regionsEscArmed = true;
+      console.log("[esc] regions Escape armed");
+    } else {
+      console.warn("[esc] failed to register regions Escape");
+    }
+  } catch (error) {
+    console.warn("[esc] regions registration error:", error && error.message ? error.message : error);
+  }
+}
+
+/** Release the regions Escape (no-op when we never owned it). */
+function disarmRegionsEsc() {
+  if (!regionsEscArmed) return;
+  try {
+    globalShortcut.unregister("Escape");
+  } catch {
+    // ignore
+  }
+  regionsEscArmed = false;
 }
 
 /** Plugin subtitle: rendered through the overlay's plugin-text path. */
@@ -2441,6 +2624,7 @@ function onEscFired() {
 /** Register a global Escape (idempotent). */
 function armEsc() {
   if (escArmed) return;
+  if (regionsEscArmed) return; // the regions card owns Escape while it is open
   try {
     const ok = globalShortcut.register("Escape", onEscFired);
     if (!ok) {
@@ -2826,6 +3010,29 @@ async function start() {
     globalThis.__subtrHostCap = (cap, params) => dispatchHostCap(cap, params, "caps-demo");
     globalThis.__subtrBridgeInfo = () => ({ url: hostBridge.url, token: hostBridge.token });
     globalThis.__subtrPluginHotkeys = () => [...pluginHotkeys.keys()];
+    // Window stacking / geometry introspection (regions vs overlay).
+    globalThis.__subtrWindowLevels = () => ({
+      overlayLevel: OVERLAY_LEVEL,
+      regionsLevel: REGIONS_LEVEL,
+      overlayAlwaysOnTop: !!(
+        overlayWindow &&
+        !overlayWindow.isDestroyed() &&
+        overlayWindow.isAlwaysOnTop()
+      ),
+      overlayVisible: !!(overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()),
+      regionsOpen: !!(regionsWin && !regionsWin.isDestroyed()),
+      regionsAlwaysOnTop: !!(
+        regionsWin &&
+        !regionsWin.isDestroyed() &&
+        regionsWin.isAlwaysOnTop()
+      ),
+      regionsBounds: regionsWin && !regionsWin.isDestroyed() ? regionsWin.getBounds() : null,
+      workArea: screen.getPrimaryDisplay().workArea,
+      regionsEscArmed,
+      regionsFocused: !!(regionsWin && !regionsWin.isDestroyed() && regionsWin.isFocused()),
+    });
+    // Fire the regions Escape handler (same entry point the global Esc uses).
+    globalThis.__subtrRegionsEsc = () => onRegionsEsc();
     // Fire a registered plugin hotkey handler directly (respects the `when` gate).
     globalThis.__subtrFirePluginHotkey = (accel) => {
       const rec = pluginHotkeys.get(accel);

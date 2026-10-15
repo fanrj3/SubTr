@@ -30,6 +30,7 @@ extraResources:
     filter:
       - "**/*"
 mac:
+  icon: build/icon.icns
   target:
     - target: dmg
       arch:
@@ -42,11 +43,13 @@ mac:
       SubTr captures system audio to transcribe it locally and display translated
       subtitles.
 win:
+  icon: build/icon.png
   target:
     - target: nsis
       arch:
         - x64
 linux:
+  icon: build/icon.png
   target:
     - AppImage
   category: Utility

@@ -6,44 +6,131 @@
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
-      body { font: 12px -apple-system, system-ui, sans-serif; }
-      #shot { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+      body {
+        font: 12px -apple-system, system-ui, sans-serif;
+        color: rgba(255, 255, 255, 0.92);
+        outline: none;
+      }
+      #card {
+        position: absolute; inset: 0;
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+        background: rgba(12, 12, 16, 0.55);
+        backdrop-filter: blur(2px);
+      }
+      #header {
+        position: absolute; top: 0; left: 0; right: 0; height: 30px;
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 8px; padding: 0 8px 0 12px;
+        background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.18));
+        -webkit-app-region: drag;
+      }
+      #hint {
+        min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-size: 11px; letter-spacing: 0.01em; opacity: 0.8;
+      }
+      #close {
+        -webkit-app-region: no-drag;
+        flex: 0 0 auto; width: 20px; height: 20px; border-radius: 6px;
+        border: 0; cursor: pointer; color: #fff; font-size: 13px; line-height: 20px;
+        background: rgba(255, 255, 255, 0.14);
+      }
+      #close:hover { background: rgba(255, 255, 255, 0.26); }
+      #stage { position: absolute; inset: 30px 0 0 0; }
+      #shot {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        object-fit: contain; object-position: center;
+        display: block; user-select: none; -webkit-user-drag: none;
+      }
+      #overlay { position: absolute; }
       .box {
         position: absolute; border-radius: 4px; cursor: pointer;
-        transition: background-color 90ms ease, box-shadow 90ms ease;
+        transition: background-color 90ms ease, box-shadow 90ms ease, border-color 90ms ease;
       }
-      .box.glow { box-shadow: 0 0 0 1.5px rgba(255,255,255,.25), 0 0 10px 2px var(--accent); }
-      .box.glow:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
-      .box.boxstyle { border: 2px solid var(--accent); }
-      .box.boxstyle:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
-      .box.underline { border-bottom: 3px solid var(--accent); }
-      .box.underline:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+      /* Live-Text style highlights: readable over light and dark image content. */
+      .box.glow {
+        box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.55),
+                    0 0 0 3px color-mix(in srgb, var(--accent) 85%, transparent),
+                    0 0 14px 3px color-mix(in srgb, var(--accent) 60%, transparent);
+      }
+      .box.boxstyle { box-shadow: 0 0 0 2.5px var(--accent), 0 0 0 4px rgba(255, 255, 255, 0.35); }
+      .box.underline {
+        box-shadow: inset 0 -4px 0 0 var(--accent), 0 0 0 1.5px rgba(255, 255, 255, 0.35);
+      }
+      .box:hover {
+        background: color-mix(in srgb, var(--accent) 26%, transparent);
+      }
+      .box.selected {
+        background: color-mix(in srgb, var(--accent) 38%, transparent);
+        box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--accent), 0 0 18px 4px color-mix(in srgb, var(--accent) 70%, transparent);
+      }
       .badge {
-        position: absolute; top: -9px; left: -9px; min-width: 16px; height: 16px;
-        padding: 0 3px; border-radius: 8px; background: var(--accent); color: #fff;
-        font-size: 10px; line-height: 16px; text-align: center; font-weight: 600;
+        position: absolute; top: -11px; left: -11px; min-width: 20px; height: 20px;
+        padding: 0 5px; border-radius: 10px; background: var(--accent); color: #fff;
+        font-size: 12px; line-height: 20px; text-align: center; font-weight: 700;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55), 0 0 0 1.5px rgba(255, 255, 255, 0.6);
       }
     </style>
   </head>
-  <body>
-    <img id="shot" alt="" />
+  <body tabindex="-1">
+    <div id="card">
+      <div id="header">
+        <span id="hint"></span>
+        <button id="close" type="button" title="Close">×</button>
+      </div>
+      <div id="stage">
+        <img id="shot" alt="" />
+        <div id="overlay"></div>
+      </div>
+    </div>
     <script>
+      const card = document.getElementById("card");
+      const stage = document.getElementById("stage");
       const shot = document.getElementById("shot");
+      const overlay = document.getElementById("overlay");
+      const hint = document.getElementById("hint");
+      const closeBtn = document.getElementById("close");
+
       let state = { id: "", boxes: [], style: {}, interactive: true };
       let hovered = null;
+      let selected = null;
 
       function emit(ev) { window.subtrHost.regionEvent(ev); }
 
+      /** Size the highlight layer to the displayed (contained) image rect. */
+      function layout() {
+        const sw = stage.clientWidth;
+        const sh = stage.clientHeight;
+        const nw = shot.naturalWidth || 1;
+        const nh = shot.naturalHeight || 1;
+        if (!sw || !sh || !nw || !nh) return;
+        const scale = Math.min(sw / nw, sh / nh);
+        const w = nw * scale;
+        const h = nh * scale;
+        overlay.style.left = (sw - w) / 2 + "px";
+        overlay.style.top = (sh - h) / 2 + "px";
+        overlay.style.width = w + "px";
+        overlay.style.height = h + "px";
+      }
+
       function render() {
-        shot.src = state.imageDataUrl || "";
-        for (const el of [...document.querySelectorAll(".box")]) el.remove();
-        const accent = (state.style && state.style.accent) || "#4da3ff";
+        const accent = (state.style && state.style.accent) || "#4f46e5";
         const hl = (state.style && state.style.highlight) || "glow";
-        const numbered = !state.style || state.style.numbered !== false;
+        // Numbers are opt-in: only render when the host explicitly asks for them.
+        const numbered = !!(state.style && state.style.numbered === true);
         document.documentElement.style.setProperty("--accent", accent);
+        hint.textContent =
+          state.sourceHint || state.hint || "1–9 select · Esc to close";
+
+        for (const el of [...overlay.querySelectorAll(".box")]) el.remove();
+
         state.boxes.forEach((b, i) => {
           const el = document.createElement("div");
-          el.className = "box " + (hl === "box" ? "boxstyle" : hl === "underline" ? "underline" : "glow");
+          el.className =
+            "box " + (hl === "box" ? "boxstyle" : hl === "underline" ? "underline" : "glow") +
+            (selected === b.id ? " selected" : "");
           el.style.left = (b.xPct * 100) + "%";
           el.style.top = (b.yPct * 100) + "%";
           el.style.width = (b.wPct * 100) + "%";
@@ -68,33 +155,66 @@
           });
           el.addEventListener("click", (e) => {
             e.stopPropagation();
+            selected = b.id;
             emit({ type: "select", id: state.id, boxId: b.id, index: i + 1 });
+            render();
           });
-          document.body.appendChild(el);
+          overlay.appendChild(el);
         });
       }
 
+      closeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        emit({ type: "dismiss", id: state.id, reason: "close" });
+      });
+
+      // Click on the image area (outside a box) dismisses.
+      card.addEventListener("click", () => emit({ type: "dismiss", id: state.id, reason: "click-away" }));
+
       window.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") { emit({ type: "dismiss", id: state.id, reason: "esc" }); return; }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          emit({ type: "dismiss", id: state.id, reason: "esc" });
+          return;
+        }
         const n = Number(e.key);
         if (Number.isInteger(n) && n >= 1 && n <= 9 && state.boxes[n - 1]) {
+          selected = state.boxes[n - 1].id;
           emit({ type: "select", id: state.id, boxId: state.boxes[n - 1].id, index: n });
+          render();
         }
       });
-      document.addEventListener("click", () => emit({ type: "dismiss", id: state.id, reason: "click-away" }));
+
+      shot.addEventListener("load", layout);
+      window.addEventListener("resize", layout);
+
+      function focusPage() {
+        try { window.focus(); } catch (e) {}
+        try { document.body.focus(); } catch (e) {}
+      }
 
       window.subtrHost.onRegionsInit((payload) => {
         state = { ...state, ...payload, boxes: payload.boxes || [], style: payload.style || {} };
+        selected = null;
+        if (payload.imageDataUrl) shot.src = payload.imageDataUrl;
         render();
-        // Scripted hover (SUBTR_TEST): emit a hover for a named box after render.
+        requestAnimationFrame(layout);
+        focusPage();
         if (payload.testHoverId) {
           setTimeout(() => emit({ type: "hover", id: state.id, boxId: payload.testHoverId }), 60);
         }
       });
+
       window.subtrHost.onRegionsUpdate?.((payload) => {
         if (payload.boxes) state.boxes = payload.boxes;
         if (payload.style) state.style = { ...state.style, ...payload.style };
         render();
+        requestAnimationFrame(layout);
+      });
+
+      window.addEventListener("load", () => {
+        focusPage();
+        layout();
       });
     </script>
   </body>

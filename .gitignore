@@ -19,6 +19,7 @@
 
 # production
 /build
+!build/icon.svg
 
 # electron-builder output
 /dist/
