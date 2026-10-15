@@ -16,7 +16,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | **0.2.1** | `66af67f` | Settings page, profiles v2, thinking control, subtitle customization |
 | **0.2.2** | `4c10810` · docs `0efc776` | Theme + UI language, compact window, position player |
 | **0.2.3** | `cb855ca` · docs `3650ab3` | Native theme, display-aspect preview, Test button, fade-out, caps, capture handshake |
-| **0.2.8** | *(release commit)* | Home widgets below reader, scroll isolation, position layout, plugin kit + preview, tray usage, voice (Beta) phase 1 |
+| **0.2.8** | `bfef0e6` | Home widgets below reader, scroll isolation, position layout, plugin kit + preview, tray usage, voice (Beta) phase 1 |
 | **0.2.7** | `7fe1bf1` | Settings refactor (nav rail + setting rows), Base UI primitives, DESIGN.md |
 | **0.2.6** | `c4260d8` | Usage-stats plugin, panel capability, settings polish |
 | **0.2.5** | `34d13b5` | Plugins v1, cost meter + status bar, encrypted config export/import, player polish |
@@ -68,13 +68,13 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | Plugin home widgets + `location` split (settings vs home) | 0.2.6 | `44de54e` | `src/components/home-widgets.tsx`, `src/components/plugin-panel-frame.tsx`, `location`/`visiblePanels` in `src/lib/server/plugins.ts` |
 | Settings shell refactor (grouped nav rail + row primitive + sticky pane) | 0.2.7 | `7fe1bf1` | `src/app/settings/page.tsx`, `src/components/settings-ui.tsx`, `DESIGN.md` |
 | Base UI primitives adopted (Tabs/Switch/Slider/Select/Dialog/Collapsible) | 0.2.7 | `7fe1bf1` | `package.json`, `src/components/settings-ui.tsx` |
-| Plugin home widgets below the reader (full width, collapsible) | 0.2.8 | *(release commit)* | `src/components/home-widgets.tsx`, `src/components/subtr-app.tsx` |
-| Settings scroll isolation (pane-only scroll, independent rail) | 0.2.8 | *(release commit)* | `src/app/settings/page.tsx`, `DESIGN.md` |
-| Position player responsive rows + breakpoints | 0.2.8 | *(release commit)* | `src/components/position-player.tsx` |
-| Plugin kit (`/plugin-kit/panel.css`) + panel preview (live theme) | 0.2.8 | *(release commit)* | `public/plugin-kit/panel.css`, `src/app/panel-preview/`, `src/components/panel-preview.tsx` |
-| Usage-stats panel redesign on the kit | 0.2.8 | *(release commit)* | `examples/plugins/usage-stats/panel.html` |
-| Tray usage menu + 838×556 default window | 0.2.8 | *(release commit)* | `desktop/main.cjs` |
-| Voice→subtitles Beta phase 1 (loopback capture + whisper.cpp + 2-pass commit + overlay) | 0.2.8 | *(release commit)* | `desktop/voice-*.cjs`, `src/lib/client/voice/`, `desktop/main.cjs` |
+| Plugin home widgets below the reader (full width, collapsible) | 0.2.8 | `bfef0e6` | `src/components/home-widgets.tsx`, `src/components/subtr-app.tsx` |
+| Settings scroll isolation (pane-only scroll, independent rail) | 0.2.8 | `bfef0e6` | `src/app/settings/page.tsx`, `DESIGN.md` |
+| Position player responsive rows + breakpoints | 0.2.8 | `bfef0e6` | `src/components/position-player.tsx` |
+| Plugin kit (`/plugin-kit/panel.css`) + panel preview (live theme) | 0.2.8 | `bfef0e6` | `public/plugin-kit/panel.css`, `src/app/panel-preview/`, `src/components/panel-preview.tsx` |
+| Usage-stats panel redesign on the kit | 0.2.8 | `bfef0e6` | `examples/plugins/usage-stats/panel.html` |
+| Tray usage menu + 838×556 default window | 0.2.8 | `bfef0e6` | `desktop/main.cjs` |
+| Voice→subtitles Beta phase 1 (loopback capture + whisper.cpp + 2-pass commit + overlay) | 0.2.8 | `bfef0e6` | `desktop/voice-*.cjs`, `src/lib/client/voice/`, `desktop/main.cjs` |
 
 ---
 
