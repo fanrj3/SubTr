@@ -87,7 +87,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | 0.2.9 follow-up 2: settings rows full-width result slot (test connection) | 0.2.9 | `0b88a24` | `src/components/settings-ui.tsx`, `src/app/settings/page.tsx` |
 | 0.2.9 follow-up 3: continuous voice captions (growing utterance buffer + in-place overlay updates) | 0.2.9 | `8538ddd` | `desktop/voice-pipeline.cjs`, `desktop/main.cjs`, `src/app/overlay/page.tsx`, `src/components/subtitle-overlay.tsx` |
 | 0.2.9 follow-up 4: rolling voice transcript (never-dismiss lines, stop signal) | 0.2.9 | `80dcf6d` | `desktop/main.cjs`, `src/app/overlay/page.tsx`, `src/components/subtitle-overlay.tsx` |
-| 0.2.9 follow-up 5: two-zone stable captions (append-only transcript + frozen/tentative translations) | 0.2.9 | `PENDING_HASH5` | `src/app/overlay/page.tsx`, `src/components/subtitle-overlay.tsx` |
+| 0.2.9 follow-up 5: two-zone stable captions (append-only transcript + frozen/tentative translations) | 0.2.9 | ``ec07ebb`` | `src/app/overlay/page.tsx`, `src/components/subtitle-overlay.tsx` |
 
 ---
 
