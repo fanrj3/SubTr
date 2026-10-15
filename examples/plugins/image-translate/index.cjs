@@ -22,29 +22,50 @@ const VISION_SRC = path.join(PLUGIN_DIR, "vision-ocr.swift");
 const VISION_BIN = path.join(PLUGIN_DIR, "bin", "vision-ocr");
 const VISION_STAMP = path.join(PLUGIN_DIR, "bin", ".build.json");
 
+const CONFIG_VERSION = 2;
 const DEFAULT_CONFIG = {
   engine: "auto", // "auto" | "vision" (PP-OCRv6 is a later phase)
   accelerator: "CommandOrControl+Shift+P",
   when: "translation-mode",
   targetLang: "auto",
   highlight: "glow", // "glow" | "box" | "underline"
-  numbered: true,
+  numbered: false, // numbers are OPT-IN (badges off by default)
   autoTranslate: true,
 };
 
 // --- config (plugin owns its folder) ---------------------------------------
 
 function loadConfig() {
+  let raw = null;
   try {
-    const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
-    return { ...DEFAULT_CONFIG, ...(raw && typeof raw === "object" ? raw : {}) };
+    raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
   } catch {
-    return { ...DEFAULT_CONFIG };
+    raw = null;
   }
+  if (!raw || typeof raw !== "object") {
+    return { ...DEFAULT_CONFIG, configVersion: CONFIG_VERSION };
+  }
+  const merged = { ...DEFAULT_CONFIG, ...raw, configVersion: CONFIG_VERSION };
+  // Migrate pre-v2 files: `numbered:true` was the OLD default (badges on for
+  // everyone). Only files without a version stamp are treated that way, so an
+  // explicit value written after this migration is respected.
+  if (raw.configVersion === undefined && raw.numbered === true) {
+    merged.numbered = false;
+    try {
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify(merged, null, 2));
+    } catch {
+      // ignore
+    }
+  }
+  return merged;
 }
 
 function saveConfig(next) {
-  const merged = { ...DEFAULT_CONFIG, ...(next && typeof next === "object" ? next : {}) };
+  const merged = {
+    ...DEFAULT_CONFIG,
+    ...(next && typeof next === "object" ? next : {}),
+    configVersion: CONFIG_VERSION,
+  };
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(merged, null, 2));
   return merged;
 }
@@ -181,7 +202,7 @@ function testImageShot() {
 
 async function activate(api) {
   let cfg = loadConfig();
-  const state = { sessionId: null, boxes: [], translations: new Map(), hovered: null };
+  const state = { sessionId: null, boxes: [], translations: new Map(), hovered: null, translateError: null };
   const translationCache = new Map(); // text → translation (across sessions)
 
   api.log.info(`image-translate ${api.plugin.version} activating`);
@@ -208,6 +229,7 @@ async function activate(api) {
   }
 
   async function pretranslate(boxes) {
+    state.translateError = null;
     const pending = boxes.filter((b) => !translationCache.has(b.text));
     for (const group of chunk(pending, 8)) {
       let res;
@@ -224,9 +246,15 @@ async function activate(api) {
           const src = group[i];
           if (src && t && typeof t.text === "string") translationCache.set(src.text, t.text);
         });
-      } else if (res && res.reason === "no-profile") {
-        await showError("Add a profile to translate.");
-        return;
+      } else {
+        // Record why so hover can degrade visibly and the status panel can show it.
+        const reason = res && res.reason ? res.reason : "error";
+        state.translateError = { reason, message: res && res.message ? res.message : undefined };
+        record({ type: "translate.error", reason, message: state.translateError.message });
+        if (reason === "no-profile") {
+          await showError("Add a profile to translate.");
+        }
+        break;
       }
     }
     for (const b of boxes) {
@@ -237,8 +265,22 @@ async function activate(api) {
       type: "translated",
       ready: state.translations.size,
       total: boxes.length,
+      error: state.translateError,
       translations: boxes.map((b) => translationCache.get(b.text) || null),
     });
+  }
+
+  /** The subtitle text/tone for a box, degrading visibly instead of stalling. */
+  function subtitleForBox(boxId) {
+    const t = state.translations.get(boxId);
+    if (t) return { text: t, tone: "normal" };
+    const box = state.boxes.find((b) => b.id === boxId);
+    if (state.translateError) {
+      const src = box && box.text ? `${box.text} · ` : "";
+      const detail = state.translateError.reason === "no-profile" ? "" : " · Translation unavailable";
+      return { text: `${src}翻译暂不可用${detail}`, tone: "muted" };
+    }
+    return { text: "Translating…", tone: "muted" };
   }
 
   async function runCapture() {
@@ -322,15 +364,15 @@ async function activate(api) {
       return;
     }
     state.hovered = e.boxId;
-    const t = state.translations.get(e.boxId);
-    record({ type: "hover", boxId: e.boxId, subtitle: t || "Translating…" });
-    void api.overlay.subtitle.show({ text: t || "Translating…", tone: t ? "normal" : "muted" });
+    const s = subtitleForBox(e.boxId);
+    record({ type: "hover", boxId: e.boxId, subtitle: s.text });
+    void api.overlay.subtitle.show(s);
   });
   api.overlay.regions.onRegionSelect((e) => {
     if (!e || !e.boxId) return;
-    const t = state.translations.get(e.boxId);
-    record({ type: "select", boxId: e.boxId, index: e.index, subtitle: t || "Translating…" });
-    void api.overlay.subtitle.show({ text: t || "Translating…" });
+    const s = subtitleForBox(e.boxId);
+    record({ type: "select", boxId: e.boxId, index: e.index, subtitle: s.text });
+    void api.overlay.subtitle.show(s);
   });
   api.overlay.regions.onRegionDismiss((e) => {
     state.sessionId = null;
@@ -359,6 +401,10 @@ async function activate(api) {
         config: cfg,
         engine: cfg.engine,
         hotkey: { accelerator: cfg.accelerator, when: cfg.when, registered: !!(hotkey && hotkey.ok) },
+        // True when a capture is on screen; lastTranslateError explains a failed
+        // pre-translation (surfaced instead of a stuck "Translating…").
+        active: !!state.sessionId,
+        lastTranslateError: state.translateError || null,
         vision: {
           built: vision.ok === true,
           version: vision.ok ? vision.version : null,

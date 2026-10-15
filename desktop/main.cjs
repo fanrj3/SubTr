@@ -2494,16 +2494,37 @@ async function pluginTranslate(params) {
   const translations = [];
   for (const text of texts) {
     try {
+      // Use the STREAMING route path (the same one normal translation uses): the
+      // route de-frames the upstream SSE into raw text, so this works against
+      // both streaming and non-streaming providers. `stream:false` relies on the
+      // upstream returning JSON, which fails for streaming-only/reasoning
+      // providers ("Upstream returned an empty translation").
       const res = await fetch(`${appBaseUrl}/api/translate`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text, targetLang, config, stream: false }),
+        body: JSON.stringify({ text, targetLang, config, stream: true }),
       });
-      if (!res.ok) return { ok: false, reason: "upstream", message: `HTTP ${res.status}` };
-      const data = await res.json();
-      translations.push({
-        text: typeof data.translation === "string" ? data.translation : text,
-      });
+      if (!res.ok) {
+        let message = `HTTP ${res.status}`;
+        try {
+          const err = await res.json();
+          if (err && typeof err.error === "string") message = err.error;
+        } catch {
+          // keep the status message
+        }
+        return { ok: false, reason: "upstream", message };
+      }
+      // The route streams raw text (text/plain); read the whole body. Fall back
+      // to a JSON `{ translation }` body if a non-streaming response ever arrives.
+      const bodyText = await res.text();
+      let value = bodyText;
+      try {
+        const parsed = JSON.parse(bodyText);
+        if (parsed && typeof parsed.translation === "string") value = parsed.translation;
+      } catch {
+        // plain text body — use as-is
+      }
+      translations.push({ text: value && value.trim() ? value : text });
     } catch (error) {
       return {
         ok: false,

@@ -182,7 +182,7 @@ api.overlay.regions.show(payload: {
   style?: {
     highlight?: "glow" | "box" | "underline"; // default "glow" (Live Text look)
     accent?: string;                     // CSS color; default app accent
-    numbered?: boolean;                  // draw 1..9 badges; default true
+    numbered?: boolean;                  // draw 1..9 badges; default false (opt-in)
   };
   interactive?: boolean;                 // default true
 }): Promise<{ ok: true; id: string } | { ok: false; reason: string }>;
@@ -460,7 +460,7 @@ preview URL once the host serves it: `/panel-preview/image-translate/settings?de
   "when": "translation-mode",       // "translation-mode" | "always"
   "targetLang": "auto",             // follows the app when "auto"
   "highlight": "glow",              // "glow" | "box" | "underline"
-  "numbered": true,
+  "numbered": false,
   "autoTranslate": true,            // pre-translate boxes after OCR
   "modelMirrorOrder": ["hf", "hf-mirror", "modelscope", "paddlex-bos"]
 }
