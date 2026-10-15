@@ -1414,6 +1414,27 @@ function sendVoiceStop() {
   return true;
 }
 
+/**
+ * Close the open utterance: send a terminal `close` payload with the best known
+ * complete text, then reset the committer + ring so the next utterance starts
+ * clean (new id, fresh buffer). Idempotent when no utterance is open.
+ * @param {string} reason diagnostic label
+ * @param {string} [textOverride] complete text to finalize with (silence path)
+ * @returns {boolean} true when an utterance was actually closed
+ */
+function closeUtterance(reason, textOverride) {
+  const openId = voiceUtteranceId;
+  const text = textOverride || (voiceCommitter ? voiceCommitter.finalizeText() : "");
+  if (openId) {
+    if (text) deliverVoiceCaption(text, { close: true });
+    console.log(`[voice] utterance closed (${reason}): ${openId}`);
+  }
+  voiceUtteranceId = null;
+  if (voiceCommitter) voiceCommitter.reset();
+  if (voiceRing) voiceRing.clear();
+  return !!openId;
+}
+
 /** Commit hook (also used by the SUBTR_TEST feed driver). */
 function forwardVoiceCommit(text) {
   return deliverVoiceCaption(text);
@@ -1440,13 +1461,8 @@ async function runVoicePass() {
       if (result && result.ended) {
         // Close the open utterance with the complete text (finalizeText may add
         // trailing words the stable-prefix rule hadn't agreed on yet). The next
-        // utterance gets a fresh id; the overlay hides on its own idle timeout.
-        if (voiceUtteranceId) {
-          deliverVoiceCaption(result.ended, { close: true });
-          console.log(`[voice] pass#${pass} silence → utterance closed: ${voiceUtteranceId}`);
-          voiceUtteranceId = null;
-        }
-        voiceRing.clear(); // next utterance starts from a clean buffer
+        // utterance gets a fresh id; the overlay keeps it in the rolling buffer.
+        closeUtterance("silence", result.ended);
       } else if (!voiceUtteranceId) {
         // No open utterance: drop accumulated silence, keep a short tail only.
         const keep = voiceRing.takeLast(gateSamples);
@@ -1470,35 +1486,31 @@ async function runVoicePass() {
     const bufSec = samples.length / voicePipeline.VOICE_SAMPLE_RATE;
     voiceLastTranscript = voicePipeline.normalizeTranscript(raw);
     const result = voiceCommitter.feed(raw);
-    if (!result || !result.committed) {
+    if (result && result.committed) {
+      voiceCommitCount += 1;
+      voiceLastCommit = result.committed;
+      voiceLastCommitAt = Date.now();
+      console.log(
+        `[voice] pass#${pass} stt=${sttMs}ms buf=${bufSec.toFixed(1)}s committed="${result.committed}" (+${result.delta})`,
+      );
+      // Deliver the growing committed text as soon as this pass extends it
+      // (dedupe inside deliverVoiceCaption drops unchanged repeats).
+      deliverVoiceCaption(result.committed);
+    } else {
       console.log(
         `[voice] pass#${pass} stt=${sttMs}ms buf=${bufSec.toFixed(1)}s "${voiceLastTranscript}" (no growth)`,
       );
-      return;
     }
-    voiceCommitCount += 1;
-    voiceLastCommit = result.committed;
-    voiceLastCommitAt = Date.now();
-    console.log(
-      `[voice] pass#${pass} stt=${sttMs}ms buf=${bufSec.toFixed(1)}s committed="${result.committed}" (+${result.delta})`,
-    );
-    // Deliver the growing committed text as soon as this pass extends it
-    // (dedupe inside deliverVoiceCaption drops unchanged repeats).
-    deliverVoiceCaption(result.committed);
 
-    // Cap the utterance so the buffer/transcript stay bounded on long speech:
-    // force-close and restart with a fresh utterance id.
+    // Cap check on EVERY pass (independent of whether this pass grew): force-close
+    // and restart once the utterance reaches the cap, so a full buffer can never
+    // freeze the pipeline. The ring holds cap + slack, so it never slides before
+    // this fires.
     const capSamples = Math.round(
       (voicePipeline.VOICE_SAMPLE_RATE * voicePipeline.VOICE_UTTERANCE_MAX_MS) / 1000,
     );
     if (voiceRing.size >= capSamples) {
-      if (voiceUtteranceId) {
-        deliverVoiceCaption(result.committed, { close: true });
-        voiceUtteranceId = null;
-      }
-      voiceCommitter.reset();
-      voiceRing.clear();
-      console.log(`[voice] pass#${pass} utterance capped at ${voicePipeline.VOICE_UTTERANCE_MAX_MS}ms → restart`);
+      closeUtterance("cap");
     }
   } catch (error) {
     console.warn(
@@ -1572,7 +1584,9 @@ async function startVoice() {
   }
 
   const maxSamples = Math.round(
-    (voicePipeline.VOICE_SAMPLE_RATE * voicePipeline.VOICE_UTTERANCE_MAX_MS) / 1000,
+    (voicePipeline.VOICE_SAMPLE_RATE *
+      (voicePipeline.VOICE_UTTERANCE_MAX_MS + voicePipeline.VOICE_UTTERANCE_SLACK_MS)) /
+      1000,
   );
   voiceRing = new voicePipeline.PcmRingBuffer(maxSamples);
   voiceCommitter = new voicePipeline.VoiceCommitter();

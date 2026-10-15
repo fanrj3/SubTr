@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Image Translate</title>
+<!-- Shared plugin UI kit: native-looking cards, rows, badges, states. -->
+<link rel="stylesheet" href="/plugin-kit/panel.css" />
+<style>
+  /* Local polish only — the kit carries the theme, spacing and controls. */
+  .app { display: flex; flex-direction: column; gap: 14px; }
+  .app-head { align-items: flex-start; }
+  .app-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .app-sub { margin: 2px 0 0; font-size: 11px; color: var(--pk-muted); max-width: 46ch; }
+
+  /* Setting-row label block: title + muted description, control on the right. */
+  .row-label { min-width: 0; }
+  .row-title { font-size: 13px; font-weight: 500; }
+  .row-desc { margin: 1px 0 0; font-size: 11px; color: var(--pk-muted); max-width: 40ch; }
+  .row-ctl { flex: 0 0 auto; }
+
+  /* Shortcut display as key chips. */
+  .keys { display: inline-flex; gap: 4px; }
+  .key {
+    min-width: 24px; height: 24px; padding: 0 7px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--pk-border-strong);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    background: var(--pk-surface);
+    font-size: 12px; font-weight: 600; line-height: 1;
+  }
+  .keys-sep { align-self: center; font-size: 11px; color: var(--pk-faint); }
+
+  /* Highlight-style preview strip. */
+  .hl-preview { display: flex; gap: 6px; margin-top: 10px; }
+  .hl-chip {
+    height: 26px; display: inline-flex; align-items: center; justify-content: center;
+    padding: 0 10px; border-radius: 5px;
+    background: color-mix(in srgb, var(--pk-accent) 14%, transparent);
+    font-size: 10px; font-weight: 600; letter-spacing: 0.02em;
+    color: var(--pk-fg);
+  }
+  .hl-preview[data-style="glow"] .hl-chip {
+    background: color-mix(in srgb, var(--pk-accent) 22%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--pk-accent) 16%, transparent);
+  }
+  .hl-preview[data-style="box"] .hl-chip {
+    background: transparent;
+    border: 1.5px solid var(--pk-accent);
+  }
+  .hl-preview[data-style="underline"] .hl-chip {
+    background: transparent;
+    border-radius: 0;
+    box-shadow: inset 0 -2px 0 var(--pk-accent);
+  }
+
+  .note { margin: 0; font-size: 11px; color: var(--pk-muted); }
+  .note b { color: var(--pk-fg); font-weight: 600; }
+  .feedback { min-height: 16px; font-size: 11px; color: var(--pk-success); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <div class="app" id="view"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ======================================================================
+     Image Translate — settings panel SHELL (phase P0).
+
+     Renders from the static CONFIG object below. Every interactive control is
+     local-only and marked TODO; there are no real host hooks yet. The planned
+     calls are written next to each TODO and match README.md ("Settings panel").
+
+     Preview states without enabling the plugin (once the host serves it):
+       /panel-preview/image-translate/settings?demo=loading|empty|error
+     ====================================================================== */
+
+  // TODO(P2): replace with api.storage.get("settings", CONFIG) when the
+  // `storage.plugin` capability lands; until then this is the source of truth.
+  var CONFIG = {
+    engine: "auto",                          // "auto" | "vision" | "ppocrv6"
+    accelerator: "CommandOrControl+Shift+P", // default global shortcut
+    highlight: "glow",                       // "glow" | "box" | "underline"
+    targetLang: "auto",                      // follows the app when "auto"
+    model: {
+      name: "PP-OCRv6 (det + rec)",
+      size: "≈14 MB",
+      status: "not-downloaded",              // "ready" | "downloading" | "not-downloaded"
+      progress: 0,                            // 0..1 while downloading
+    },
+  };
+
+  var state = {
+    theme: "light",
+    lang: "en",
+    status: "ready",   // loading | ready | empty | error
+    engine: CONFIG.engine,
+    highlight: CONFIG.highlight,
+    testing: false,
+    feedback: "",
+  };
+
+  // Dev affordance: force a state via ?demo=… (ignored in normal use).
+  var demo = new URLSearchParams(location.search).get("demo");
+  if (demo === "loading" || demo === "empty" || demo === "error") state.status = demo;
+
+  var COPY = {
+    en: {
+      title: "Image Translate",
+      sub: "Freeze the screen, frame a region, and read the text in it. Hover a highlighted line to see the translation.",
+      shellBadge: "Shell — not wired",
+      engineTitle: "Text engine",
+      engineName: "Engine",
+      engineDesc: "Which on-device OCR is used to read the region.",
+      auto: "Auto",
+      vision: "Apple Vision",
+      ppocrv6: "PP-OCRv6",
+      engineHint: {
+        auto: "Apple Vision on macOS, PP-OCRv6 elsewhere.",
+        vision: "Built into macOS. No download. Chinese + English.",
+        ppocrv6: "Cross-platform ONNX model. Download once on first use.",
+      },
+      modelTitle: "Model status",
+      modelName: "Model",
+      visionModelDesc: "Provided by the system — nothing to download.",
+      ppocrModelDesc: "Downloaded and verified by SHA-256 before use.",
+      notNeeded: "Not needed",
+      ready: "Ready",
+      downloading: "Downloading",
+      notDownloaded: "Not downloaded",
+      download: "Download",
+      shortcutTitle: "Shortcut",
+      shortcutName: "Global shortcut",
+      shortcutDesc: "Opens region capture while translation mode is on.",
+      testHotkey: "Test hotkey",
+      testing: "Testing…",
+      testPending: "Shortcut armed — host wiring pending.",
+      highlightTitle: "Highlight style",
+      highlightName: "Boxes",
+      highlightDesc: "How the text regions are highlighted over the image.",
+      glow: "Glow",
+      box: "Box",
+      underline: "Underline",
+      footer: "Translation uses the app's active profile. Target language follows the app setting:",
+      loading: "Loading settings…",
+      emptyTitle: "No text engine available",
+      emptyHint: "Install the model or enable Apple Vision to use image translation.",
+      errorTitle: "Couldn't load the plugin",
+      errorHint: "The settings could not be read.",
+      retry: "Retry",
+      demoNote: "Demo state:",
+    },
+    "zh-CN": {
+      title: "图片翻译",
+      sub: "冻结屏幕，框选一块区域，读取其中的文字。把鼠标移到高亮行上即可看到翻译。",
+      shellBadge: "骨架 — 尚未接线",
+      engineTitle: "文字识别引擎",
+      engineName: "引擎",
+      engineDesc: "使用哪种本地 OCR 来识别选区文字。",
+      auto: "自动",
+      vision: "Apple Vision",
+      ppocrv6: "PP-OCRv6",
+      engineHint: {
+        auto: "macOS 使用 Apple Vision，其他平台使用 PP-OCRv6。",
+        vision: "macOS 系统自带，无需下载，支持中英文。",
+        ppocrv6: "跨平台 ONNX 模型，首次使用时下载一次。",
+      },
+      modelTitle: "模型状态",
+      modelName: "模型",
+      visionModelDesc: "由系统提供，无需下载。",
+      ppocrModelDesc: "下载后经 SHA-256 校验再使用。",
+      notNeeded: "无需",
+      ready: "就绪",
+      downloading: "下载中",
+      notDownloaded: "未下载",
+      download: "下载",
+      shortcutTitle: "快捷键",
+      shortcutName: "全局快捷键",
+      shortcutDesc: "在翻译模式下打开区域截图。",
+      testHotkey: "测试快捷键",
+      testing: "测试中…",
+      testPending: "快捷键已就绪 — 等待主程序接线。",
+      highlightTitle: "高亮样式",
+      highlightName: "识别框",
+      highlightDesc: "文字区域在图片上的高亮方式。",
+      glow: "光晕",
+      box: "描边",
+      underline: "下划线",
+      footer: "翻译使用应用当前启用的配置。目标语言跟随应用设置：",
+      loading: "正在加载设置…",
+      emptyTitle: "没有可用的文字引擎",
+      emptyHint: "请安装模型或启用 Apple Vision 以使用图片翻译。",
+      errorTitle: "无法加载插件",
+      errorHint: "未能读取设置。",
+      retry: "重试",
+      demoNote: "演示状态：",
+    },
+  };
+
+  function t(key) {
+    var dict = COPY[state.lang] || COPY.en;
+    return dict[key];
+  }
+
+  /* ---------- bridge (init + resize only; no fetches yet) ---------- */
+
+  window.addEventListener("message", function (event) {
+    var data = event.data;
+    if (!data || typeof data !== "object") return;
+    if (data.type === "subtr-plugin-init") {
+      state.theme = data.theme === "dark" ? "dark" : "light";
+      state.lang = data.lang === "zh-CN" ? "zh-CN" : "en";
+      document.documentElement.classList.toggle("dark", state.theme === "dark");
+      document.documentElement.lang = state.lang;
+      render();
+    }
+  });
+
+  function reportResize() {
+    try {
+      var height = Math.max(
+        document.body.scrollHeight,
+        document.documentElement.scrollHeight
+      );
+      parent.postMessage({ type: "subtr-plugin-resize", height: height }, "*");
+    } catch (e) {}
+  }
+
+  function scheduleResize() {
+    requestAnimationFrame(function () {
+      reportResize();
+      requestAnimationFrame(reportResize);
+    });
+  }
+
+  /* ---------- rendering helpers ---------- */
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function keyChips(accel) {
+    var mac = /mac/i.test(navigator.platform || navigator.userAgent || "");
+    var glyph = {
+      CommandOrControl: mac ? "⌘" : "Ctrl",
+      Command: "⌘",
+      Control: mac ? "⌃" : "Ctrl",
+      Alt: mac ? "⌥" : "Alt",
+      Shift: mac ? "⇧" : "Shift",
+      Super: "Win",
+    };
+    return accel
+      .split("+")
+      .filter(Boolean)
+      .map(function (token) {
+        return '<span class="key pk-mono">' + esc(glyph[token] || token) + "</span>";
+      })
+      .join('<span class="keys-sep">+</span>');
+  }
+
+  function rowHTML(title, desc, control) {
+    return (
+      '<div class="pk-row">' +
+      '<div class="row-label"><div class="row-title">' +
+      esc(title) +
+      '</div><p class="row-desc">' +
+      esc(desc) +
+      "</p></div>" +
+      '<div class="row-ctl">' +
+      control +
+      "</div>" +
+      "</div>"
+    );
+  }
+
+  function segmented(name, options, active) {
+    var items = options
+      .map(function (o) {
+        return (
+          '<button type="button" class="pk-segmented__item" data-action="' +
+          name +
+          '" data-value="' +
+          esc(o.value) +
+          '" aria-pressed="' +
+          (active === o.value) +
+          '">' +
+          esc(o.label) +
+          "</button>"
+        );
+      })
+      .join("");
+    return '<div class="pk-segmented" role="group">' + items + "</div>";
+  }
+
+  function modelBadge(status) {
+    if (status === "ready") return '<span class="pk-badge pk-badge--ok">' + t("ready") + "</span>";
+    if (status === "downloading")
+      return '<span class="pk-badge pk-badge--accent">' + t("downloading") + " " + Math.round(CONFIG.model.progress * 100) + "%</span>";
+    return '<span class="pk-badge pk-badge--warn">' + t("notDownloaded") + "</span>";
+  }
+
+  /* ---------- sections ---------- */
+
+  function headerHTML() {
+    return (
+      '<header class="pk-row-between app-head">' +
+      '<div style="min-width:0">' +
+      '<div class="app-title">' +
+      t("title") +
+      "</div>" +
+      '<p class="app-sub">' +
+      t("sub") +
+      "</p>" +
+      "</div>" +
+      '<span class="pk-badge pk-badge--warn">' +
+      t("shellBadge") +
+      "</span>" +
+      "</header>"
+    );
+  }
+
+  function engineHTML() {
+    var engine = state.engine;
+    var hint = t("engineHint")[engine] || "";
+    var control = segmented(
+      "engine",
+      [
+        { value: "auto", label: t("auto") },
+        { value: "vision", label: t("vision") },
+        { value: "ppocrv6", label: t("ppocrv6") },
+      ],
+      engine
+    );
+    return (
+      '<section class="pk-section">' +
+      '<h2 class="pk-section-title">' +
+      t("engineTitle") +
+      "</h2>" +
+      '<div class="pk-surface">' +
+      rowHTML(t("engineName"), t("engineDesc") + " " + hint, control) +
+      modelRowHTML() +
+      "</div>" +
+      "</section>"
+    );
+  }
+
+  function modelRowHTML() {
+    // Vision needs no model; Auto and PP-OCRv6 may need the ONNX weights.
+    if (state.engine === "vision") {
+      return rowHTML(
+        "Apple Vision",
+        t("visionModelDesc"),
+        '<span class="pk-badge pk-badge--ok">' + t("notNeeded") + "</span>"
+      );
+    }
+    // TODO(P2): enable when the model downloader ships; then wire the click to it.
+    var btn =
+      CONFIG.model.status === "ready"
+        ? ""
+        : '<button type="button" class="pk-btn pk-btn--sm" data-action="download" disabled>' +
+          t("download") +
+          "</button>";
+    var control =
+      '<div class="pk-cluster">' +
+      modelBadge(CONFIG.model.status) +
+      btn +
+      "</div>";
+    return rowHTML(
+      CONFIG.model.name + " · " + CONFIG.model.size,
+      t("ppocrModelDesc"),
+      control
+    );
+  }
+
+  function shortcutHTML() {
+    var control =
+      '<button type="button" class="pk-btn pk-btn--sm" data-action="test-hotkey"' +
+      (state.testing ? " disabled" : "") +
+      ">" +
+      (state.testing ? t("testing") : t("testHotkey")) +
+      "</button>";
+    return (
+      '<section class="pk-section">' +
+      '<h2 class="pk-section-title">' +
+      t("shortcutTitle") +
+      "</h2>" +
+      '<div class="pk-surface">' +
+      rowHTML(
+        t("shortcutName"),
+        t("shortcutDesc"),
+        '<span class="keys">' + keyChips(CONFIG.accelerator) + "</span>"
+      ) +
+      '<div class="pk-row" style="align-items:center">' +
+      '<p class="feedback" data-feedback aria-live="polite">' +
+      esc(state.feedback) +
+      "</p>" +
+      control +
+      "</div>" +
+      "</div>" +
+      "</section>"
+    );
+  }
+
+  function highlightHTML() {
+    var control = segmented(
+      "highlight",
+      [
+        { value: "glow", label: t("glow") },
+        { value: "box", label: t("box") },
+        { value: "underline", label: t("underline") },
+      ],
+      state.highlight
+    );
+    var preview =
+      '<div class="hl-preview" data-style="' +
+      esc(state.highlight) +
+      '" aria-hidden="true">' +
+      '<span class="hl-chip">Aa</span>' +
+      '<span class="hl-chip">你好</span>' +
+      '<span class="hl-chip">Text</span>' +
+      "</div>";
+    return (
+      '<section class="pk-section">' +
+      '<h2 class="pk-section-title">' +
+      t("highlightTitle") +
+      "</h2>" +
+      '<div class="pk-surface">' +
+      rowHTML(t("highlightName"), t("highlightDesc"), control) +
+      '<div class="pk-row" style="display:block">' +
+      preview +
+      "</div>" +
+      "</div>" +
+      "</section>"
+    );
+  }
+
+  function footerHTML() {
+    return (
+      '<p class="note">' +
+      t("footer") +
+      " <b>" +
+      esc(CONFIG.targetLang) +
+      "</b>.</p>"
+    );
+  }
+
+  function loadingHTML() {
+    return '<div class="pk-loading"><span class="pk-spinner"></span>' + t("loading") + "</div>";
+  }
+
+  function emptyHTML() {
+    return (
+      '<div class="pk-empty"><strong>' +
+      t("emptyTitle") +
+      "</strong><span>" +
+      t("emptyHint") +
+      '</span><button type="button" class="pk-btn pk-btn--sm" style="margin-top:6px" data-action="download">' +
+      t("download") +
+      '</button><p class="feedback" data-feedback aria-live="polite"></p></div>'
+    );
+  }
+
+  function errorHTML() {
+    return (
+      '<div class="pk-error"><strong>' +
+      t("errorTitle") +
+      "</strong><span>" +
+      t("errorHint") +
+      '</span><button type="button" class="pk-btn pk-btn--sm" style="margin-top:6px" data-action="retry">' +
+      t("retry") +
+      "</button></div>"
+    );
+  }
+
+  function demoNoteHTML() {
+    if (state.status === "ready") return "";
+    return '<p class="note pk-faint">' + t("demoNote") + " " + esc(state.status) + "</p>";
+  }
+
+  /* ---------- render ---------- */
+
+  function render() {
+    var root = document.getElementById("view");
+
+    if (state.status === "loading") {
+      root.innerHTML = headerHTML() + '<div class="pk-hr"></div>' + loadingHTML();
+      scheduleResize();
+      return;
+    }
+    if (state.status === "error") {
+      root.innerHTML = headerHTML() + errorHTML();
+      scheduleResize();
+      return;
+    }
+    if (state.status === "empty") {
+      root.innerHTML = headerHTML() + '<div class="pk-hr"></div>' + emptyHTML();
+      scheduleResize();
+      return;
+    }
+
+    root.innerHTML =
+      headerHTML() +
+      '<div class="pk-hr"></div>' +
+      engineHTML() +
+      shortcutHTML() +
+      highlightHTML() +
+      footerHTML() +
+      demoNoteHTML();
+    scheduleResize();
+  }
+
+  /* ---------- events (local only; all real calls are TODO) ---------- */
+
+  function showFeedback(message) {
+    state.feedback = message;
+    var nodes = document.querySelectorAll("[data-feedback]");
+    for (var i = 0; i < nodes.length; i++) nodes[i].textContent = message;
+  }
+
+  document.getElementById("view").addEventListener("click", function (e) {
+    var el = e.target.closest ? e.target.closest("[data-action]") : null;
+    if (!el || el.disabled) return;
+    var action = el.getAttribute("data-action");
+    var value = el.getAttribute("data-value");
+
+    if (action === "engine") {
+      if (value === state.engine) return;
+      state.engine = value;
+      // TODO(P2): api.storage.set("engine", value) + re-check model status.
+      render();
+      return;
+    }
+    if (action === "highlight") {
+      if (value === state.highlight) return;
+      state.highlight = value;
+      // TODO(P2): api.storage.set("highlight", value); host reads it via overlay.regions style.
+      state.feedback = "";
+      render();
+      return;
+    }
+    if (action === "test-hotkey") {
+      state.testing = true;
+      state.feedback = "";
+      render();
+      // TODO(P2): await api.hotkey.register({ accelerator: CONFIG.accelerator, onTrigger });
+      setTimeout(function () {
+        state.testing = false;
+        render();
+        showFeedback(t("testPending"));
+      }, 900);
+      return;
+    }
+    if (action === "download") {
+      // TODO(P2): trigger the model downloader; stream progress into CONFIG.model.progress.
+      showFeedback(t("shellBadge"));
+      return;
+    }
+    if (action === "retry") {
+      state.status = "ready";
+      render();
+      return;
+    }
+  });
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", render);
+  } else {
+    render();
+  }
+
+  window.addEventListener("resize", scheduleResize);
+  if (typeof ResizeObserver !== "undefined") {
+    var observer = new ResizeObserver(scheduleResize);
+    observer.observe(document.documentElement);
+    observer.observe(document.body);
+  }
+})();
+</script>
+</body>
+</html>

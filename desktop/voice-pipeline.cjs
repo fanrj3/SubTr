@@ -20,6 +20,12 @@ const VOICE_SAMPLE_RATE = 16000;
 const VOICE_BYTES_PER_SAMPLE = 2;
 /** Max audio buffered per utterance before it is force-closed and restarted (ms). */
 const VOICE_UTTERANCE_MAX_MS = 15000;
+/**
+ * Extra ring capacity beyond the utterance cap. Ensures the buffer never drops
+ * the utterance start (no sliding) before the cap fires — a sliding buffer makes
+ * consecutive transcripts drift and stalls the 2-pass commit gate.
+ */
+const VOICE_UTTERANCE_SLACK_MS = 6000;
 /** Time between rolling analysis passes in milliseconds. */
 const VOICE_HOP_MS = 1000;
 /** Short window used for the energy gate / silence detection (ms). */
@@ -241,6 +247,7 @@ module.exports = {
   VOICE_SAMPLE_RATE,
   VOICE_BYTES_PER_SAMPLE,
   VOICE_UTTERANCE_MAX_MS,
+  VOICE_UTTERANCE_SLACK_MS,
   VOICE_HOP_MS,
   VOICE_SILENCE_WINDOW_MS,
   VOICE_OVERLAP_RATIO,
