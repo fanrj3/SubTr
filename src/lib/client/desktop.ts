@@ -52,6 +52,10 @@ export type DesktopBridge = {
       utteranceId?: string;
       close?: boolean;
       stop?: boolean;
+      pluginText?: boolean;
+      tone?: "normal" | "muted";
+      stickyMs?: number;
+      pluginOverlay?: "clear";
     }) => void
   ): () => void;
   setOverlayInteractive?(on: boolean): void;

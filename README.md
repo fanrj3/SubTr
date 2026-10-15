@@ -77,6 +77,9 @@ SubTr loads local plugins from a folder (desktop: the app's data folder `plugins
 - **translate.transformInput / translate.transformOutput** — rewrite the selected text before translation, or the translation before it is shown
 - **dictionary.source** — provide dictionary lookups (used when the bundled dictionary misses)
 - **Provider presets** — a plugin can contribute a provider declaratively (no code)
+- **Host capabilities (API v2)** — region-capture overlay (`capture.region`), highlight regions over an image with hover/select events (`overlay.regions`), verbatim subtitle text (`overlay.subtitle`), translation through your active profile (`translate.text`, keys never leave the app), and plugin-level global hotkeys (`hotkey.register`). See `examples/plugins/README.md`.
+
+In progress: an **image translation** plugin project (⌘⇧P region capture → OCR → Live-Text-style highlights with hover-to-translate) — spec in `examples/plugins/image-translate/`, phased plan in `docs/image-translate-plugin.md`.
 
 Plugins run as local Node code with full access to your machine — only enable plugins you trust. Panel authors get a theme-aware **component kit** at `/plugin-kit/panel.css` and a live **panel preview** (`/panel-preview/<id>/<panelId>`, with theme and width switchers reachable from the **Preview** action in Settings) — see `examples/plugins/README.md`. Ready-to-import packages live in **`examples/plugin-zips/`** (`usage-stats.zip`, `uppercase.zip`, `acme-translate.zip`); regenerate them with `npm run plugins:zip` after editing the examples.
 

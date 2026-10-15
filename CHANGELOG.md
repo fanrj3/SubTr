@@ -16,6 +16,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | **0.2.1** | `66af67f` | Settings page, profiles v2, thinking control, subtitle customization |
 | **0.2.2** | `4c10810` · docs `0efc776` | Theme + UI language, compact window, position player |
 | **0.2.3** | `cb855ca` · docs `3650ab3` | Native theme, display-aspect preview, Test button, fade-out, caps, capture handshake |
+| **0.3.0** | *(release commit)* | Plugin API v2 (host capabilities), image-translate P0, voice long-run fix |
 | **0.2.9** | `7f5c4e5` | Tray icons + Usage submenu, navigation silkiness, pace scale, About, voice (Beta) phase 2 |
 | **0.2.8** | `bfef0e6` | Home widgets below reader, scroll isolation, position layout, plugin kit + preview, tray usage, voice (Beta) phase 1 |
 | **0.2.7** | `7fe1bf1` | Settings refactor (nav rail + setting rows), Base UI primitives, DESIGN.md |
@@ -87,7 +88,9 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | 0.2.9 follow-up 2: settings rows full-width result slot (test connection) | 0.2.9 | `0b88a24` | `src/components/settings-ui.tsx`, `src/app/settings/page.tsx` |
 | 0.2.9 follow-up 3: continuous voice captions (growing utterance buffer + in-place overlay updates) | 0.2.9 | `8538ddd` | `desktop/voice-pipeline.cjs`, `desktop/main.cjs`, `src/app/overlay/page.tsx`, `src/components/subtitle-overlay.tsx` |
 | 0.2.9 follow-up 4: rolling voice transcript (never-dismiss lines, stop signal) | 0.2.9 | `80dcf6d` | `desktop/main.cjs`, `src/app/overlay/page.tsx`, `src/components/subtitle-overlay.tsx` |
-| 0.2.9 follow-up 5: two-zone stable captions (append-only transcript + frozen/tentative translations) | 0.2.9 | ``ec07ebb`` | `src/app/overlay/page.tsx`, `src/components/subtitle-overlay.tsx` |
+| 0.2.9 follow-up 5: two-zone stable captions (append-only transcript + frozen/tentative translations) | 0.2.9 | `ec07ebb` | `src/app/overlay/page.tsx`, `src/components/subtitle-overlay.tsx` |
+| Plugin API v2: host bridge + capture.region / overlay.regions / overlay.subtitle / translate.text / hotkey.register | 0.3.0 | *(release commit)* | `desktop/main.cjs`, `desktop/host-*.html`, `desktop/host-preload.cjs`, `src/lib/server/plugins.ts`, `src/app/api/plugin-events/` |
+| Image-translate plugin project P0 (spec + skeleton + plan) | 0.3.0 | *(release commit)* | `examples/plugins/image-translate/`, `docs/image-translate-plugin.md` |
 
 ---
 
@@ -115,6 +118,20 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 
 ### 0.2.3 (`cb855ca`) — native theme · preview rework · test · robustness
 - Title bar follows theme (`setNativeTheme`); canvas = real display aspect + double-click enlarge; drag without text selection; appearance row responsive; base pace 220 wpm / 400 cpm with 0.2–5.0× slider; **Test** button (real-screen playback with live style); fade-out on every dismissal; caps raised (10000/12000); capture delivery handshake + latest-wins pending queue; dismissal aborts in-flight translation.
+
+### 0.3.0 — plugin API v2 (host capabilities) · image-translate P0 · voice long-run fix
+- **Plugin API v2** (backward compatible with v1): loopback RPC bridge (127.0.0.1, ephemeral port + bearer token) between the server-hosted plugins and the Electron host, plus an event channel (`POST /api/plugin-events/<id>`, token-authenticated) for host→plugin events.
+- New host capabilities:
+  - **`capture.region`** — freeze-first region selection (per-display transparent overlay at `display.bounds`, dim + drag, Enter/double-click confirm, Esc cancel), device-pixel crop (`round(x·sf)`) returning a PNG data URL + rect + scaleFactor. Verified crop math exact (200×120 == rect×sf).
+  - **`overlay.regions`** — host-rendered image with normalized highlight boxes (`glow|box|underline`, accent, numbered) and hover/select/dismiss events (Esc/click-away/keys 1–9) delivered to the plugin. Verified hover reaches the plugin.
+  - **`overlay.subtitle`** — plugin text rendered **verbatim** (no translation, no translate-mode gate), `tone: "normal"|"muted"`, optional `stickyMs`, clean `clear()`; teardown is a hard cut (1 mount per show, ≤210 ms fade, no fallback flash).
+  - **`translate.text`** — batch translation through the **active profile** (keys never leave the app); clean `no-profile` / `upstream` errors, time-boxed profile reads (never hangs, works with the window minimized). Verified live incl. 401/502 paths.
+  - **`hotkey.register`** — plugin-level global shortcuts with `reserved`/`conflict`/`invalid` detection, `when:"translation-mode"` gating, unregister/isRegistered. Verified incl. gating (0 triggers OFF / 1 ON).
+- Plugin-local dependencies documented (`createRequire(pluginDir)`); the packer honors **`.zipignore`** (excludes node_modules/models, reports sizes) and skips `_`-prefixed fixtures.
+- Hardening: plugin-activation re-entrancy guard (capabilities are called post-activation — documented); overlay teardown hard cuts for both voice and plugin text (no re-created card, no fallback flash); `translate.text`/profile reads can never hang.
+- **Image-translate plugin project P0**: spec + skeleton under `examples/plugins/image-translate/` (capability shapes, engine matrix incl. Apple Vision + PP-OCRv6 Apache-2.0 licensing, settings panel shell on the kit) and the phased plan in `docs/image-translate-plugin.md` — a separate, independently versioned plugin.
+- Also carries the **voice long-run stall fix** (details in the 0.2.9 notes, follow-up 6): 150 s continuous audio → deliveries in every 10 s window.
+- Verified: bridge auth 401/200; capture crop math; regions hover delivery; hotkey reserved/success/conflict/gating; `translate.text` live (mock, minimized window, error paths); plugin-text overlay 8/8; full chain hotkey→capture→regions→subtitle. Caveats (manual): a real human drag/Esc on the capture overlay, and Retina/multi-display runs.
 
 ### 0.2.9 — tray polish · navigation silk · pace scale · About · voice phase 2
 - **Tray**: every menu item now carries a 16 px template icon (eye/bubble/mic/gear/chart/download/power, generated in pure JS); usage moved into a hover-opened **Usage submenu** (Today / All time lines; "No usage data yet" fallback); the menu is still rebuilt on every click.

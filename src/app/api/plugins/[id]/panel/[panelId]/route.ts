@@ -16,7 +16,7 @@ export async function GET(
 ): Promise<Response> {
   await connection();
   const { id, panelId } = await params;
-  if (!id || !/^[a-z0-9-]+$/.test(id) || !panelId) {
+  if (!id || !/^[a-z0-9_][a-z0-9_-]*$/.test(id) || !panelId) {
     return errorResponse("Panel not found", 404);
   }
 

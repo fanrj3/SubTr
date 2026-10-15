@@ -58,6 +58,10 @@ type SubtitleOverlayProps = {
   voiceLines?: VoiceLine[];
   /** True while a voice session is fading out via `stop`/Esc. */
   voiceStopping?: boolean;
+  /** Verbatim text injected by a plugin (no translation). */
+  pluginText?: { text: string; tone: "normal" | "muted" } | null;
+  /** True while plugin text is fading out via `clear()`. */
+  pluginStopping?: boolean;
 };
 
 const ERROR_HIDE_MS = 20000;
@@ -90,6 +94,8 @@ export function SubtitleOverlay({
   voice,
   voiceLines,
   voiceStopping,
+  pluginText,
+  pluginStopping,
 }: SubtitleOverlayProps) {
   const { t } = useT();
   const [showEscHint, setShowEscHint] = useState(false);
@@ -128,6 +134,7 @@ export function SubtitleOverlay({
   const original = state.kind !== "idle" ? state.original : "";
   const isControlled = !!controlledPlay;
   const isVoice = !!voice;
+  const isPlugin = !!pluginText || !!pluginStopping;
   const mountStartTimeRef = useRef<number>(0);
   const scrollStartTimeRef = useRef<number>(0);
   const finalStartTimeRef = useRef<number>(0);
@@ -367,11 +374,17 @@ export function SubtitleOverlay({
     }
     // Voice captions hard-cut: no re-creating exit animation and no fallback
     // flash. Non-voice captures keep the normal exit fade.
-    if (state.kind === "idle" && prevKindRef.current !== "idle" && !isExiting && !isVoice) {
+    if (
+      state.kind === "idle" &&
+      prevKindRef.current !== "idle" &&
+      !isExiting &&
+      !isVoice &&
+      !isPlugin
+    ) {
       startExit();
     }
     prevKindRef.current = state.kind;
-  }, [state.kind, original, isExiting, startExit, isVoice]);
+  }, [state.kind, original, isExiting, startExit, isVoice, isPlugin]);
 
   // Externally-controlled clock (desktop test playback / in-window fallback).
   useEffect(() => {
@@ -435,6 +448,7 @@ export function SubtitleOverlay({
     if (state.kind === "idle") return;
     if (controlledPlay) return;
     if (isVoice) return;
+    if (isPlugin) return;
 
     prefersReducedMotionRef.current = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
@@ -510,7 +524,7 @@ export function SubtitleOverlay({
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [original, isControlled, isVoice]);
+  }, [original, isControlled, isVoice, isPlugin]);
 
   function pin(showHint: boolean) {
     if (isVoice) return; // pinning is a no-op while voice mode is active
@@ -602,7 +616,7 @@ export function SubtitleOverlay({
     <div
       data-subtr-overlay
       className={`pointer-events-none fixed z-40 mx-auto flex max-w-[min(920px,92vw)] justify-center px-4 transition-all duration-200 ease-out motion-reduce:transition-none ${
-        isExiting || voiceStopping
+        isExiting || voiceStopping || pluginStopping
           ? "pointer-events-none opacity-0 translate-y-2"
           : "opacity-100 translate-y-0"
       }`}
@@ -682,7 +696,7 @@ export function SubtitleOverlay({
           <XIcon className="h-4 w-4" />
         </button>
 
-        {!isVoice && (
+        {!isVoice && !isPlugin && (
           <p
             className="mb-1 line-clamp-2 px-10 text-xs leading-relaxed"
             style={{ color: dimmedColor }}
@@ -691,7 +705,18 @@ export function SubtitleOverlay({
           </p>
         )}
 
-        {isVoice && (
+        {isPlugin && (
+          <p
+            className="px-6 text-center leading-snug tracking-wide"
+            style={{
+              color: pluginText?.tone === "muted" ? dimmedColor : style.textColor,
+            }}
+          >
+            {pluginText?.text ?? ""}
+          </p>
+        )}
+
+        {isVoice && !isPlugin && (
           <div className="flex flex-col gap-2">
             <div
               className="flex h-[2.7em] items-end justify-center overflow-hidden text-center"
@@ -764,7 +789,7 @@ export function SubtitleOverlay({
           </div>
         )}
 
-        {!isLoading && !isError && !isDictionary && !isVoice && (
+        {!isLoading && !isError && !isDictionary && !isVoice && !isPlugin && (
           <div
             ref={viewportRef}
             className={`subtr-scroll max-h-[200px] overflow-y-auto text-left ${contentPad}`}
@@ -802,7 +827,8 @@ export function SubtitleOverlay({
           </div>
         ) : (
           !controlledPlay &&
-          !isVoice && (
+          !isVoice &&
+          !isPlugin && (
             <HoldProgress
               phaseRef={phaseRef}
               timingRef={timingRef}

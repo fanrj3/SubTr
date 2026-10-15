@@ -14,6 +14,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const crypto = require("node:crypto");
 const net = require("node:net");
+const http = require("node:http");
 const { Readable } = require("node:stream");
 const { spawn } = require("node:child_process");
 const {
@@ -1755,6 +1756,596 @@ async function injectVoiceCaptureShim() {
 }
 
 // ---------------------------------------------------------------------------
+// Plugin host capability bridge (apiVersion-2 loopback RPC)
+// ---------------------------------------------------------------------------
+//
+// apiVersion-2 plugins execute in the Next server process, but capture, overlay
+// windows and global hotkeys live here in Electron main. The server talks to
+// this loopback-only HTTP bridge (random bearer token) to reach those host
+// capabilities; main forwards hover/select/dismiss/hotkey events back to the
+// server's internal `/api/plugin-events/<id>` endpoint.
+
+const hostPreloadPath = path.join(__dirname, "host-preload.cjs");
+
+let hostBridge = { server: null, url: "", token: "" };
+/** Pending capture.region selection: { finish, display, sf, image }. */
+let capturePending = null;
+/** @type {import("electron").BrowserWindow | null} */
+let captureWin = null;
+/** @type {import("electron").BrowserWindow | null} */
+let regionsWin = null;
+/** Regions overlay state: { pluginId, id, displayId }. */
+let regionsState = null;
+/** Plugin-owned global shortcuts: accelerator -> { pluginId, when, handler }. */
+const pluginHotkeys = new Map();
+/** Accelerators the host reserves (app-owned) — never grantable to a plugin. */
+const RESERVED_ACCELERATORS = new Set([
+  "CommandOrControl+Shift+D",
+  "CommandOrControl+Shift+T",
+  "Escape",
+]);
+
+function bridgeJson(res, status, body) {
+  const data = JSON.stringify(body ?? { ok: true });
+  res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
+  res.end(data);
+}
+
+/** Start the loopback capability bridge; exports SUBTR_BRIDGE_* for the server. */
+function startHostBridge() {
+  return new Promise((resolve) => {
+    const token = process.env.SUBTR_BRIDGE_TOKEN || crypto.randomBytes(24).toString("hex");
+    const wantPort = process.env.SUBTR_BRIDGE_PORT ? Number(process.env.SUBTR_BRIDGE_PORT) : 0;
+    const server = http.createServer((req, res) => {
+      void handleBridgeRequest(req, res, token);
+    });
+    server.on("error", (error) => {
+      console.warn("[bridge] server error:", error && error.message ? error.message : error);
+      resolve(null);
+    });
+    server.listen(Number.isFinite(wantPort) ? wantPort : 0, "127.0.0.1", () => {
+      const addr = server.address();
+      const port = typeof addr === "object" && addr ? addr.port : 0;
+      hostBridge = { server, url: `http://127.0.0.1:${port}`, token };
+      // The forked Next server inherits these via process.env.
+      process.env.SUBTR_BRIDGE_URL = hostBridge.url;
+      process.env.SUBTR_BRIDGE_TOKEN = token;
+      console.log(`[bridge] host capability RPC on ${hostBridge.url}`);
+      resolve(hostBridge);
+    });
+  });
+}
+
+function stopHostBridge() {
+  if (hostBridge.server) {
+    try {
+      hostBridge.server.close();
+    } catch {
+      // ignore
+    }
+  }
+  hostBridge = { server: null, url: "", token: "" };
+}
+
+async function handleBridgeRequest(req, res, token) {
+  const auth = String(req.headers["authorization"] || "");
+  if (auth !== `Bearer ${token}`) {
+    bridgeJson(res, 401, { ok: false, error: "unauthorized" });
+    return;
+  }
+  const url = new URL(req.url || "/", "http://127.0.0.1");
+  if (req.method === "GET" && url.pathname === "/health") {
+    bridgeJson(res, 200, { ok: true });
+    return;
+  }
+  if (req.method !== "POST" || url.pathname !== "/rpc") {
+    bridgeJson(res, 404, { ok: false, error: "not found" });
+    return;
+  }
+  let body = "";
+  req.on("data", (chunk) => {
+    body += chunk;
+    if (body.length > 16 * 1024 * 1024) req.destroy();
+  });
+  req.on("end", async () => {
+    let parsed;
+    try {
+      parsed = JSON.parse(body || "{}");
+    } catch {
+      bridgeJson(res, 400, { ok: false, error: "invalid json" });
+      return;
+    }
+    const cap = parsed && typeof parsed.cap === "string" ? parsed.cap : "";
+    const params = parsed && parsed.params && typeof parsed.params === "object" ? parsed.params : {};
+    const pluginId = parsed && typeof parsed.pluginId === "string" ? parsed.pluginId : undefined;
+    try {
+      const result = await dispatchHostCap(cap, params, pluginId);
+      bridgeJson(res, 200, result === undefined ? { ok: true } : result);
+    } catch (error) {
+      bridgeJson(res, 200, {
+        ok: false,
+        reason: "error",
+        message: error && error.message ? error.message : String(error),
+      });
+    }
+  });
+}
+
+async function dispatchHostCap(cap, params, pluginId) {
+  switch (cap) {
+    case "capture.region":
+      return await captureRegion(params);
+    case "overlay.regions.show":
+      return regionsShow(params, pluginId);
+    case "overlay.regions.update":
+      return regionsUpdate(params);
+    case "overlay.regions.hide":
+      destroyRegions();
+      return { ok: true };
+    case "overlay.subtitle.show":
+      return subtitleShow(params);
+    case "overlay.subtitle.clear":
+      subtitleClear();
+      return { ok: true };
+    case "hotkey.register":
+      return hotkeyRegister(params, pluginId);
+    case "hotkey.unregister":
+      hotkeyUnregister(params);
+      return { ok: true };
+    case "hotkey.isRegistered":
+      return { ok: true, registered: pluginHotkeys.has(String(params.accelerator || "")) };
+    case "translate.text":
+      return await pluginTranslate(params);
+    default:
+      return { ok: false, reason: "error", message: `unknown capability: ${cap}` };
+  }
+}
+
+/** Resolve the target display (explicit id, else the one under the cursor). */
+function displayFor(params) {
+  if (params && Number.isFinite(params.displayId)) {
+    const explicit = screen.getAllDisplays().find((d) => d.id === params.displayId);
+    if (explicit) return explicit;
+  }
+  return screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+}
+
+function clampRect(rect, maxW, maxH) {
+  const x = Math.max(0, Math.min(Number(rect.x) || 0, maxW));
+  const y = Math.max(0, Math.min(Number(rect.y) || 0, maxH));
+  const w = Math.max(1, Math.min(Number(rect.w) || 0, maxW - x));
+  const h = Math.max(1, Math.min(Number(rect.h) || 0, maxH - y));
+  return { x, y, w, h };
+}
+
+/** Crop the frozen image to `rect` (logical, display-local) in device pixels. */
+function cropFromFrozen(rect, display, sf, image) {
+  const logical = clampRect(rect, display.bounds.width, display.bounds.height);
+  const size = image.getSize();
+  const physX = Math.max(0, Math.round(logical.x * sf));
+  const physY = Math.max(0, Math.round(logical.y * sf));
+  const widthPx = Math.max(1, Math.min(Math.round(logical.w * sf), size.width - physX));
+  const heightPx = Math.max(1, Math.min(Math.round(logical.h * sf), size.height - physY));
+  const crop = image.crop({ x: physX, y: physY, width: widthPx, height: heightPx });
+  return {
+    ok: true,
+    imageDataUrl: crop.toDataURL(),
+    widthPx,
+    heightPx,
+    scaleFactor: sf,
+    rect: logical,
+    displayId: display.id,
+  };
+}
+
+/**
+ * capture.region: freeze the display FIRST (full-res thumbnail), then show a
+ * per-display frameless selection window. Resolves with the device-pixel crop.
+ */
+async function captureRegion(params) {
+  const opts = params || {};
+  const display = displayFor(opts);
+  if (!display) return { ok: false, reason: "no-display" };
+  const sf = display.scaleFactor || 1;
+
+  let source = null;
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ["screen"],
+      thumbnailSize: {
+        width: Math.max(1, Math.round(display.size.width * sf)),
+        height: Math.max(1, Math.round(display.size.height * sf)),
+      },
+    });
+    source =
+      sources.find(
+        (s) => s.display_id != null && String(s.display_id) === String(display.id),
+      ) || sources[0] || null;
+  } catch {
+    source = null;
+  }
+  const image = source ? source.thumbnail : null;
+  if (!image || image.isEmpty()) return { ok: false, reason: "no-permission" };
+  return await openCaptureWindow(display, sf, image, opts);
+}
+
+function openCaptureWindow(display, sf, image, opts) {
+  return new Promise((resolve) => {
+    if (captureWin && !captureWin.isDestroyed()) {
+      try {
+        captureWin.destroy();
+      } catch {
+        // ignore
+      }
+    }
+    const win = new BrowserWindow({
+      x: display.bounds.x,
+      y: display.bounds.y,
+      width: display.bounds.width,
+      height: display.bounds.height,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      movable: false,
+      hasShadow: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      fullscreenable: false,
+      show: false,
+      webPreferences: {
+        contextIsolation: true,
+        sandbox: true,
+        backgroundThrottling: false,
+        preload: hostPreloadPath,
+      },
+    });
+    captureWin = win;
+    try {
+      win.setAlwaysOnTop(true, "screen-saver");
+    } catch {
+      // ignore
+    }
+
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      capturePending = null;
+      disarmEsc();
+      if (captureWin && !captureWin.isDestroyed()) {
+        try {
+          captureWin.destroy();
+        } catch {
+          // ignore
+        }
+      }
+      captureWin = null;
+      resolve(result);
+    };
+
+    capturePending = { finish, display, sf, image, sender: win.webContents };
+
+    win.on("closed", () => finish({ ok: false, reason: "cancelled" }));
+    win.webContents.on("did-finish-load", () => {
+      try {
+        win.webContents.send("subtr:host-capture-init", {
+          imageDataUrl: image.toDataURL(),
+          minSize:
+            opts.minSize && Number.isFinite(opts.minSize.w)
+              ? opts.minSize
+              : { w: 8, h: 8 },
+          ...(opts.testRect ? { testRect: opts.testRect } : {}),
+        });
+      } catch {
+        // ignore
+      }
+      win.show();
+      win.focus();
+    });
+    void win.loadFile(path.join(__dirname, "host-capture.html"));
+    armEsc();
+  });
+}
+
+function regionsShow(params, pluginId) {
+  if (!params || typeof params.imageDataUrl !== "string" || !params.imageDataUrl) {
+    return { ok: false, reason: "no-image" };
+  }
+  const display = displayFor(params);
+  if (!display) return { ok: false, reason: "no-display" };
+  const id = typeof params.id === "string" && params.id ? params.id : `regions-${Date.now()}`;
+  destroyRegions();
+  const win = new BrowserWindow({
+    x: display.bounds.x,
+    y: display.bounds.y,
+    width: display.bounds.width,
+    height: display.bounds.height,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    hasShadow: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    fullscreenable: false,
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      sandbox: true,
+      backgroundThrottling: false,
+      preload: hostPreloadPath,
+    },
+  });
+  regionsWin = win;
+  regionsState = { pluginId: pluginId || "", id, displayId: display.id };
+  try {
+    win.setAlwaysOnTop(true, "screen-saver");
+  } catch {
+    // ignore
+  }
+  win.on("closed", () => {
+    if (regionsWin === win) {
+      regionsWin = null;
+      regionsState = null;
+    }
+  });
+  win.webContents.on("did-finish-load", () => {
+    try {
+      win.webContents.send("subtr:host-regions-init", { ...params, id });
+    } catch {
+      // ignore
+    }
+    win.showInactive();
+  });
+  void win.loadFile(path.join(__dirname, "host-regions.html"));
+  return { ok: true, id };
+}
+
+function regionsUpdate(params) {
+  if (!regionsWin || regionsWin.isDestroyed()) return { ok: false, reason: "not-open" };
+  try {
+    regionsWin.webContents.send("subtr:host-regions-update", params || {});
+  } catch {
+    return { ok: false, reason: "error" };
+  }
+  return { ok: true };
+}
+
+function destroyRegions() {
+  if (regionsWin && !regionsWin.isDestroyed()) {
+    try {
+      regionsWin.destroy();
+    } catch {
+      // ignore
+    }
+  }
+  regionsWin = null;
+  regionsState = null;
+}
+
+/** Plugin subtitle: rendered through the overlay's plugin-text path. */
+function subtitleShow(params) {
+  const text = params && typeof params.text === "string" ? params.text.trim() : "";
+  if (!text) return { ok: false, reason: "empty" };
+  deliverOverlayCapture({
+    pluginText: true,
+    text,
+    ...(params && (params.tone === "muted" || params.tone === "normal") ? { tone: params.tone } : {}),
+    ...(params && Number.isFinite(params.stickyMs) ? { stickyMs: params.stickyMs } : {}),
+  });
+  return { ok: true };
+}
+
+function subtitleClear() {
+  deliverOverlayCapture({ pluginOverlay: "clear" });
+}
+
+/** Forward a host→plugin event to the server's internal endpoint (token-auth). */
+async function forwardPluginEvent(pluginId, event) {
+  if (!pluginId || !appBaseUrl || !hostBridge.token) return false;
+  try {
+    const res = await fetch(
+      `${appBaseUrl}/api/plugin-events/${encodeURIComponent(pluginId)}`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${hostBridge.token}`,
+        },
+        body: JSON.stringify(event),
+      },
+    );
+    if (!res.ok) console.warn(`[bridge] forward ${event.type} → HTTP ${res.status}`);
+    return res.ok;
+  } catch (error) {
+    console.warn(
+      "[bridge] forward event failed:",
+      error && error.message ? error.message : error,
+    );
+    return false;
+  }
+}
+
+function handleRegionEvent(ev) {
+  const st = regionsState;
+  if (!st || !st.pluginId || !ev || typeof ev.type !== "string") return;
+  console.log(`[bridge] region event ${ev.type} (${st.pluginId})`);
+  if (ev.type === "dismiss") destroyRegions();
+  // NOTE: spread first — `ev.type` ("hover"/"select"/"dismiss") must not clobber
+  // the namespaced event type.
+  void forwardPluginEvent(st.pluginId, { ...ev, type: `region.${ev.type}` });
+}
+
+function hotkeyRegister(params, pluginId) {
+  const accel =
+    params && typeof params.accelerator === "string" ? params.accelerator.trim() : "";
+  if (!accel || accel.length > MAX_HOTKEY_CHARS) return { ok: false, reason: "invalid" };
+  if (RESERVED_ACCELERATORS.has(accel) || accel === toggleHotkeyAccel) {
+    return { ok: false, reason: "reserved", conflicting: accel };
+  }
+  if (pluginHotkeys.has(accel) || globalShortcut.isRegistered(accel)) {
+    return { ok: false, reason: "conflict", conflicting: accel };
+  }
+  const when = params.when === "always" ? "always" : "translation-mode";
+  const handler = () => {
+    if (when === "translation-mode" && !currentTrayMode) return;
+    void forwardPluginEvent(pluginId || "", { type: "hotkey.trigger", accelerator: accel });
+  };
+  let ok = false;
+  try {
+    ok = globalShortcut.register(accel, handler);
+  } catch {
+    ok = false;
+  }
+  if (!ok) return { ok: false, reason: "conflict", conflicting: accel };
+  pluginHotkeys.set(accel, { pluginId: pluginId || "", when, handler });
+  console.log(`[bridge] plugin hotkey registered: ${accel} (${when})`);
+  return { ok: true, accelerator: accel };
+}
+
+function hotkeyUnregister(params) {
+  const accel = params && typeof params.accelerator === "string" ? params.accelerator : "";
+  if (!accel || !pluginHotkeys.has(accel)) return;
+  try {
+    globalShortcut.unregister(accel);
+  } catch {
+    // ignore
+  }
+  pluginHotkeys.delete(accel);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept as the plugin-hotkey teardown API (called from future disable paths / test hooks)
+function unregisterPluginHotkeys(pluginId) {
+  for (const [accel, rec] of [...pluginHotkeys]) {
+    if (!pluginId || rec.pluginId === pluginId) {
+      try {
+        globalShortcut.unregister(accel);
+      } catch {
+        // ignore
+      }
+      pluginHotkeys.delete(accel);
+    }
+  }
+}
+
+/**
+ * Read the app's active profile + target language.
+ *
+ * The profile lives in the renderer's localStorage; the reader window is the
+ * source of truth but the overlay window shares the same origin, so it is used
+ * as a fallback. Each read is time-boxed so a page that is navigating or not yet
+ * loaded can never hang the capability — it degrades to "no-profile" instead.
+ * Nothing is cached on disk (keys are never persisted anywhere new).
+ */
+async function readActiveProfile() {
+  const candidates = [mainWindow, overlayWindow].filter(
+    (w) => w && !w.isDestroyed() && !w.webContents.isLoading(),
+  );
+  for (const win of candidates) {
+    try {
+      const raw = await Promise.race([
+        win.webContents.executeJavaScript(
+          `(() => { try { return [localStorage.getItem("subtr.settings.v2"), localStorage.getItem("subtr.targetLang.v1")]; } catch (e) { return [null, null]; } })()`,
+        ),
+        delay(1500).then(() => null),
+      ]);
+      if (!Array.isArray(raw)) continue;
+      const storeRaw = raw[0];
+      let profile = null;
+      if (storeRaw) {
+        const store = JSON.parse(storeRaw);
+        profile =
+          (store.profiles || []).find((p) => p.id === store.activeProfileId) ||
+          (store.profiles || [])[0] ||
+          null;
+      }
+      if (!profile) continue;
+      let targetLang = "auto";
+      if (raw[1]) {
+        try {
+          targetLang = JSON.parse(raw[1]) || "auto";
+        } catch {
+          targetLang = raw[1];
+        }
+      }
+      return { profile, targetLang };
+    } catch {
+      // try the next window
+    }
+  }
+  return null;
+}
+
+/** translate.text: batch through the app's active profile (server-side route). */
+async function pluginTranslate(params) {
+  const texts = Array.isArray(params && params.texts)
+    ? params.texts.filter((t) => typeof t === "string")
+    : [];
+  if (texts.length === 0) return { ok: true, translations: [] };
+  if (!appBaseUrl) {
+    return { ok: false, reason: "timeout", message: "host server not ready" };
+  }
+  const ctx = await readActiveProfile();
+  const profile = ctx && ctx.profile;
+  if (!profile || !profile.baseURL) return { ok: false, reason: "no-profile" };
+  const targetLang =
+    params && typeof params.targetLang === "string" && params.targetLang.trim()
+      ? params.targetLang
+      : (ctx && ctx.targetLang) || "auto";
+  const config = {
+    baseURL: profile.baseURL,
+    apiKey: profile.apiKey || "",
+    model: profile.model,
+  };
+  if (profile.maxTokens) config.maxTokens = profile.maxTokens;
+  if (profile.extraHeaders) config.extraHeaders = profile.extraHeaders;
+
+  const startedAt = Date.now();
+  const translations = [];
+  for (const text of texts) {
+    try {
+      const res = await fetch(`${appBaseUrl}/api/translate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text, targetLang, config, stream: false }),
+      });
+      if (!res.ok) return { ok: false, reason: "upstream", message: `HTTP ${res.status}` };
+      const data = await res.json();
+      translations.push({
+        text: typeof data.translation === "string" ? data.translation : text,
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        reason: "timeout",
+        message: error && error.message ? error.message : String(error),
+      };
+    }
+  }
+  return { ok: true, translations, usage: { ms: Date.now() - startedAt } };
+}
+
+function registerHostIpc() {
+  ipcMain.on("subtr:host-capture-complete", (event, rect) => {
+    if (!capturePending || event.sender !== capturePending.sender) return;
+    const { finish, display, sf, image } = capturePending;
+    finish(cropFromFrozen(rect || {}, display, sf, image));
+  });
+  ipcMain.on("subtr:host-capture-cancel", (event) => {
+    if (!capturePending || event.sender !== capturePending.sender) return;
+    capturePending.finish({ ok: false, reason: "cancelled" });
+  });
+  ipcMain.on("subtr:host-region-event", (event, ev) => {
+    if (!regionsWin || event.sender !== regionsWin.webContents) return;
+    handleRegionEvent(ev);
+  });
+  ipcMain.on("subtr:host-regions-hide", (event) => {
+    if (!regionsWin || event.sender !== regionsWin.webContents) return;
+    destroyRegions();
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Overlay interaction bridge (click-through toggle + one-shot global Escape)
 // ---------------------------------------------------------------------------
 
@@ -2223,6 +2814,23 @@ async function start() {
     };
     // Recent in-place voice deliveries ({text, utteranceId, close, at}).
     globalThis.__subtrVoiceDeliveries = () => voiceDeliveries.slice();
+
+    // --- Plugin host capabilities (apiVersion 2) ---------------------------
+    globalThis.__subtrHostCap = (cap, params) => dispatchHostCap(cap, params, "caps-demo");
+    globalThis.__subtrBridgeInfo = () => ({ url: hostBridge.url, token: hostBridge.token });
+    globalThis.__subtrPluginHotkeys = () => [...pluginHotkeys.keys()];
+    // Fire a registered plugin hotkey handler directly (respects the `when` gate).
+    globalThis.__subtrFirePluginHotkey = (accel) => {
+      const rec = pluginHotkeys.get(accel);
+      if (!rec) return false;
+      rec.handler();
+      return true;
+    };
+    // Set translate-mode state (for the `when: "translation-mode"` gate tests).
+    globalThis.__subtrSetMode = (on) => {
+      currentTrayMode = !!on;
+      return currentTrayMode;
+    };
     // Transcribe a base64 WAV directly via whisper-server (bypasses capture).
     globalThis.__subtrVoiceTranscribe = async (wavBase64) => {
       const ok = await ensureWhisperServer();
@@ -2244,6 +2852,11 @@ async function start() {
 
   registerOverlayIpc();
   registerVoiceIpc();
+  registerHostIpc();
+
+  // Start the loopback capability bridge BEFORE the server so the forked Next
+  // process inherits SUBTR_BRIDGE_URL / SUBTR_BRIDGE_TOKEN.
+  await startHostBridge();
 
   let baseUrl;
   try {
@@ -2302,6 +2915,9 @@ app.on("will-quit", () => {
   globalShortcut.unregisterAll();
   destroyTray();
   releaseSelectionHook();
+  destroyRegions();
+  pluginHotkeys.clear();
+  stopHostBridge();
   stopWhisperServer();
   stopServer();
 });

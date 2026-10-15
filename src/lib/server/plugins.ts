@@ -20,17 +20,28 @@ export const KNOWN_CAPABILITIES = [
   "translate.transformOutput",
   "dictionary.source",
   "ui.panel",
+  // --- API v2 host capabilities (apiVersion 2 plugins only) ---
+  "capture.region",
+  "overlay.regions",
+  "overlay.subtitle",
+  "translate.text",
+  "hotkey.register",
 ] as const;
 
 export type Capability = (typeof KNOWN_CAPABILITIES)[number];
 
 const CAPABILITY_SET = new Set<string>(KNOWN_CAPABILITIES);
-const API_VERSION = 1;
+/** Newest plugin apiVersion the loader understands. */
+const API_VERSION = 2;
+/** All plugin apiVersions that still load (v1 hooks are unchanged by v2). */
+function isApiVersionSupported(value: number): boolean {
+  return value === 1 || value === 2;
+}
 const HOOK_TIMEOUT_MS = 2000;
 const STATE_TTL_MS = 1000;
 const MAX_CONSECUTIVE_FAILURES = 2;
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
-const ID_RE = /^[a-z0-9-]+$/;
+const ID_RE = /^[a-z0-9_][a-z0-9_-]*$/;
 
 export type PluginStatus = "ok" | "disabled" | "error" | "incompatible";
 
@@ -121,6 +132,10 @@ type Runtime = {
   input: Array<(ctx: InputTransformContext) => unknown>;
   output: Array<(ctx: OutputTransformContext) => unknown>;
   lookup: Array<(term: string) => unknown>;
+  /** Host→plugin event handlers, keyed by event type (apiVersion 2). */
+  events: Map<string, Array<(event: unknown) => unknown>>;
+  /** Plugin-owned hotkey handlers, keyed by accelerator (apiVersion 2). */
+  hotkeys: Map<string, (event: unknown) => unknown>;
   deactivate?: () => void;
 };
 
@@ -158,6 +173,14 @@ let revision = 0;
 const records = new Map<string, PluginRecord>();
 let scanned = false;
 let scanPromise: Promise<void> | null = null;
+/**
+ * True once the record set is populated (before plugins are activated). Lets a
+ * re-entrant `ensureScanned()` — e.g. a plugin calling `translate.text` from
+ * `activate()`, which hits `/api/translate` → `applyInputTransforms` — return
+ * immediately instead of awaiting the very scan that is running `activate()`
+ * (that would deadlock).
+ */
+let hooksReady = false;
 let consentCache: { at: number; value: ConsentFile } | null = null;
 let watcher: FSWatcher | null = null;
 let watchTimer: NodeJS.Timeout | null = null;
@@ -256,7 +279,7 @@ function validateManifest(
   if (!isRecord(raw)) return { ok: false, error: "manifest.json must be an object" };
   const id = raw.id;
   if (typeof id !== "string" || !ID_RE.test(id)) {
-    return { ok: false, error: "manifest id must match /^[a-z0-9-]+$/" };
+    return { ok: false, error: "manifest id must match /^[a-z0-9_][a-z0-9_-]*$/" };
   }
   if (id !== folder) {
     return { ok: false, error: `manifest id "${id}" must equal the folder name "${folder}"` };
@@ -403,7 +426,7 @@ function recordFromManifest(
   dir: string,
   manifest: Manifest,
 ): { ok: true; record: PluginRecord } | { ok: false; error: string } {
-  const incompatible = manifest.apiVersion !== API_VERSION;
+  const incompatible = !isApiVersionSupported(manifest.apiVersion);
   let entryPath: string | null = null;
   if (manifest.entry) {
     entryPath = path.join(/* turbopackIgnore: true */ dir, manifest.entry);
@@ -449,7 +472,7 @@ function recordFromManifest(
       grantedCapabilities: [],
       status: incompatible ? "incompatible" : "disabled",
       ...(incompatible
-        ? { error: `unsupported apiVersion ${manifest.apiVersion} (expected ${API_VERSION})` }
+        ? { error: `unsupported apiVersion ${manifest.apiVersion} (supported: 1–${API_VERSION})` }
         : {}),
     },
   };
@@ -464,6 +487,12 @@ async function deactivateRecord(record: PluginRecord): Promise<void> {
   const runtime = record.runtime;
   record.runtime = null;
   if (!runtime) return;
+  // Release plugin-owned global hotkeys (apiVersion 2) before teardown.
+  for (const accel of runtime.hotkeys.keys()) {
+    void hostRpc("hotkey.unregister", { accelerator: accel }, record.folder);
+  }
+  runtime.hotkeys.clear();
+  runtime.events.clear();
   try {
     runtime.deactivate?.();
   } catch (error) {
@@ -498,6 +527,53 @@ async function importPlugin(href: string, entryPath: string): Promise<Record<str
   }
 }
 
+/** Loopback RPC client to the Electron host-capability bridge (apiVersion 2). */
+function bridgeConfig(): { url: string; token: string } | null {
+  const url = process.env.SUBTR_BRIDGE_URL;
+  const token = process.env.SUBTR_BRIDGE_TOKEN;
+  if (!url || !token) return null;
+  return { url, token };
+}
+
+async function hostRpc(cap: string, params: unknown, pluginId: string): Promise<unknown> {
+  const cfg = bridgeConfig();
+  if (!cfg) {
+    return { ok: false, reason: "no-bridge", message: "host capability bridge unavailable" };
+  }
+  try {
+    const res = await fetch(`${cfg.url}/rpc`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${cfg.token}`,
+      },
+      body: JSON.stringify({ cap, params: params ?? {}, pluginId }),
+    });
+    if (!res.ok) return { ok: false, reason: "error", message: `bridge HTTP ${res.status}` };
+    return await res.json();
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "error",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function addEventHandler(record: PluginRecord, type: string, fn: unknown): void {
+  if (typeof fn !== "function") return;
+  const runtime = record.runtime;
+  if (!runtime) return;
+  const list = runtime.events.get(type) ?? [];
+  list.push(fn as (event: unknown) => unknown);
+  runtime.events.set(type, list);
+}
+
+/**
+ * Build the plugin API surface. v1 plugins get the original hook API; apiVersion
+ * 2 plugins additionally get the host-capability namespaces, each exposed only
+ * when the corresponding capability is granted.
+ */
 function buildApi(record: PluginRecord, granted: Set<string>): Record<string, unknown> {
   const api: Record<string, unknown> = {
     plugin: {
@@ -539,12 +615,91 @@ function buildApi(record: PluginRecord, granted: Set<string>): Record<string, un
     };
   }
 
+  // --- API v2: host capability namespaces (loopback RPC to Electron main) ---
+  if (record.info.apiVersion >= 2) {
+    api.host = {
+      rpc: (cap: unknown, params: unknown) =>
+        hostRpc(typeof cap === "string" ? cap : "", params, record.folder),
+    };
+
+    if (granted.has("capture.region")) {
+      api.capture = {
+        region: (options?: unknown) => hostRpc("capture.region", options, record.folder),
+      };
+    }
+
+    if (granted.has("overlay.regions")) {
+      const regions = {
+        show: (payload: unknown) => hostRpc("overlay.regions.show", payload, record.folder),
+        update: (payload: unknown) => hostRpc("overlay.regions.update", payload, record.folder),
+        hide: (payload?: unknown) => hostRpc("overlay.regions.hide", payload, record.folder),
+        onRegionHover: (fn: unknown) => addEventHandler(record, "region.hover", fn),
+        onRegionSelect: (fn: unknown) => addEventHandler(record, "region.select", fn),
+        onRegionDismiss: (fn: unknown) => addEventHandler(record, "region.dismiss", fn),
+      };
+      api.overlay = { ...(isRecord(api.overlay) ? api.overlay : {}), regions };
+    }
+
+    if (granted.has("overlay.subtitle")) {
+      const subtitle = {
+        show: (payload: unknown) => hostRpc("overlay.subtitle.show", payload, record.folder),
+        clear: () => hostRpc("overlay.subtitle.clear", {}, record.folder),
+      };
+      api.overlay = { ...(isRecord(api.overlay) ? api.overlay : {}), subtitle };
+    }
+
+    if (granted.has("translate.text")) {
+      api.translate = {
+        ...(isRecord(api.translate) ? api.translate : {}),
+        text: (input: unknown) => hostRpc("translate.text", input, record.folder),
+      };
+    }
+
+    if (granted.has("hotkey.register")) {
+      api.hotkey = {
+        register: async (input: unknown) => {
+          const opts = isRecord(input) ? input : {};
+          const result = (await hostRpc(
+            "hotkey.register",
+            { accelerator: opts.accelerator, when: opts.when },
+            record.folder,
+          )) as { ok?: boolean; accelerator?: string } | undefined;
+          if (result && result.ok === true && typeof opts.onTrigger === "function") {
+            const accel =
+              typeof result.accelerator === "string" ? result.accelerator : String(opts.accelerator);
+            record.runtime?.hotkeys.set(accel, opts.onTrigger as (event: unknown) => unknown);
+          }
+          return result;
+        },
+        unregister: (input: unknown) => {
+          const opts = isRecord(input) ? input : {};
+          if (typeof opts.accelerator === "string") {
+            record.runtime?.hotkeys.delete(opts.accelerator);
+          }
+          return hostRpc("hotkey.unregister", opts, record.folder);
+        },
+        isRegistered: (input: unknown) => {
+          const opts = isRecord(input) ? input : {};
+          return typeof opts.accelerator === "string"
+            ? record.runtime?.hotkeys.has(opts.accelerator) ?? false
+            : false;
+        },
+      };
+    }
+  }
+
   return api;
 }
 
 async function loadRecord(record: PluginRecord): Promise<void> {
   if (record.incompatible || record.error || !record.entryPath || !record.manifest) return;
-  const runtime: Runtime = { input: [], output: [], lookup: [] };
+  const runtime: Runtime = {
+    input: [],
+    output: [],
+    lookup: [],
+    events: new Map(),
+    hotkeys: new Map(),
+  };
   record.runtime = runtime;
   try {
     const url = pathToFileURL(/* turbopackIgnore: true */ record.entryPath);
@@ -624,6 +779,9 @@ async function doScan(): Promise<void> {
   }
 
   consentCache = null;
+  // Records are populated; mark hooks usable BEFORE activating plugins so a
+  // capability called from activate() cannot re-enter and deadlock the scan.
+  hooksReady = true;
   await refreshConsent();
   scanned = true;
 }
@@ -654,7 +812,13 @@ async function replaceRecord(next: PluginRecord): Promise<void> {
 
 async function ensureScanned(): Promise<void> {
   if (scanned) return;
-  if (scanPromise) return scanPromise;
+  if (scanPromise) {
+    // Re-entrant call while a scan is in progress (records are already known):
+    // do not await the scan — it may be waiting on a plugin whose activate()
+    // triggered this call. Hooks run against the current (partial) records.
+    if (hooksReady) return;
+    return scanPromise;
+  }
   scanPromise = doScan()
     .catch((error) => {
       console.warn("[plugins] scan failed:", error);
@@ -680,7 +844,7 @@ async function refreshConsent(): Promise<void> {
 
     if (record.incompatible) {
       record.info.status = "incompatible";
-      record.info.error = `unsupported apiVersion ${record.manifest.apiVersion} (expected ${API_VERSION})`;
+      record.info.error = `unsupported apiVersion ${record.manifest.apiVersion} (supported: 1–${API_VERSION})`;
       await deactivateRecord(record);
       continue;
     }
@@ -745,6 +909,7 @@ export async function reloadPlugins(): Promise<number> {
   }
   scanned = false;
   scanPromise = null;
+  hooksReady = false;
   await ensureScanned();
   revision += 1;
   return revision;
@@ -1029,6 +1194,36 @@ export async function setPluginConsent(
   return { ok: true, revision };
 }
 
+/**
+ * Dispatch a host→plugin event (apiVersion 2). Called by the internal
+ * `POST /api/plugin-events/:id` route; only registered, still-active plugin
+ * handlers receive it, and only for granted capabilities (enforced at buildApi).
+ */
+export async function dispatchPluginEvent(
+  id: string,
+  event: unknown,
+): Promise<{ ok: boolean; error?: string }> {
+  await ensureScanned();
+  const record = records.get(id);
+  if (!record || !record.runtime || record.info.status !== "ok") {
+    return { ok: false, error: "unknown or inactive plugin" };
+  }
+  if (!isRecord(event) || typeof event.type !== "string") {
+    return { ok: false, error: "invalid event" };
+  }
+  const runtime = record.runtime;
+  if (event.type === "hotkey.trigger") {
+    const accel = typeof event.accelerator === "string" ? event.accelerator : "";
+    const fn = runtime.hotkeys.get(accel);
+    if (fn) await runHook(record, () => fn(event));
+    return { ok: true };
+  }
+  for (const fn of runtime.events.get(event.type) ?? []) {
+    await runHook(record, () => fn(event));
+  }
+  return { ok: true };
+}
+
 /** Current revision (bumped on reload/enable/disable). */
 export function getPluginsRevision(): number {
   return revision;
@@ -1190,7 +1385,7 @@ export async function importPluginZip(
   }
   const id = parsedManifest.id;
   if (!isValidPluginId(id)) {
-    return { ok: false, status: 400, error: "manifest id must match /^[a-z0-9-]+$/ and not be reserved" };
+    return { ok: false, status: 400, error: "manifest id must match /^[a-z0-9_][a-z0-9_-]*$/ and not be reserved" };
   }
 
   const dir = getPluginsDir();
@@ -1285,6 +1480,7 @@ export async function __resetPlugins(): Promise<void> {
   records.clear();
   scanned = false;
   scanPromise = null;
+  hooksReady = false;
   consentCache = null;
   revision = 0;
   if (watcher) {

@@ -35,6 +35,7 @@ const VOICE_MAX_LINES = 4;
 const VOICE_CHUNK_THROTTLE_MS = 150;
 const VOICE_TENTATIVE_MS = 2000;
 const VOICE_TENTATIVE_MIN_CHARS = 20;
+const PLUGIN_STOP_MS = 200;
 
 type TestState = {
   playing: boolean;
@@ -69,6 +70,9 @@ function Overlay() {
   const voiceControllerRef = useRef<AbortController | null>(null);
   const lineReqRef = useRef<Map<string, number>>(new Map());
   const reqSeqRef = useRef(0);
+  const activeUtteranceRef = useRef<string | null>(null);
+  const lastTentativeAtRef = useRef(0);
+  const lastTentativeLenRef = useRef(0);
   const stopTimerRef = useRef<number | null>(null);
   const wasPlayingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -96,6 +100,74 @@ function Overlay() {
       commitLines(linesRef.current.map((line) => (line.id === id ? { ...line, text } : line)));
     },
     [commitLines]
+  );
+
+  const [pluginText, setPluginText] = useState<{
+    text: string;
+    tone: "normal" | "muted";
+  } | null>(null);
+  const [pluginStopping, setPluginStopping] = useState(false);
+  const pluginTimerRef = useRef<number | null>(null);
+  const pluginStopTimerRef = useRef<number | null>(null);
+  const pluginStopPendingRef = useRef(false);
+
+  const clearPluginText = useCallback(() => {
+    if (pluginTimerRef.current) {
+      window.clearTimeout(pluginTimerRef.current);
+      pluginTimerRef.current = null;
+    }
+    pluginStopPendingRef.current = true;
+    setPluginStopping(true);
+    if (pluginStopTimerRef.current) window.clearTimeout(pluginStopTimerRef.current);
+    pluginStopTimerRef.current = window.setTimeout(() => {
+      pluginStopTimerRef.current = null;
+      // Keep `pluginStopping` true for this idle transition so the overlay
+      // takes the plugin hard-cut (no re-created fade, no fallback flash).
+      setPluginText(null);
+      setSubtitle({ kind: "idle" });
+    }, PLUGIN_STOP_MS);
+  }, []);
+
+  // Plugin teardown: drop the stopping flag only after the idle render removed
+  // the card (never in the same batch).
+  useEffect(() => {
+    if (pluginStopPendingRef.current && subtitle.kind === "idle") {
+      pluginStopPendingRef.current = false;
+      setPluginStopping(false);
+    }
+  }, [subtitle.kind]);
+
+  const resetVoiceForPlugin = useCallback(() => {
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    debounceRef.current = null;
+    voiceControllerRef.current?.abort();
+    voiceControllerRef.current = null;
+    lineReqRef.current.clear();
+    activeUtteranceRef.current = null;
+    commitLines([]);
+    setVoiceActive(false);
+  }, [commitLines]);
+
+  const showPluginText = useCallback(
+    (text: string, tone: "normal" | "muted", stickyMs?: number) => {
+      resetVoiceForPlugin();
+      if (pluginStopTimerRef.current) {
+        window.clearTimeout(pluginStopTimerRef.current);
+        pluginStopTimerRef.current = null;
+      }
+      pluginStopPendingRef.current = false;
+      setPluginStopping(false);
+      setPluginText({ text, tone });
+      setSubtitle({ kind: "success", original: "", text: "" });
+      if (pluginTimerRef.current) window.clearTimeout(pluginTimerRef.current);
+      if (typeof stickyMs === "number" && stickyMs > 0) {
+        pluginTimerRef.current = window.setTimeout(() => {
+          pluginTimerRef.current = null;
+          clearPluginText();
+        }, stickyMs);
+      }
+    },
+    [resetVoiceForPlugin, clearPluginText]
   );
 
   const dismissSubtitle = useCallback(() => {
@@ -246,10 +318,6 @@ function Overlay() {
     [prepareTranslation, applyLineText]
   );
 
-  const activeUtteranceRef = useRef<string | null>(null);
-  const lastTentativeAtRef = useRef(0);
-  const lastTentativeLenRef = useRef(0);
-
   const handleVoicePayload = useCallback(
     (
       text: string,
@@ -268,6 +336,17 @@ function Overlay() {
         stopTimerRef.current = null;
       }
       setVoiceStopping(false);
+
+      // Newest wins: a voice payload replaces any plugin text.
+      if (pluginText) {
+        if (pluginTimerRef.current) window.clearTimeout(pluginTimerRef.current);
+        pluginTimerRef.current = null;
+        if (pluginStopTimerRef.current) window.clearTimeout(pluginStopTimerRef.current);
+        pluginStopTimerRef.current = null;
+        pluginStopPendingRef.current = false;
+        setPluginStopping(false);
+        setPluginText(null);
+      }
 
       const trimmed = text.trim();
       const lines = linesRef.current;
@@ -333,7 +412,7 @@ function Overlay() {
         translateLine(live.id, monotonic);
       }
     },
-    [commitLines, translateLine, stopVoice]
+    [commitLines, translateLine, stopVoice, pluginText]
   );
 
   const handleCapture = useCallback(
@@ -341,8 +420,30 @@ function Overlay() {
       text: string,
       source?: string,
       voice?: boolean,
-      voiceOpts?: { utteranceId?: string; close?: boolean; stop?: boolean }
+      voiceOpts?: { utteranceId?: string; close?: boolean; stop?: boolean },
+      pluginOpts?: {
+        pluginText?: boolean;
+        tone?: "normal" | "muted";
+        stickyMs?: number;
+        clear?: boolean;
+      }
     ) => {
+      if (pluginOpts?.clear) {
+        clearPluginText();
+        return;
+      }
+      if (pluginOpts?.pluginText) {
+        const trimmedPlugin = text.trim();
+        if (trimmedPlugin) {
+          showPluginText(
+            trimmedPlugin,
+            pluginOpts.tone === "muted" ? "muted" : "normal",
+            pluginOpts.stickyMs
+          );
+        }
+        return;
+      }
+
       if (voice) {
         handleVoicePayload(
           text,
@@ -356,7 +457,7 @@ function Overlay() {
       const trimmed = text.trim();
       if (!trimmed) return;
 
-      // Any non-voice capture leaves voice mode cleanly.
+      // Any non-voice capture leaves voice/plugin mode cleanly.
       if (voiceActive || linesRef.current.length > 0) {
         if (debounceRef.current) window.clearTimeout(debounceRef.current);
         debounceRef.current = null;
@@ -366,6 +467,15 @@ function Overlay() {
         activeUtteranceRef.current = null;
         commitLines([]);
         setVoiceActive(false);
+      }
+      if (pluginText || pluginStopping) {
+        if (pluginTimerRef.current) window.clearTimeout(pluginTimerRef.current);
+        pluginTimerRef.current = null;
+        if (pluginStopTimerRef.current) window.clearTimeout(pluginStopTimerRef.current);
+        pluginStopTimerRef.current = null;
+        pluginStopPendingRef.current = false;
+        setPluginStopping(false);
+        setPluginText(null);
       }
 
       const isTest = source === "test";
@@ -466,6 +576,10 @@ function Overlay() {
       prepareTranslation,
       voiceActive,
       commitLines,
+      clearPluginText,
+      showPluginText,
+      pluginText,
+      pluginStopping,
     ]
   );
 
@@ -580,11 +694,22 @@ function Overlay() {
       if (!bridge) return;
 
       const unsubscribe = bridge.onCapture((payload) => {
-        handleCapture(payload.text, payload.source, payload.voice, {
-          utteranceId: payload.utteranceId,
-          close: payload.close,
-          stop: payload.stop,
-        });
+        handleCapture(
+          payload.text,
+          payload.source,
+          payload.voice,
+          {
+            utteranceId: payload.utteranceId,
+            close: payload.close,
+            stop: payload.stop,
+          },
+          {
+            pluginText: payload.pluginText,
+            tone: payload.tone,
+            stickyMs: payload.stickyMs,
+            clear: payload.pluginOverlay === "clear",
+          }
+        );
       });
       return unsubscribe;
     }
@@ -617,6 +742,11 @@ function Overlay() {
         opts?: { utteranceId?: string; close?: boolean; stop?: boolean }
       ) => void;
       __subtrCapture?: (text: string, voice?: boolean) => void;
+      __subtrPluginShow?: (
+        text: string,
+        opts?: { tone?: "normal" | "muted"; stickyMs?: number }
+      ) => void;
+      __subtrPluginClear?: () => void;
     };
     w.__subtrVoiceTest = (text, opts) => {
       void handleCapture(text, undefined, true, opts);
@@ -624,9 +754,21 @@ function Overlay() {
     w.__subtrCapture = (text, voice = false) => {
       void handleCapture(text, undefined, voice);
     };
+    w.__subtrPluginShow = (text, opts) => {
+      void handleCapture(text, undefined, false, undefined, {
+        pluginText: true,
+        tone: opts?.tone,
+        stickyMs: opts?.stickyMs,
+      });
+    };
+    w.__subtrPluginClear = () => {
+      void handleCapture("", undefined, false, undefined, { clear: true });
+    };
     return () => {
       delete w.__subtrVoiceTest;
       delete w.__subtrCapture;
+      delete w.__subtrPluginShow;
+      delete w.__subtrPluginClear;
     };
   }, [handleCapture]);
 
@@ -635,6 +777,8 @@ function Overlay() {
       abortRef.current?.abort();
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
       if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
+      if (pluginTimerRef.current) window.clearTimeout(pluginTimerRef.current);
+      if (pluginStopTimerRef.current) window.clearTimeout(pluginStopTimerRef.current);
       voiceControllerRef.current?.abort();
     };
   }, []);
@@ -668,6 +812,8 @@ function Overlay() {
       voice={voiceActive}
       voiceLines={voiceLines}
       voiceStopping={voiceStopping}
+      pluginText={pluginText}
+      pluginStopping={pluginStopping}
     />
   );
 }

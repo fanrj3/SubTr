@@ -12,7 +12,7 @@ export async function POST(
 ): Promise<Response> {
   await connection();
   const { id } = await params;
-  if (!id || !/^[a-z0-9-]+$/.test(id)) {
+  if (!id || !/^[a-z0-9_][a-z0-9_-]*$/.test(id)) {
     return errorResponse("invalid plugin id", 400);
   }
   let body: unknown;
@@ -35,7 +35,7 @@ export async function DELETE(
 ): Promise<Response> {
   await connection();
   const { id } = await params;
-  if (!id || !/^[a-z0-9-]+$/.test(id)) {
+  if (!id || !/^[a-z0-9_][a-z0-9_-]*$/.test(id)) {
     return errorResponse("unknown plugin", 404);
   }
   const result = await uninstallPlugin(id);

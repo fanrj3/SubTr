@@ -133,6 +133,19 @@ Closed by default; discovery stays one click away.
   Esc/✕ fade locally and reopen on the next payload. Pin is a no-op in voice.
 - Non-voice payloads keep the existing show → teleprompter/hold → auto-hide flow.
 
+## Plugin text (`overlay.subtitle`)
+
+- Plugin text renders **verbatim** in the shared subtitle card: no translation,
+  no translate-mode gate, no fallback string. `tone: "normal"` = normal subtitle
+  color, `tone: "muted"` = the dimmed transcript styling.
+- `stickyMs` (optional) auto-dismisses after that long (fade, ≤200 ms); without
+  it the text stays until replaced or `clear()`.
+- `clear()` fades cleanly with the same single-mount hard-cut rules as voice
+  (no re-created card, no "No translation returned").
+- Newest wins: a plugin show resets an active voice session, and a voice payload
+  or a normal capture replaces plugin text. Non-voice selection/test flows are
+  unchanged.
+
 ## Pace slider mapping
 
 - `textScale` is a **speed factor**: scroll/display durations are

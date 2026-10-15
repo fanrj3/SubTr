@@ -38,14 +38,18 @@ cp -R examples/plugins/acme-translate ~/.subtr/plugins/
 }
 ```
 
-- `id` must match the folder name (`/^[a-z0-9-]+$/`) and use lowercase.
+- `id` must match the folder name (`/^[a-z0-9_][a-z0-9_-]*$/`). A leading `_`
+  marks a local **test fixture** — it loads if present but is never packaged.
 - `version` / `minAppVersion` must be semver (`x.y.z`).
-- `apiVersion` must be `1` (otherwise the plugin is reported as `incompatible`).
+- `apiVersion` must be `1` or `2`. `2` unlocks the host capabilities below;
+  apiVersion-1 plugins keep the exact v1 hook API (fully backward compatible).
 - `entry` is required when `capabilities` is non-empty (default `index.cjs`).
 - A plugin with no capabilities needs no code at all — see `acme-translate`,
   which only contributes a provider preset.
 
 ## Capabilities
+
+### v1
 
 | Capability                    | Grants                                             |
 | ----------------------------- | -------------------------------------------------- |
@@ -54,8 +58,49 @@ cp -R examples/plugins/acme-translate ~/.subtr/plugins/
 | `dictionary.source`           | `api.dictionary.onLookup(fn)`                       |
 | `ui.panel`                    | Serve panel HTML into a sandboxed iframe            |
 
+### v2 host capabilities (apiVersion 2)
+
+These bridge to Electron main over a loopback RPC (capture, overlay windows and
+global hotkeys live there, not in the server). Each is granted separately.
+
+| Capability          | Grants |
+| ------------------- | ------ |
+| `capture.region`    | `api.capture.region(options) → { ok, imageDataUrl, widthPx, heightPx, scaleFactor, rect, displayId }` — freeze the display, drag a region, get a device-pixel PNG crop |
+| `overlay.regions`   | `api.overlay.regions.show/update/hide` + `onRegionHover/onRegionSelect/onRegionDismiss` — draw an image with normalized highlight boxes; hover/select/dismiss come back as events |
+| `overlay.subtitle`  | `api.overlay.subtitle.show({ text, tone?: "normal"\|"muted", stickyMs? })` / `.clear()` — the normal subtitle line. Internally the host sends the overlay `{ pluginText: true, text, tone?, stickyMs? }` (and `{ pluginOverlay: "clear" }` to clear), so the overlay renders plugin text verbatim rather than as a translation input |
+| `translate.text`    | `api.translate.text({ texts, targetLang?, sourceLang?, context? }) → { ok: true, translations: [{ text }] } \| { ok: false, reason: "no-profile"\|"upstream"\|"timeout"\|"cancelled", message? }` — batch translate through the app's **active profile**. Plugins never see keys/base URLs. If no profile is configured (or the reader window is gone) the host returns `{ ok: false, reason: "no-profile" }` — it never hangs |
+| `hotkey.register`   | `api.hotkey.register({ accelerator, onTrigger, when? })` / `.unregister` / `.isRegistered` — a plugin-owned global shortcut; `when: "translation-mode"` only fires while translate mode is on |
+
 Granted namespaces only: if you were not granted `dictionary.source`, then
-`api.dictionary` is **absent** (calling it throws).
+`api.dictionary` is **absent** (calling it throws). Same for every v2 namespace.
+`api.host.rpc(cap, params)` is a low-level escape hatch for the same bridge.
+
+### `translate.text` and the active profile
+
+`translate.text` runs through the app's own `/api/translate` with the profile the
+user has **active in the app** — the plugin never receives the API key or base
+URL, and keys are never written anywhere new on disk. The host reads the active
+profile from the reader window's `localStorage` (falling back to the overlay
+window, which shares the origin).
+
+Limitation: if the reader window has never loaded the app (so no profile is in
+`localStorage`) or the process is in a state without a renderer, the call
+resolves `{ ok: false, reason: "no-profile" }`. It degrades cleanly rather than
+hanging; the plugin should show "Add a profile to translate." and retry on the
+next hover.
+
+## Plugin-local dependencies
+
+A plugin may ship its **own `node_modules/`** (and model files) inside its
+folder. The loader resolves `require()` from the plugin directory
+(`createRequire(<pluginDir>/index.cjs)`), so:
+
+- A plugin's dependencies are isolated from the app's dependency tree.
+- **Never** add plugin-only packages to the app's `package.json`.
+- Keep the folder self-contained: `manifest.json`, `index.cjs`, `panel.html`,
+  `node_modules/`, models, `LICENSE`/`NOTICE`.
+- `node_modules/` and model files must be excluded from any distributable zip
+  via a `.zipignore` file (see Packaging).
 
 ## UI panels
 
@@ -156,6 +201,23 @@ and pressing **Reload** is a fast edit loop.
 `npm run plugins:zip` builds an importable zip for every folder under
 `examples/plugins/` into `examples/plugin-zips/<id>.zip`. Import a zip from
 Settings → Plugins → Import plugin.
+
+- Folders whose name starts with `_` are test fixtures and are **skipped**
+  (set `ZIPS_INCLUDE_FIXTURES=1` to include them).
+- A plugin folder may ship a **`.zipignore`** (gitignore-lite: one pattern per
+  line, `#` comments) to exclude heavy paths — e.g.:
+
+  ```
+  # .zipignore
+  node_modules/
+  models/
+  *.onnx
+  NOTICE
+  ```
+
+  The build reports how many files / how many MB were excluded.
+- The plugin `.zip` still counts against `MAX_PLUGIN_ZIP_BYTES` (20 MB) at import
+  time, so exclude anything large.
 
 ## API
 
