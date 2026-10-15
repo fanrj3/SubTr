@@ -16,7 +16,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | **0.2.1** | `66af67f` | Settings page, profiles v2, thinking control, subtitle customization |
 | **0.2.2** | `4c10810` · docs `0efc776` | Theme + UI language, compact window, position player |
 | **0.2.3** | `cb855ca` · docs `3650ab3` | Native theme, display-aspect preview, Test button, fade-out, caps, capture handshake |
-| **0.3.0** | *(release commit)* | Plugin API v2 (host capabilities), image-translate P0, voice long-run fix |
+| **0.3.0** | `2204fb8` | Plugin API v2 (host capabilities), image-translate P0, voice long-run fix |
 | **0.2.9** | `7f5c4e5` | Tray icons + Usage submenu, navigation silkiness, pace scale, About, voice (Beta) phase 2 |
 | **0.2.8** | `bfef0e6` | Home widgets below reader, scroll isolation, position layout, plugin kit + preview, tray usage, voice (Beta) phase 1 |
 | **0.2.7** | `7fe1bf1` | Settings refactor (nav rail + setting rows), Base UI primitives, DESIGN.md |
@@ -89,8 +89,8 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | 0.2.9 follow-up 3: continuous voice captions (growing utterance buffer + in-place overlay updates) | 0.2.9 | `8538ddd` | `desktop/voice-pipeline.cjs`, `desktop/main.cjs`, `src/app/overlay/page.tsx`, `src/components/subtitle-overlay.tsx` |
 | 0.2.9 follow-up 4: rolling voice transcript (never-dismiss lines, stop signal) | 0.2.9 | `80dcf6d` | `desktop/main.cjs`, `src/app/overlay/page.tsx`, `src/components/subtitle-overlay.tsx` |
 | 0.2.9 follow-up 5: two-zone stable captions (append-only transcript + frozen/tentative translations) | 0.2.9 | `ec07ebb` | `src/app/overlay/page.tsx`, `src/components/subtitle-overlay.tsx` |
-| Plugin API v2: host bridge + capture.region / overlay.regions / overlay.subtitle / translate.text / hotkey.register | 0.3.0 | *(release commit)* | `desktop/main.cjs`, `desktop/host-*.html`, `desktop/host-preload.cjs`, `src/lib/server/plugins.ts`, `src/app/api/plugin-events/` |
-| Image-translate plugin project P0 (spec + skeleton + plan) | 0.3.0 | *(release commit)* | `examples/plugins/image-translate/`, `docs/image-translate-plugin.md` |
+| Plugin API v2: host bridge + capture.region / overlay.regions / overlay.subtitle / translate.text / hotkey.register | 0.3.0 | `2204fb8` | `desktop/main.cjs`, `desktop/host-*.html`, `desktop/host-preload.cjs`, `src/lib/server/plugins.ts`, `src/app/api/plugin-events/` |
+| Image-translate plugin project P0 (spec + skeleton + plan) | 0.3.0 | `2204fb8` | `examples/plugins/image-translate/`, `docs/image-translate-plugin.md` |
 
 ---
 
