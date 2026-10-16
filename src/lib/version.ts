@@ -4,11 +4,11 @@ export const APP_VERSION = "0.2.10";
  * Update manifest endpoint (GitHub Releases API "latest" works as-is).
  * Overridable: localStorage["subtr.updateManifestUrl"] > NEXT_PUBLIC_UPDATE_MANIFEST_URL > this.
  */
-export const DEFAULT_UPDATE_MANIFEST_URL = "https://api.github.com/repos/fanjr3/SubTr/releases/latest";
+export const DEFAULT_UPDATE_MANIFEST_URL = "https://api.github.com/repos/fanrj3/SubTr/releases/latest";
 
 /** Repository / download links used by About + the update banner. */
-export const REPO_URL = "https://github.com/fanjr3/SubTr";
-export const RELEASES_URL = "https://github.com/fanjr3/SubTr/releases";
+export const REPO_URL = "https://github.com/fanrj3/SubTr";
+export const RELEASES_URL = "https://github.com/fanrj3/SubTr/releases";
 
 /** Compare two semver strings (pre-release suffixes ignored). >0 means a is newer. */
 export function compareSemver(a: string, b: string): number {

@@ -106,4 +106,4 @@ MIT — see [LICENSE](./LICENSE). Third-party components keep their own licenses
 
 ## Releases
 
-Builds and update notes: https://github.com/fanjr3/SubTr/releases — the app checks this automatically (Settings → About → Check for updates, plus an in-app banner when a newer version exists).
+Builds and update notes: https://github.com/fanrj3/SubTr/releases — the app checks this automatically (Settings → About → Check for updates, plus an in-app banner when a newer version exists).
