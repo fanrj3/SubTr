@@ -4,7 +4,7 @@ export const APP_VERSION = "0.2.10";
  * Update manifest endpoint (GitHub Releases API "latest" works as-is).
  * Overridable: localStorage["subtr.updateManifestUrl"] > NEXT_PUBLIC_UPDATE_MANIFEST_URL > this.
  */
-export const DEFAULT_UPDATE_MANIFEST_URL = "https://api.github.com/repos/fanrj3/SubTr/releases/latest";
+export const DEFAULT_UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/fanrj3/SubTr/main/update.json";
 
 /** Repository / download links used by About + the update banner. */
 export const REPO_URL = "https://github.com/fanrj3/SubTr";

@@ -114,3 +114,9 @@ manager or a manual re-download.
       endpoint returns the new `tag_name` and `html_url`.
 - [ ] Smoke-test Settings → About → Check for updates against the live endpoint
       (both "up to date" and "update available" paths).
+
+## Default manifest: raw `update.json` (rate-limit-proof)
+
+The app's default manifest URL is the repository's **`update.json` on the default branch**, served by `raw.githubusercontent.com` (CDN, CORS-enabled, no API rate limits — the anonymous GitHub API is commonly rate-limited on shared IPs, which would silently disable update checks).
+
+Maintain it at every release: bump `tag_name` / `version` / `html_url` (and `notes` if you like) in the repo root `update.json`, on the same commit that bumps `APP_VERSION`. The parser accepts either `tag_name` or `version`, and links via `html_url`. The GitHub API URL remains supported as a manual override (`subtr.updateManifestUrl`).
