@@ -51,6 +51,31 @@ The client reads `tag_name ?? version`, strips a leading `v`, and compares with
 The check is best-effort: unauthenticated GitHub API calls are rate-limited
 (60/h/IP); a 403/network failure maps to the quiet error state.
 
+## 3b. Automatic notification (silent, once/day)
+
+Besides the manual button, the app shell runs a **silent** check on mount
+(web and desktop) and shows a slim banner when a newer release exists.
+
+- **Gate:** at most once per 24 h (`subtr.update.lastCheckedAt`). Failures are
+  silent — never a toast or error UI.
+- **Banner:** one line under the top bar (≤40 px, tokens only, no gradients):
+  "新版本 {version} 可用" / "New version {version} is available" + a
+  "查看更新" / "View update" link (`RELEASES_URL`) + ✕ dismiss.
+- **Per-version dismiss:** `subtr.update.dismissed` stores the dismissed
+  version, so the banner stays hidden for that release.
+- **Cache:** the last known available release is cached in
+  `subtr.update.available` so the banner survives page navigation within the
+  24 h window (and is cleared when the check reports up-to-date).
+
+```text
+mount ─▶ readAvailableUpdate() ─▶ show cached (if not dismissed)
+      └▶ shouldAutoCheck()? ── no ──▶ done
+             └─ yes ─▶ markChecked() ─▶ checkForUpdate()
+                         ├ available ─▶ cache + show banner
+                         ├ upToDate  ─▶ clear cache
+                         └ error     ─▶ silent
+```
+
 ## 4. Why unsigned builds cannot auto-install on macOS
 
 Electron's auto-updaters (Squirrel.Mac / `electron-updater`) verify the
@@ -68,8 +93,10 @@ manager or a manual re-download.
 
 ## 5. Staged plan
 
-1. **Phase 1 (now):** check + notify. Fetch the manifest, compare versions, show
-   the release link. No network install. Works for unsigned builds.
+1. **Phase 1 (now):** check + notify. Manual About check plus a silent
+   once-per-24 h auto-check with a per-version dismissible banner. Fetch the
+   manifest, compare versions, show the release link. No network install. Works
+   for unsigned builds.
 2. **Phase 2 (signed):** add `electron-updater` with macOS signing +
    notarization and Windows code signing. Ship an update feed (`latest-mac.yml`,
    `latest.yml`) alongside the signed artifacts. Keep the manual link as a

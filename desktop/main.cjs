@@ -2977,7 +2977,28 @@ function stopServer() {
 // App lifecycle
 // ---------------------------------------------------------------------------
 
+/**
+ * Dev-only: give the macOS Dock the SubTr icon. Unpackaged builds run from
+ * Electron.app, whose default icon is the Electron logo; `app.dock.setIcon`
+ * fixes that. No-op on other platforms and in packaged builds (the bundle icon
+ * is used there). Falls back silently when build/icon.png is missing.
+ */
+function setDevDockIcon() {
+  if (process.platform !== "darwin" || app.isPackaged) return;
+  try {
+    if (!app.dock) return;
+    const iconPath = path.join(APP_ROOT, "build", "icon.png");
+    if (fs.existsSync(iconPath)) app.dock.setIcon(iconPath);
+  } catch (error) {
+    console.warn("[dock] setIcon failed:", error && error.message ? error.message : error);
+  }
+}
+
 async function start() {
+  // In dev/unpackaged macOS builds the running bundle is Electron.app, so the
+  // Dock shows the default Electron icon. Point it at the generated app icon.
+  setDevDockIcon();
+
   if (process.env.SUBTR_TEST === "1") {
     globalThis.__subtrTest = {
       capture: (text) => handleCapture({ text }),

@@ -22,6 +22,7 @@ import { SubtitleOverlay, type SubtitleState } from "./subtitle-overlay";
 import { StatusBar } from "./status-bar";
 import { HomeWidgets } from "./home-widgets";
 import { PageFade } from "./page-fade";
+import { UpdateBanner } from "./update-banner";
 
 const TARGET_LANG_KEY = "subtr.targetLang.v1";
 const DEFAULT_TARGET_LANG = "auto";
@@ -194,6 +195,7 @@ export function SubTrApp() {
         targetLang={targetLang}
         onTargetLangChange={handleTargetLangChange}
       />
+      <UpdateBanner />
       <PageFade>
         <Reader onSelect={handleSelect} mode={mode} />
         <HomeWidgets />

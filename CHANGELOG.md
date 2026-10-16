@@ -96,6 +96,8 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 | Update check in About + `docs/UPDATES.md` plan | 0.2.10 | `4322702` | `src/app/settings/page.tsx`, `src/lib/version.ts`, `docs/UPDATES.md` |
 | Image-translate batch translate via streaming route + visible degrade (no stuck “Translating…”) | 0.2.10 | `19cb728` | `desktop/main.cjs`, `examples/plugins/image-translate/index.cjs` |
 | Highlight numbers off by default + config migration (`configVersion: 2`) | 0.2.10 | `19cb728` | `examples/plugins/image-translate/index.cjs`, `examples/plugins/image-translate/README.md` |
+| Auto update notifications (24 h check + dismissible banner) | 0.2.10 | *(release)* | `src/components/update-banner.tsx`, `src/lib/client/updates.ts` |
+| MIT LICENSE + package metadata + dev Dock icon | 0.2.10 | *(release)* | `LICENSE`, `package.json`, `desktop/main.cjs` |
 
 ---
 
@@ -144,6 +146,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
   - **Update feature prepared**: Settings → About now has **Check for updates** (configurable manifest URL, semver compare against `APP_VERSION`, states: up-to-date / update available + Open download page / quiet failure) and `docs/UPDATES.md` documents the full plan — including why unsigned macOS builds cannot auto-install (signing/notarization via Squirrel/electron-updater) and the staged path to signed auto-updates.
   - The previous 0.3.0 release was **renumbered to 0.2.10** (user's numbering preference).
 - **Follow-up 3 (same 0.2.10):** fixed the image-translate **“Translating…” stuck** bug — the host batch client requested the non-streaming branch of `/api/translate`, which requires the upstream to answer JSON; streaming-only providers return SSE, the translation parsed empty (502), and the plugin left its placeholder up forever. The batch path now uses the **streaming route** (same as selection translation) with a JSON fallback and surfaced upstream errors, and every hover now degrades visibly instead of hanging: translated text → “Translating…” only while genuinely pending → **“<source> · 翻译暂不可用 · Translation unavailable”** on failure (`GET status` exposes `lastTranslateError`). Also: highlight **numbers are off by default** again (opt-in), with a config migration that flips the legacy default but respects explicit user values (`configVersion: 2`).
+- **Follow-up 4 (same 0.2.10) — automatic update notifications + ship prep:** the app now silently checks the release manifest (GitHub Releases API for this repo) **at most once per 24 h** and, when a newer version exists, shows a slim dismissible banner under the top bar on both pages («新版本 X 可用 → 查看更新»); dismissed versions stay hidden, failures are silent, and the manual Check-for-updates row in About remains. Ship preparation: `package.json` gained description/author/license, an **MIT `LICENSE`** with third-party notices was added, and the **dev-mode Dock now shows the real app icon** (packaged builds already do).
 
 ### 0.2.9 — tray polish · navigation silk · pace scale · About · voice phase 2
 - **Tray**: every menu item now carries a 16 px template icon (eye/bubble/mic/gear/chart/download/power, generated in pure JS); usage moved into a hover-opened **Usage submenu** (Today / All time lines; "No usage data yet" fallback); the menu is still rebuilt on every click.

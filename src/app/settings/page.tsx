@@ -3,11 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { Tabs } from "@base-ui/react/tabs";
-import {
-  APP_VERSION,
-  compareSemver,
-  DEFAULT_UPDATE_MANIFEST_URL,
-} from "@/lib/version";
+import { APP_VERSION } from "@/lib/version";
 import { PageFade } from "@/components/page-fade";
 import { PROVIDER_PRESETS } from "@/lib/presets";
 import type {
@@ -46,6 +42,7 @@ import {
   effectiveUILang,
   usePlugins,
   mergeProviderPresets,
+  checkForUpdate,
   type Theme,
   type UILang,
 } from "@/lib/client";
@@ -56,6 +53,7 @@ import { HotkeyRecorder } from "@/components/hotkey-recorder";
 import { ConfigTransfer } from "@/components/config-transfer";
 import { PluginsSection } from "@/components/plugins-section";
 import { VoiceSettings } from "@/components/voice-settings";
+import { UpdateBanner } from "@/components/update-banner";
 import {
   Advanced,
   SettingsRow,
@@ -366,34 +364,12 @@ export default function SettingsPage() {
 
   async function checkForUpdates() {
     setUpdateStatus({ kind: "checking" });
-    try {
-      const override =
-        typeof window !== "undefined"
-          ? window.localStorage.getItem("subtr.updateManifestUrl")
-          : null;
-      const endpoint =
-        override ||
-        process.env.NEXT_PUBLIC_UPDATE_MANIFEST_URL ||
-        DEFAULT_UPDATE_MANIFEST_URL;
-      const res = await fetch(endpoint, {
-        headers: { Accept: "application/vnd.github+json" },
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error("bad status");
-      const data = (await res.json()) as {
-        tag_name?: unknown;
-        version?: unknown;
-        html_url?: unknown;
-      };
-      const tag = String(data.tag_name ?? data.version ?? "").replace(/^v/i, "");
-      if (!tag) throw new Error("no version");
-      const url = typeof data.html_url === "string" ? data.html_url : endpoint;
-      if (compareSemver(tag, APP_VERSION) > 0) {
-        setUpdateStatus({ kind: "available", version: tag, url });
-      } else {
-        setUpdateStatus({ kind: "upToDate" });
-      }
-    } catch {
+    const result = await checkForUpdate();
+    if (result.status === "available") {
+      setUpdateStatus({ kind: "available", version: result.version, url: result.url });
+    } else if (result.status === "upToDate") {
+      setUpdateStatus({ kind: "upToDate" });
+    } else {
       setUpdateStatus({ kind: "error" });
     }
   }
@@ -522,6 +498,8 @@ export default function SettingsPage() {
           <h1 className="truncate text-sm font-semibold tracking-tight">{t("settings.title")}</h1>
         </div>
       </header>
+
+      <UpdateBanner />
 
       <PageFade>
       <Tabs.Root

@@ -99,3 +99,11 @@ npx tsc --noEmit  # type check
 ```
 
 Built with Next.js (App Router) · React · TypeScript · Tailwind CSS · Base UI. The UI follows the design contract in `DESIGN.md`.
+
+## License
+
+MIT — see [LICENSE](./LICENSE). Third-party components keep their own licenses: ECDICT (MIT), whisper.cpp (MIT), Base UI (MIT), PaddleOCR / PP-OCRv6 (Apache-2.0, planned); npm dependencies as listed by their packages.
+
+## Releases
+
+Builds and update notes: https://github.com/fanjr3/SubTr/releases — the app checks this automatically (Settings → About → Check for updates, plus an in-app banner when a newer version exists).

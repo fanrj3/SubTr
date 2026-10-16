@@ -11,6 +11,7 @@ export * from "./client/mode.client";
 export * from "./client/hotkey";
 export * from "./client/hotkey.client";
 export * from "./client/dictionary";
+export * from "./client/updates";
 export * from "./client/plugins";
 export * from "./client/plugins.client";
 export * from "./client/config-transfer";

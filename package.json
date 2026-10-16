@@ -1,6 +1,9 @@
 {
   "name": "subtr",
   "version": "0.2.10",
+  "description": "Subtitle-style translation for anything you read — web and desktop.",
+  "author": "FrankLightcone <frankLightcone@gmail.com>",
+  "license": "MIT",
   "private": true,
   "main": "desktop/main.cjs",
   "scripts": {
