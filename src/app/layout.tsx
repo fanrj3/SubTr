@@ -4,6 +4,7 @@ import "./globals.css";
 import { getInitialThemeScript } from "@/lib/client/theme";
 import { getInitialUILangScript } from "@/lib/client/i18n";
 import { PageTransition } from "@/components/page-transition";
+import { ModeBridge } from "@/components/mode-bridge";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,6 +33,7 @@ export default function RootLayout(props: LayoutProps<"/">) {
         <script dangerouslySetInnerHTML={{ __html: getInitialUILangScript() }} />
       </head>
       <body className="min-h-full flex flex-col">
+        <ModeBridge />
         <PageTransition>{props.children}</PageTransition>
       </body>
     </html>

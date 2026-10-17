@@ -1,7 +1,8 @@
 # Image Translate — distributable-zip exclusions.
-# These paths are produced locally (build output / deps / runtime config) and
-# must never be bundled. The Swift source IS shipped so the Vision helper can be
-# compiled on first use.
-bin/
+# The universal Vision helper is prebuilt and SHIPPED in bin/vision-ocr so the
+# plugin works without Xcode/Command Line Tools; only compile caches and local
+# runtime config are excluded. The Swift source is kept for reproducibility.
+bin/.swift-module-cache/
+bin/vision-ocr.dSYM/
 node_modules/
 .config.json

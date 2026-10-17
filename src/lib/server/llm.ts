@@ -45,13 +45,23 @@ export function resolveChatCompletionsUrl(
 }
 
 /** System prompt used by /api/translate. */
-export function buildSystemPrompt(targetLang: string): string {
-  return (
-    `You are a translation engine. Translate the user's text into ${targetLang}. ` +
-    `Output only the translation, with no quotes, notes, explanations, or romanization. ` +
-    `Preserve the original tone, meaning, and formatting. ` +
-    `If the text is already in ${targetLang}, return it unchanged.`
-  );
+export function buildSystemPrompt(
+  targetLang: string,
+  options?: { forceTranslate?: boolean },
+): string {
+  const base =
+    `You are a professional translation engine. Translate the user's text into ${targetLang}. ` +
+    `Output only the translation — no quotes, notes, explanations, or romanization. ` +
+    `Preserve the original meaning, tone and formatting (including Markdown lists, bold and code). ` +
+    `Translate every sentence. Words that are already in ${targetLang} may stay as they are, ` +
+    `but never return the whole input unchanged just because part of it already matches ${targetLang}.`;
+  if (options?.forceTranslate) {
+    return (
+      `${base} The source text is not ${targetLang}. You MUST translate it into ${targetLang}; ` +
+      `returning the source text unchanged is an error.`
+    );
+  }
+  return base;
 }
 
 /**

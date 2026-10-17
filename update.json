@@ -1,6 +1,6 @@
 {
-  "tag_name": "v0.2.10",
-  "version": "0.2.10",
-  "html_url": "https://github.com/fanrj3/SubTr/releases/tag/v0.2.10",
-  "notes": "Plugin API v2, image-translate plugin, update notifications."
+  "tag_name": "v0.2.11",
+  "version": "0.2.11",
+  "html_url": "https://github.com/fanrj3/SubTr/releases/tag/v0.2.11",
+  "notes": "Subtitle actions (⌘C copy, ⌘I / double-space insert), style menu, reliable global toggle, CJK echo fix, image-translate OCR fix, redesigned Usage panel."
 }

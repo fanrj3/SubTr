@@ -1,9 +1,9 @@
 {
   "id": "image-translate",
   "name": "Image Translate",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "apiVersion": 2,
-  "minAppVersion": "0.2.9",
+  "minAppVersion": "0.2.11",
   "description": "Capture a region of the screen, read the text with on-device OCR, and show Live Text-style highlights whose translations appear in the subtitle line on hover.",
   "author": "SubTr",
   "entry": "index.cjs",

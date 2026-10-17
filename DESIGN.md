@@ -160,3 +160,34 @@ Closed by default; discovery stays one click away.
 - All interactive elements: `focus-visible:ring-2 ring-accent ring-offset-1
   ring-offset-background`, never removed.
 - Dialogs trap focus (Base UI Dialog) and restore it on close.
+
+## Locked subtitle actions (0.2.11)
+
+- A subtitle **locks** on wheel or left-click and never auto-hides; a new
+  capture replaces it, Esc/✕ dismisses it. Left-click must not activate the
+  desktop app or raise the reader window (the overlay is a macOS `panel`).
+- **While locked and hovered** (pointer over the card or its menu) the main
+  process arms `⌘C`, `⌘I` and double-space; they are disarmed on leave, dismiss,
+  and overlay teardown. Copy/insert feedback is a top-center pill toast
+  (≤1.7 s), never a modal.
+- **Right-click** opens the compact style menu: text size stepper, text color
+  swatches + custom picker, font family, reset, copy/insert, and (desktop)
+  **Open SubTr window**. Editing a control writes the shared subtitle style;
+  menu interactions must keep the overlay interactive until it closes.
+- Insert replaces the focused app's current selection via the clipboard +
+  synthetic paste, restoring the previous clipboard after ~1.2 s. In the web
+  app it inserts into the last focused input/textarea/contenteditable instead.
+- The pinned card shows key hints (`⌘C` copy, `⌘I` insert, `Space ×2` insert)
+  in a single muted micro row; the lock indicator stays bottom-right.
+
+## Translate-mode ownership
+
+- The Electron main process owns the live translate-mode value and the tray
+  checkbox; a root-layout `ModeBridge` mirrors it into localStorage on every
+  route (home, settings, previews).
+- Renderer → main: `mode-sync` once per app process (seed from storage) and
+  `mode-set` on an explicit TopBar switch. Main → renderer: `toggle-mode` with
+  an idempotent `{ enabled }` payload.
+- The toggle accelerator is registered at startup and falls back to
+  `Alt+⇧+Space`, `Ctrl+⇧+Space`, then `Alt+⌘+T` when taken. Only the reader
+  window may register it.

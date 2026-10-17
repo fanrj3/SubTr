@@ -135,39 +135,53 @@ export function StatusBar() {
   const prefix = estimated ? "~" : "";
   const dash = "—";
 
+  const sep = <span className="h-3 w-px bg-card-border" aria-hidden="true" />;
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 border-t border-card-border bg-background/85 backdrop-blur-md">
-      <div className="mx-auto flex max-w-[75rem] flex-wrap items-center justify-center gap-x-4 gap-y-0.5 px-4 py-1.5 text-[11px] text-muted sm:justify-between sm:px-6">
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex justify-center px-3 pb-3">
+      <div className="pointer-events-auto flex max-w-[min(94vw,56rem)] flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-full border border-card-border/90 bg-background/80 px-4 py-1.5 text-[10.5px] text-muted shadow-[0_10px_30px_-10px_rgba(0,0,0,0.25)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/65">
+        <span className="inline-flex items-center gap-1.5">
+          <span className={`h-1.5 w-1.5 rounded-full ${stats ? "animate-pulse-dot bg-success/80" : "bg-muted/50"}`} />
+          <span className="font-semibold uppercase tracking-[0.12em] text-[9px] text-muted">
+            {stats ? "usage" : "…"}
+          </span>
+        </span>
+        {sep}
         <span className="inline-flex items-center gap-1">
           <DollarIcon />
-          <span className="text-muted">{t("status.cost")}</span>
-          <span className="font-medium tabular-nums text-foreground">
+          <span>{t("status.cost")}</span>
+          <span className="font-semibold tabular-nums text-foreground">
             {totals ? `${prefix}$${totals.costUsd.toFixed(4)}` : dash}
           </span>
         </span>
+        {sep}
         <span className="inline-flex items-center gap-1">
           <CallIcon />
-          <span className="text-muted">{t("status.calls")}</span>
-          <span className="font-medium tabular-nums text-foreground">
+          <span>{t("status.calls")}</span>
+          <span className="font-semibold tabular-nums text-foreground">
             {totals ? compact(totals.calls) : dash}
           </span>
         </span>
-        <span className="inline-flex items-center gap-1">
+        <span className="hidden items-center gap-1 sm:inline-flex">
+          <span className="mr-1 h-3 w-px bg-card-border" aria-hidden="true" />
           <TranslateIcon />
-          <span className="text-muted">{t("status.translations")}</span>
-          <span className="font-medium tabular-nums text-foreground">
+          <span>{t("status.translations")}</span>
+          <span className="font-semibold tabular-nums text-foreground">
             {totals ? compact(totals.translations) : dash}
           </span>
         </span>
-        <span className="inline-flex items-center gap-1">
+        <span className="hidden items-center gap-1 md:inline-flex">
+          <span className="mr-1 h-3 w-px bg-card-border" aria-hidden="true" />
           <TokenIcon />
-          <span className="text-muted">{t("status.tokens")}</span>
-          <span className="font-medium tabular-nums text-foreground">
+          <span>{t("status.tokens")}</span>
+          <span className="font-semibold tabular-nums text-foreground">
             {totals ? `${prefix}${compact(totals.inTokens + totals.outTokens)}` : dash}
           </span>
         </span>
         {estimated && (
-          <span className="text-[10px] italic text-muted">{t("status.estimated")}</span>
+          <>
+            {sep}
+            <span className="text-[9.5px] italic text-muted">{t("status.estimated")}</span>
+          </>
         )}
       </div>
     </div>

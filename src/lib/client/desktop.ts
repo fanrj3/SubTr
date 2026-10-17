@@ -59,11 +59,29 @@ export type DesktopBridge = {
     }) => void
   ): () => void;
   setOverlayInteractive?(on: boolean): void;
+  overlayActions?(payload: {
+    pinned: boolean;
+    hovered: boolean;
+    menuOpen: boolean;
+    canInsert: boolean;
+    text: string;
+  }): void;
+  onOverlayActionResult?(
+    cb: (payload: { action: string; ok?: boolean }) => void
+  ): () => void;
+  overlayAction?(action: "copy" | "insert"): void;
+  openMainWindow?(): void;
   setEscArmed?(on: boolean): void;
   setNativeTheme?(theme: string): void;
   showTestSubtitle?(text: string): void;
-  setToggleHotkey?(accel: string): Promise<{ ok: boolean; error?: string }>;
-  onToggleMode?(cb: () => void): () => void;
+  setToggleHotkey?(
+    accel: string,
+    options?: { allowFallback?: boolean }
+  ): Promise<{ ok: boolean; accelerator?: string; fallback?: boolean; error?: string }>;
+  onToggleMode?(cb: (payload: { enabled?: boolean }) => void): () => void;
+  syncMode?(enabled: boolean): void;
+  setMode?(enabled: boolean): void;
+  requestToggleMode?(): void;
   setTrayState?(enabled: boolean): void;
   controlTestPlay?(payload: { action: "play" | "pause" | "seek"; timeMs?: number }): void;
   reportTestPlayState?(state: { playing: boolean; timeMs: number; totalMs: number }): void;

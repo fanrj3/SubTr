@@ -1,4 +1,4 @@
-export const APP_VERSION = "0.2.10";
+export const APP_VERSION = "0.2.11";
 
 /**
  * Update manifest endpoint (GitHub Releases API "latest" works as-is).

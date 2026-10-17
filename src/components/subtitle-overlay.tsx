@@ -1,17 +1,30 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type MutableRefObject } from "react";
-import { XIcon, LoaderIcon, AlertIcon, CheckIcon, LockIcon } from "./icons";
+import {
+  XIcon,
+  LoaderIcon,
+  AlertIcon,
+  CheckIcon,
+  LockIcon,
+  CopyIcon,
+  InsertIcon,
+  OpenWindowIcon,
+} from "./icons";
 import { getTextMetrics, useT } from "@/lib/client";
 import { isDesktopMode } from "@/lib/client/desktop";
+import { isMac } from "@/lib/client/hotkey";
 import {
   fontFamilyCss,
   readSubtitleStyle,
   readSubtitleTiming,
   subscribeSubtitleStyle,
+  writeSubtitleStyle,
+  FONT_FAMILY_LABELS,
   DEFAULT_SUBTITLE_STYLE,
   computeTimeline,
   scrollOffsetAtTime,
+  type SubtitleStyle,
   type SubtitleTiming,
 } from "@/lib/client";
 import { MarkdownRenderer } from "./markdown-renderer";
@@ -84,6 +97,79 @@ function hexToRgba(hex: string, alphaPct: number): string {
   return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
+/** Text that copy/insert actions should use for the current card. */
+function getActionText(state: SubtitleState): string {
+  if (state.kind === "streaming" || state.kind === "success") return state.text.trim();
+  if (state.kind === "dictionary") {
+    return [state.original, state.phonetic ?? "", ...state.senses]
+      .filter((part) => part.trim().length > 0)
+      .join("\n");
+  }
+  return "";
+}
+
+/** Write text to the clipboard (with a legacy fallback for non-secure contexts). */
+async function writeClipboardText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const el = document.createElement("textarea");
+      el.value = text;
+      el.setAttribute("readonly", "");
+      el.style.position = "fixed";
+      el.style.opacity = "0";
+      el.style.pointerEvents = "none";
+      document.body.appendChild(el);
+      el.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(el);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
+function isEditableElement(el: Element | null): el is HTMLElement {
+  if (!el) return false;
+  if (el instanceof HTMLInputElement) return true;
+  if (el instanceof HTMLTextAreaElement) return true;
+  return el instanceof HTMLElement && el.isContentEditable;
+}
+
+/** Replace the current selection in a text field with `text` (in-app fallback). */
+function insertIntoEditable(el: HTMLElement | null, text: string): boolean {
+  if (!isEditableElement(el)) return false;
+  el.focus();
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? start;
+    el.setRangeText(text, start, end, "end");
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  }
+  try {
+    return document.execCommand("insertText", false, text);
+  } catch {
+    return false;
+  }
+}
+
+const TEXT_COLORS = [
+  "#ffffff",
+  "#fef3c7",
+  "#bfdbfe",
+  "#fecaca",
+  "#bbf7d0",
+  "#e9d5ff",
+  "#111827",
+];
+
+const MENU_WIDTH = 252;
+const MENU_HEIGHT = 372;
+
 export function SubtitleOverlay({
   state,
   onDismiss,
@@ -149,6 +235,16 @@ export function SubtitleOverlay({
   const [showGuides, setShowGuides] = useState({ x: false, y: false });
   const dragRef = useRef(false);
   const [pinned, setPinned] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [toast, setToast] = useState<{
+    text: string;
+    kind: "ok" | "info" | "error";
+  } | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+  const lastSpaceAtRef = useRef(0);
+  const lastEditableRef = useRef<HTMLElement | null>(null);
+  const modLabel = isMac() ? "⌘" : "Ctrl";
 
   // Measure card and viewport so we can clamp the center position to keep the card on-screen.
   const [metrics, setMetrics] = useState({
@@ -539,6 +635,211 @@ export function SubtitleOverlay({
     if (timersRef.current.static) clearTimeout(timersRef.current.static);
   }
 
+  const showToast = useCallback(
+    (text: string, kind: "ok" | "info" | "error" = "ok", duration = 1700) => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+      setToast({ text, kind });
+      toastTimerRef.current = window.setTimeout(() => {
+        toastTimerRef.current = null;
+        setToast(null);
+      }, duration);
+    },
+    []
+  );
+
+  function patchStyle(patch: Partial<SubtitleStyle>) {
+    writeSubtitleStyle({ ...readSubtitleStyle(), ...patch });
+  }
+
+  async function copyAction() {
+    const text = getActionText(state);
+    if (!text) {
+      showToast(t("subtitle.copyFailed"), "error");
+      return;
+    }
+    if (isDesktopMode()) {
+      window.subtrDesktop?.overlayAction?.("copy");
+      return;
+    }
+    const ok = await writeClipboardText(text);
+    showToast(ok ? t("subtitle.copied") : t("subtitle.copyFailed"), ok ? "ok" : "error");
+  }
+
+  function insertAction() {
+    const text = getActionText(state);
+    if (!text) {
+      showToast(t("subtitle.insertFailed"), "error");
+      return;
+    }
+    if (isDesktopMode()) {
+      window.subtrDesktop?.overlayAction?.("insert");
+      return;
+    }
+    const ok = insertIntoEditable(lastEditableRef.current, text);
+    showToast(ok ? t("subtitle.inserted") : t("subtitle.insertFailed"), ok ? "ok" : "error");
+  }
+
+  function openMenu(event: React.MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!pinned) pin(false);
+    onRequestInteractive?.(true);
+    const maxX = Math.max(12, window.innerWidth - MENU_WIDTH - 12);
+    const maxY = Math.max(12, window.innerHeight - MENU_HEIGHT - 12);
+    setMenu({
+      x: Math.max(12, Math.min(event.clientX, maxX)),
+      y: Math.max(12, Math.min(event.clientY, maxY)),
+    });
+  }
+
+  // Report click-through state: interactive while hovering the card or its menu.
+  useEffect(() => {
+    onRequestInteractive?.(hovered || !!menu);
+  }, [hovered, menu, onRequestInteractive]);
+
+  // Track the last editable field so the in-app (browser) insert can restore it
+  // after the subtitle card steals focus.
+  useEffect(() => {
+    function onFocusIn(event: FocusEvent) {
+      if (isEditableElement(event.target as Element)) {
+        lastEditableRef.current = event.target as HTMLElement;
+      }
+    }
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
+  }, []);
+
+  // Desktop: report the action payload so main can arm global ⌘C / ⌘I / Space
+  // only while the pinned card is being hovered.
+  const actionText = getActionText(state);
+  const actionCanInsert =
+    !isVoice &&
+    !isPlugin &&
+    (state.kind === "success" || state.kind === "streaming") &&
+    actionText.length > 0;
+  useEffect(() => {
+    if (!isDesktopMode()) return;
+    window.subtrDesktop?.overlayActions?.({
+      pinned,
+      hovered,
+      menuOpen: !!menu,
+      canInsert: actionCanInsert,
+      text: actionText,
+    });
+  }, [pinned, hovered, menu, actionCanInsert, actionText]);
+
+  // Disarm global shortcuts as soon as the card starts fading / unmounts.
+  useEffect(() => {
+    if (!isDesktopMode()) return;
+    if (!(isExiting || voiceStopping || pluginStopping)) return;
+    window.subtrDesktop?.overlayActions?.({
+      pinned: false,
+      hovered: false,
+      menuOpen: false,
+      canInsert: false,
+      text: "",
+    });
+  }, [isExiting, voiceStopping, pluginStopping]);
+
+  useEffect(() => {
+    return () => {
+      if (!isDesktopMode()) return;
+      window.subtrDesktop?.overlayActions?.({
+        pinned: false,
+        hovered: false,
+        menuOpen: false,
+        canInsert: false,
+        text: "",
+      });
+    };
+  }, []);
+
+  // Desktop: main reports the result of the global shortcut (toast feedback).
+  useEffect(() => {
+    if (!isDesktopMode()) return;
+    const bridge = window.subtrDesktop;
+    return bridge?.onOverlayActionResult?.((payload) => {
+      if (payload.action === "copy") {
+        showToast(
+          payload.ok ? t("subtitle.copied") : t("subtitle.copyFailed"),
+          payload.ok ? "ok" : "error"
+        );
+      } else if (payload.action === "insert") {
+        showToast(
+          payload.ok ? t("subtitle.inserted") : t("subtitle.insertFailed"),
+          payload.ok ? "ok" : "error"
+        );
+      } else if (payload.action === "space-first") {
+        showToast(t("subtitle.spaceFirst"), "info", 1200);
+      }
+    });
+  }, [showToast, t]);
+
+  // In-app (browser) keyboard actions while pinned and hovering the card.
+  useEffect(() => {
+    if (isDesktopMode() || !pinned || !(hovered || menu)) return;
+
+    function onKeyDown(event: KeyboardEvent) {
+      const mod = event.metaKey || event.ctrlKey;
+      if (mod && !event.shiftKey && event.key.toLowerCase() === "c") {
+        const selection = document.getSelection()?.toString().trim();
+        if (selection) return; // copy the user's own selection normally
+        event.preventDefault();
+        void copyAction();
+        return;
+      }
+      if (mod && !event.shiftKey && event.key.toLowerCase() === "i") {
+        event.preventDefault();
+        insertAction();
+        return;
+      }
+      if (event.key === " " && !mod && !event.repeat) {
+        const active = document.activeElement;
+        if (active?.closest?.("[data-subtr-overlay]")) return;
+        event.preventDefault();
+        const now = Date.now();
+        if (now - lastSpaceAtRef.current <= 480) {
+          lastSpaceAtRef.current = 0;
+          insertAction();
+        } else {
+          lastSpaceAtRef.current = now;
+          showToast(t("subtitle.spaceFirst"), "info", 1200);
+        }
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+    // copyAction/insertAction intentionally read the latest render state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinned, hovered, menu, state, showToast, t]);
+
+  // Close the context menu on an outside click or Escape.
+  useEffect(() => {
+    if (!menu) return;
+    function onPointerDown(event: PointerEvent) {
+      const target = event.target as Element | null;
+      if (target?.closest?.("[data-subtr-menu]")) return;
+      setMenu(null);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenu(null);
+    }
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [menu]);
+
+  // Clear a pending toast timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
   function handleWheel(e: React.WheelEvent) {
     if (state.kind === "error" || state.kind === "loading" || state.kind === "dictionary") return;
     if (e.deltaY === 0) return;
@@ -636,9 +937,11 @@ export function SubtitleOverlay({
     >
       <div
         ref={cardRef}
-        className={`pointer-events-auto relative w-full rounded-2xl border border-white/10 px-5 py-4 text-center shadow-lg backdrop-blur-xl transition-all animate-subtitle-in ${
-          testMode?.enabled ? "cursor-grab active:cursor-grabbing" : ""
-        }`}
+        className={`group pointer-events-auto relative w-full rounded-[22px] border px-5 py-4 text-center shadow-[0_24px_64px_-16px_rgba(0,0,0,0.55)] ring-1 ring-black/5 backdrop-blur-xl transition-all duration-200 animate-subtitle-in ${
+          pinned
+            ? "border-accent/40 ring-2 ring-accent/15"
+            : "border-white/10 hover:border-white/20"
+        } ${testMode?.enabled ? "cursor-grab active:cursor-grabbing" : ""}`}
         style={{
           backgroundColor: cardBackground,
           color: style.textColor,
@@ -646,6 +949,9 @@ export function SubtitleOverlay({
           fontSize: `${style.fontSizePx}px`,
         }}
         onPointerDown={(e) => {
+          if (isEditableElement(document.activeElement)) {
+            lastEditableRef.current = document.activeElement as HTMLElement;
+          }
           if (!testMode?.enabled) return;
           e.preventDefault();
           dragRef.current = true;
@@ -656,8 +962,9 @@ export function SubtitleOverlay({
           if (testMode?.enabled) return;
           pin(false);
         }}
-        onMouseEnter={() => onRequestInteractive?.(true)}
-        onMouseLeave={() => onRequestInteractive?.(false)}
+        onContextMenu={openMenu}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         onWheel={handleWheel}
       >
         {showEscHint && (
@@ -682,6 +989,23 @@ export function SubtitleOverlay({
           </button>
         )}
 
+        {!testMode?.enabled && actionText.length > 0 && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              void copyAction();
+            }}
+            title={t("subtitle.copy")}
+            className="absolute right-9 top-2 rounded-lg p-1.5 opacity-70 transition-all hover:bg-white/10 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+            style={{ color: dimmedColor }}
+            aria-label={t("subtitle.copy")}
+          >
+            <CopyIcon className="h-4 w-4" />
+          </button>
+        )}
+
         <button
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
@@ -689,7 +1013,7 @@ export function SubtitleOverlay({
             e.stopPropagation();
             handleDismiss();
           }}
-          className="absolute right-2 top-2 rounded-lg p-1.5 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+          className="absolute right-2 top-2 rounded-lg p-1.5 opacity-70 transition-all hover:bg-white/10 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
           style={{ color: dimmedColor }}
           aria-label={t("subtitle.dismiss")}
         >
@@ -816,6 +1140,34 @@ export function SubtitleOverlay({
           </div>
         )}
 
+        {pinned && !menu && !isVoice && !isPlugin && actionText.length > 0 && (
+          <div
+            className="mt-2.5 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 pr-1 text-[10px] font-medium leading-none tracking-wide"
+            style={{ color: dimmedColor }}
+          >
+            <span className="inline-flex items-center gap-1">
+              <kbd className="rounded-[5px] border border-white/15 bg-white/10 px-1 py-0.5 text-[9px] font-semibold">
+                {modLabel}C
+              </kbd>
+              {t("subtitle.copy")}
+            </span>
+            <span className="opacity-30">·</span>
+            <span className="inline-flex items-center gap-1">
+              <kbd className="rounded-[5px] border border-white/15 bg-white/10 px-1 py-0.5 text-[9px] font-semibold">
+                {modLabel}I
+              </kbd>
+              {t("subtitle.insert")}
+            </span>
+            <span className="opacity-30">·</span>
+            <span className="inline-flex items-center gap-1">
+              <kbd className="rounded-[5px] border border-white/15 bg-white/10 px-1 py-0.5 text-[9px] font-semibold">
+                Space ×2
+              </kbd>
+              {t("subtitle.insert")}
+            </span>
+          </div>
+        )}
+
         {pinned ? (
           <div
             className="pointer-events-none absolute bottom-2 right-2 flex h-4 w-4 items-center justify-center"
@@ -840,6 +1192,198 @@ export function SubtitleOverlay({
         )}
       </div>
     </div>
+
+      {menu && (
+        <div
+          data-subtr-menu
+          role="menu"
+          aria-label={t("subtitle.menu.title")}
+          className="pointer-events-auto fixed z-[60] w-[252px] animate-menu-in overflow-hidden rounded-2xl border border-white/10 bg-[#17151b]/95 p-2.5 text-white shadow-[0_24px_64px_-12px_rgba(0,0,0,0.65)] backdrop-blur-2xl"
+          style={{ left: menu.x, top: menu.y }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <div className="flex items-center justify-between px-1 pb-2">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
+              {t("subtitle.menu.title")}
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                patchStyle({
+                  fontFamily: DEFAULT_SUBTITLE_STYLE.fontFamily,
+                  fontSizePx: DEFAULT_SUBTITLE_STYLE.fontSizePx,
+                  textColor: DEFAULT_SUBTITLE_STYLE.textColor,
+                })
+              }
+              className="rounded-md px-1.5 py-0.5 text-[10px] font-medium text-white/45 transition-colors hover:bg-white/10 hover:text-white/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {t("subtitle.menu.reset")}
+            </button>
+          </div>
+
+          <div className="space-y-2.5">
+            <div>
+              <div className="mb-1 px-1 text-[10px] font-medium text-white/45">
+                {t("subtitle.menu.size")}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => patchStyle({ fontSizePx: Math.max(12, style.fontSizePx - 1) })}
+                  className="flex h-7 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs font-semibold transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  aria-label="Smaller text"
+                >
+                  A−
+                </button>
+                <div className="flex-1 text-center text-xs font-semibold tabular-nums text-white/80">
+                  {style.fontSizePx}px
+                </div>
+                <button
+                  type="button"
+                  onClick={() => patchStyle({ fontSizePx: Math.min(32, style.fontSizePx + 1) })}
+                  className="flex h-7 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs font-semibold transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  aria-label="Larger text"
+                >
+                  A+
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1 px-1 text-[10px] font-medium text-white/45">
+                {t("subtitle.menu.color")}
+              </div>
+              <div className="flex items-center gap-1.5 px-0.5">
+                {TEXT_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => patchStyle({ textColor: color })}
+                    aria-label={color}
+                    aria-pressed={style.textColor.toLowerCase() === color.toLowerCase()}
+                    className={`h-5 w-5 rounded-full border transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                      style.textColor.toLowerCase() === color.toLowerCase()
+                        ? "border-white ring-2 ring-accent"
+                        : "border-white/25"
+                    }`}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+                <label
+                  title={t("subtitle.menu.customColor")}
+                  className="relative ml-auto flex h-5 w-5 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/25 bg-white/10"
+                >
+                  <span className="text-[10px] leading-none text-white/70">+</span>
+                  <input
+                    type="color"
+                    value={style.textColor}
+                    onChange={(e) => patchStyle({ textColor: e.target.value })}
+                    className="absolute inset-0 cursor-pointer opacity-0"
+                    aria-label={t("subtitle.menu.customColor")}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1 px-1 text-[10px] font-medium text-white/45">
+                {t("subtitle.menu.font")}
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                {(Object.keys(FONT_FAMILY_LABELS) as SubtitleStyle["fontFamily"][]).map((family) => (
+                  <button
+                    key={family}
+                    type="button"
+                    onClick={() => patchStyle({ fontFamily: family })}
+                    aria-pressed={style.fontFamily === family}
+                    className={`h-7 rounded-lg border text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                      style.fontFamily === family
+                        ? "border-accent/50 bg-accent/20 text-white"
+                        : "border-white/10 bg-white/5 text-white/65 hover:bg-white/10"
+                    }`}
+                    style={{ fontFamily: fontFamilyCss(family) }}
+                  >
+                    {FONT_FAMILY_LABELS[family]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="my-2 h-px bg-white/10" />
+
+          <div className="space-y-0.5">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenu(null);
+                void copyAction();
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <CopyIcon className="h-3.5 w-3.5 opacity-70" />
+              {t("subtitle.menu.copy")}
+              <kbd className="ml-auto rounded border border-white/10 bg-white/5 px-1 py-0.5 text-[9px] font-semibold text-white/45">
+                {modLabel}C
+              </kbd>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenu(null);
+                insertAction();
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <InsertIcon className="h-3.5 w-3.5 opacity-70" />
+              {t("subtitle.menu.insert")}
+              <kbd className="ml-auto rounded border border-white/10 bg-white/5 px-1 py-0.5 text-[9px] font-semibold text-white/45">
+                {modLabel}I
+              </kbd>
+            </button>
+            {isDesktopMode() && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenu(null);
+                  window.subtrDesktop?.openMainWindow?.();
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <OpenWindowIcon className="h-3.5 w-3.5 opacity-70" />
+                {t("subtitle.menu.open")}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`pointer-events-none fixed left-1/2 top-6 z-[70] inline-flex animate-toast-in -translate-x-1/2 items-center gap-2 rounded-full border px-4 py-2 text-xs font-medium shadow-[0_16px_48px_-12px_rgba(0,0,0,0.5)] backdrop-blur-xl ${
+            toast.kind === "error"
+              ? "border-danger/30 bg-[#1b1114]/95 text-red-300"
+              : "border-white/10 bg-[#17151b]/95 text-white"
+          }`}
+        >
+          {toast.kind === "ok" ? (
+            <CheckIcon className="h-3.5 w-3.5 text-emerald-400" />
+          ) : toast.kind === "error" ? (
+            <AlertIcon className="h-3.5 w-3.5" />
+          ) : (
+            <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
+          )}
+          {toast.text}
+        </div>
+      )}
     </>
   );
 }

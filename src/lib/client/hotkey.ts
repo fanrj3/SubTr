@@ -1,4 +1,5 @@
 import { readStorage, writeStorage } from "./storage";
+import { notifyStorageKey } from "./use-local-storage";
 
 export const HOTKEY_KEY = "subtr.hotkey.v1";
 export const DEFAULT_HOTKEY = "CommandOrControl+Shift+T";
@@ -34,16 +35,28 @@ export function readHotkey(): string {
 
 export function writeHotkey(accel: string): void {
   writeStorage(HOTKEY_KEY, accel);
+  // Keep the TopBar hint (and other mounted views) in sync.
+  notifyStorageKey(HOTKEY_KEY);
 }
 
+export type HotkeyRegistration = {
+  ok: boolean;
+  /** The accelerator that is actually registered (may be a fallback). */
+  accelerator?: string;
+  /** True when the requested accelerator was taken and a fallback was used. */
+  fallback?: boolean;
+  error?: string;
+};
+
 export async function registerHotkey(
-  accel: string
-): Promise<{ ok: boolean; error?: string }> {
-  if (typeof window === "undefined") return { ok: true };
+  accel: string,
+  options?: { allowFallback?: boolean }
+): Promise<HotkeyRegistration> {
+  if (typeof window === "undefined") return { ok: true, accelerator: accel };
   const bridge = window.subtrDesktop;
-  if (!bridge?.setToggleHotkey) return { ok: true };
+  if (!bridge?.setToggleHotkey) return { ok: true, accelerator: accel };
   try {
-    return await bridge.setToggleHotkey(accel);
+    return await bridge.setToggleHotkey(accel, options);
   } catch {
     return { ok: false };
   }

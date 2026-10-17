@@ -40,6 +40,49 @@ contextBridge.exposeInMainWorld("subtrDesktop", {
   },
 
   /**
+   * Overlay window only: report the pinned/hovered/menu action state so main can
+   * arm ⌘C / ⌘I / double-space while the card is being interacted with.
+   * @param {{ pinned: boolean, hovered: boolean, menuOpen: boolean, canInsert: boolean, text: string }} payload
+   */
+  overlayActions(payload) {
+    if (!payload || typeof payload !== "object") return;
+    ipcRenderer.send("subtr:overlay-actions", payload);
+  },
+
+  /**
+   * Overlay window only: subscribe to actions performed by main (copy/insert).
+   * @param {(payload: { action: string, ok?: boolean }) => void} callback
+   * @returns {() => void} unsubscribe
+   */
+  onOverlayActionResult(callback) {
+    if (typeof callback !== "function") return () => {};
+    const listener = (_event, payload) => {
+      try {
+        callback(payload);
+      } catch (error) {
+        console.error("[subtrDesktop] onOverlayActionResult callback failed", error);
+      }
+    };
+    ipcRenderer.on("subtr:overlay-action-result", listener);
+    return () => ipcRenderer.removeListener("subtr:overlay-action-result", listener);
+  },
+
+  /**
+   * Overlay window only: run a copy/insert action against the last reported
+   * translation (used by the right-click menu and clickable controls).
+   * @param {"copy" | "insert"} action
+   */
+  overlayAction(action) {
+    if (action !== "copy" && action !== "insert") return;
+    ipcRenderer.send("subtr:overlay-action", action);
+  },
+
+  /** Overlay window only: open the reader window (context-menu action). */
+  openMainWindow() {
+    ipcRenderer.send("subtr:open-main");
+  },
+
+  /**
    * Overlay window only: temporarily arm a one-shot global Escape.
    * @param {boolean} on
    */
@@ -96,11 +139,14 @@ contextBridge.exposeInMainWorld("subtrDesktop", {
 
   /**
    * Set the translation-toggle global hotkey (Electron accelerator).
+   * `allowFallback` is used by the startup bootstrap: if the stored/default
+   * accelerator is taken, main picks a known-safe alternative and reports it.
    * @param {string} accel
-   * @returns {Promise<{ ok: boolean, error?: string }>}
+   * @param {{ allowFallback?: boolean }} [options]
+   * @returns {Promise<{ ok: boolean, accelerator?: string, fallback?: boolean, error?: string }>}
    */
-  setToggleHotkey(accel) {
-    return ipcRenderer.invoke("subtr:set-toggle-hotkey", accel);
+  setToggleHotkey(accel, options) {
+    return ipcRenderer.invoke("subtr:set-toggle-hotkey", accel, options);
   },
 
   /**
@@ -110,15 +156,32 @@ contextBridge.exposeInMainWorld("subtrDesktop", {
    */
   onToggleMode(callback) {
     if (typeof callback !== "function") return () => {};
-    const listener = () => {
+    const listener = (_event, payload) => {
       try {
-        callback();
+        callback(payload && typeof payload === "object" ? payload : {});
       } catch (error) {
         console.error("[subtrDesktop] onToggleMode callback failed", error);
       }
     };
     ipcRenderer.on("subtr:toggle-mode", listener);
     return () => ipcRenderer.removeListener("subtr:toggle-mode", listener);
+  },
+
+  /** Seed main with the renderer's persisted mode (first mount of the process). */
+  syncMode(enabled) {
+    if (typeof enabled !== "boolean") return;
+    ipcRenderer.send("subtr:mode-sync", enabled);
+  },
+
+  /** Report a user-initiated mode change (TopBar switch). */
+  setMode(enabled) {
+    if (typeof enabled !== "boolean") return;
+    ipcRenderer.send("subtr:mode-set", enabled);
+  },
+
+  /** Ask main for the authoritative translate-mode value (reconnect). */
+  requestToggleMode() {
+    ipcRenderer.send("subtr:mode-request");
   },
 
   /**

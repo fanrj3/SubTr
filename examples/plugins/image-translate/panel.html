@@ -112,7 +112,7 @@
     en: {
       title: "Image Translate",
       sub: "Freeze the screen, frame a region, and read the text in it. Hover a highlighted line to see the translation.",
-      shellBadge: "Shell — not wired",
+      shellBadge: "Not connected",
       engineTitle: "Text engine",
       engineName: "Engine",
       engineDesc: "Which on-device OCR is used to read the region.",
@@ -138,7 +138,7 @@
       shortcutDesc: "Opens region capture while translation mode is on.",
       testHotkey: "Test hotkey",
       testing: "Testing…",
-      testPending: "Shortcut armed — host wiring pending.",
+      testPending: "Shortcut registered and ready.",
       highlightTitle: "Highlight style",
       highlightName: "Boxes",
       highlightDesc: "How the text regions are highlighted over the image.",
@@ -157,7 +157,7 @@
     "zh-CN": {
       title: "图片翻译",
       sub: "冻结屏幕，框选一块区域，读取其中的文字。把鼠标移到高亮行上即可看到翻译。",
-      shellBadge: "骨架 — 尚未接线",
+      shellBadge: "未连接",
       engineTitle: "文字识别引擎",
       engineName: "引擎",
       engineDesc: "使用哪种本地 OCR 来识别选区文字。",
@@ -183,7 +183,7 @@
       shortcutDesc: "在翻译模式下打开区域截图。",
       testHotkey: "测试快捷键",
       testing: "测试中…",
-      testPending: "快捷键已就绪 — 等待主程序接线。",
+      testPending: "快捷键已注册，可以使用。",
       highlightTitle: "高亮样式",
       highlightName: "识别框",
       highlightDesc: "文字区域在图片上的高亮方式。",
@@ -448,15 +448,25 @@
   }
 
   function modelRowHTML() {
-    // Vision needs no model; Auto and PP-OCRv6 may need the ONNX weights.
-    if (state.engine === "vision") {
-      return rowHTML(
-        "Apple Vision",
-        t("visionModelDesc"),
-        '<span class="pk-badge pk-badge--ok">' + t("notNeeded") + "</span>"
+    // The current release ships the Apple Vision helper (prebuilt universal
+    // binary). PP-OCRv6 is a later phase; keep its row honest.
+    if (state.engine === "vision" || (state.engine === "auto" && state.vision)) {
+      var ready = state.vision && state.vision.built;
+      var badge = ready
+        ? '<span class="pk-badge pk-badge--ok">' + t("ready") + "</span>"
+        : '<span class="pk-badge pk-badge--danger">' + t("notDownloaded") + "</span>";
+      var detail = ready
+        ? t("visionModelDesc") + " " + esc(state.vision.version || "")
+        : esc((state.vision && state.vision.message) || t("emptyHint"));
+      return (
+        rowHTML("vision-ocr", detail, badge) +
+        (!ready
+          ? '<div class="pk-row" style="display:block"><p class="note" style="color:var(--pk-danger)">' +
+            esc((state.vision && state.vision.reason) || "engine-unavailable") +
+            "</p></div>"
+          : "")
       );
     }
-    // TODO(P2): enable when the model downloader ships; then wire the click to it.
     var btn =
       CONFIG.model.status === "ready"
         ? ""

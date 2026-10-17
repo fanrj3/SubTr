@@ -115,6 +115,8 @@ let trayAnimTimer = null;
 let toggleHotkeyAccel = null;
 /** Latest translate-mode state reported by the renderer (tray idle vs active). */
 let currentTrayMode = false;
+/** True once a renderer has seeded the mode for this app process. */
+let modeSeeded = false;
 /** Number of animation frames drawn (E2E introspection). */
 let animateCount = 0;
 /** Base URL of the running web app (for navigating the main window). */
@@ -176,6 +178,7 @@ function handleCapture(payload) {
     return;
   }
   lastCapture = { text, at: now };
+  rememberSourceApp();
 
   deliverOverlayCapture({ text });
 }
@@ -356,6 +359,95 @@ function syntheticCopy() {
   });
 }
 
+/** Synthesize the paste shortcut into whatever app currently has focus. */
+function syntheticPaste() {
+  return new Promise((resolve) => {
+    let child = null;
+    try {
+      if (process.platform === "darwin") {
+        child = spawn("osascript", [
+          "-e",
+          'tell application "System Events" to keystroke "v" using command down',
+        ]);
+      } else if (process.platform === "win32") {
+        child = spawn("powershell", [
+          "-NoProfile",
+          "-Command",
+          "$wshell = New-Object -ComObject wscript.shell; $wshell.SendKeys('^v')",
+        ]);
+      } else {
+        child = spawn("xdotool", ["key", "ctrl+v"]);
+      }
+    } catch {
+      resolve();
+      return;
+    }
+    if (!child) {
+      resolve();
+      return;
+    }
+    child.on("error", () => resolve());
+    child.on("exit", () => resolve());
+  });
+}
+
+/** Name of the frontmost GUI app (macOS, best-effort). */
+function getFrontmostAppName() {
+  if (process.platform !== "darwin") return Promise.resolve(null);
+  return new Promise((resolve) => {
+    let out = "";
+    let child = null;
+    try {
+      child = spawn("osascript", [
+        "-e",
+        'tell application "System Events" to get name of first application process whose frontmost is true',
+      ]);
+    } catch {
+      resolve(null);
+      return;
+    }
+    child.stdout.on("data", (chunk) => {
+      out += String(chunk);
+    });
+    child.on("error", () => resolve(null));
+    child.on("exit", () => resolve(out.trim() || null));
+  });
+}
+
+/** Bring a previously active app back to the front (best-effort). */
+function activateAppByName(name) {
+  if (process.platform !== "darwin" || !name) return Promise.resolve(false);
+  const safe = String(name).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return new Promise((resolve) => {
+    let child = null;
+    try {
+      child = spawn("osascript", [
+        "-e",
+        `tell application "System Events" to set frontmost of first application process whose name is "${safe}" to true`,
+      ]);
+    } catch {
+      resolve(false);
+      return;
+    }
+    child.on("error", () => resolve(false));
+    child.on("exit", (code) => resolve(code === 0));
+  });
+}
+
+/** App that owned the selection when the subtitle was captured. */
+let overlaySourceApp = null;
+
+/**
+ * Remember which app had focus when a capture started, so inserting can bring
+ * it back if clicking the overlay activated SubTr instead.
+ */
+function rememberSourceApp() {
+  if (process.platform !== "darwin") return;
+  void getFrontmostAppName().then((name) => {
+    if (name) overlaySourceApp = name;
+  });
+}
+
 /** Hotkey handler: recent hook selection, else synthetic copy + clipboard poll. */
 async function manualCapture() {
   const now = Date.now();
@@ -410,28 +502,63 @@ function registerGlobalShortcut() {
 // Translation-mode toggle hotkey (renderer-configurable via globalShortcut)
 // ---------------------------------------------------------------------------
 
-/** Tell the reader window to flip translate mode (hotkey / tray menu). */
-function sendToggleMode() {
+/** Fallbacks tried (in order) when the preferred toggle accelerator is taken. */
+const TOGGLE_HOTKEY_FALLBACKS = [
+  "Alt+Shift+Space",
+  "Control+Shift+Space",
+  "Alt+Command+T",
+];
+
+/**
+ * Flip translation mode. The MAIN process owns the authoritative value while
+ * the app is running, so the hotkey works even when the reader is on a page
+ * that does not mount the old useMode hook (Settings, previews, a closed
+ * window), and the tray checkbox can never drift.
+ */
+function toggleMode() {
+  setTrayState(!currentTrayMode);
+  broadcastToggleMode();
+}
+
+/** Tell every app window the authoritative mode value (idempotent payload). */
+function broadcastToggleMode() {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send("subtr:toggle-mode");
+    mainWindow.webContents.send("subtr:toggle-mode", { enabled: currentTrayMode });
   }
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.webContents.send("subtr:toggle-mode", { enabled: currentTrayMode });
+  }
+}
+
+/** Tray menu action: same path as the global hotkey. */
+function sendToggleMode() {
+  toggleMode();
 }
 
 /**
  * Register the translation-toggle hotkey, replacing any previous one.
  * Idempotent for the same accelerator; restores the previous binding when the
  * new accelerator is invalid/unavailable so a bad value never leaves us unbound.
+ * With `allowFallback` (startup/bootstrap only) it tries known-safe alternatives
+ * before giving up.
  * @param {unknown} accel
- * @returns {{ ok: boolean, error?: string }}
+ * @param {{ allowFallback?: boolean }} [options]
+ * @returns {{ ok: boolean, accelerator?: string, fallback?: boolean, error?: string }}
  */
-function setToggleHotkey(accel) {
+function setToggleHotkey(accel, options) {
   if (typeof accel !== "string") return { ok: false, error: "accelerator must be a string" };
   const next = accel.trim();
   if (!next) return { ok: false, error: "accelerator is empty" };
   if (next.length > MAX_HOTKEY_CHARS) return { ok: false, error: "accelerator too long" };
+  const allowFallback = !!(options && options.allowFallback);
 
   if (next === toggleHotkeyAccel && globalShortcut.isRegistered(next)) {
-    return { ok: true };
+    return { ok: true, accelerator: next, fallback: false };
+  }
+
+  // A plugin-owned shortcut must not be stolen by the app toggle.
+  if (pluginHotkeys.has(next)) {
+    return { ok: false, error: "hotkey is used by a plugin" };
   }
 
   const previous = toggleHotkeyAccel;
@@ -450,18 +577,42 @@ function setToggleHotkey(accel) {
   } catch (err) {
     error = err && err.message ? err.message : String(err);
   }
+
+  let actual = next;
+  let fallback = false;
+  if (!ok && allowFallback) {
+    for (const candidate of TOGGLE_HOTKEY_FALLBACKS) {
+      if (candidate === next || pluginHotkeys.has(candidate)) continue;
+      if (globalShortcut.isRegistered(candidate)) continue;
+      try {
+        if (globalShortcut.register(candidate, sendToggleMode)) {
+          ok = true;
+          actual = candidate;
+          fallback = true;
+          break;
+        }
+      } catch {
+        // Try the next candidate.
+      }
+    }
+  }
+
   if (!ok) {
     if (previous && !globalShortcut.isRegistered(previous)) {
       try {
         globalShortcut.register(previous, sendToggleMode);
+        toggleHotkeyAccel = previous;
       } catch {
         // ignore
       }
     }
     return { ok: false, error: error || "hotkey unavailable (already in use or invalid)" };
   }
-  toggleHotkeyAccel = next;
-  return { ok: true };
+  toggleHotkeyAccel = actual;
+  if (fallback) {
+    console.warn(`[hotkey] ${next} unavailable — using fallback ${actual}`);
+  }
+  return { ok: true, accelerator: actual, fallback };
 }
 
 // ---------------------------------------------------------------------------
@@ -2557,6 +2708,169 @@ function registerHostIpc() {
 }
 
 // ---------------------------------------------------------------------------
+// Overlay actions: pin copy / insert (global shortcuts while hovering the card)
+// ---------------------------------------------------------------------------
+
+/**
+ * Latest state reported by the overlay renderer. Shortcuts are armed only while
+ * the pinned card is hovered (or its context menu is open), so we never hijack
+ * ⌘C/⌘I/Space for the rest of the desktop.
+ */
+let overlayActionState = {
+  pinned: false,
+  hovered: false,
+  menuOpen: false,
+  canInsert: false,
+  text: "",
+};
+const overlayShortcutAccels = {
+  copy: "CommandOrControl+C",
+  insert: "CommandOrControl+I",
+  space: "Space",
+};
+const overlayShortcutsArmed = { copy: false, insert: false, space: false };
+let lastOverlaySpaceAt = 0;
+let overlaySpaceResetTimer = null;
+
+/** Send a small action result to the overlay (toast / hint). */
+function sendOverlayActionResult(payload) {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  overlayWindow.webContents.send("subtr:overlay-action-result", payload);
+}
+
+/** Copy the current locked translation (no source-app focus needed). */
+async function copyOverlayText() {
+  const text = overlayActionState.text;
+  if (!text) {
+    sendOverlayActionResult({ action: "copy", ok: false });
+    return;
+  }
+  try {
+    await clipboard.writeText(text);
+    sendOverlayActionResult({ action: "copy", ok: true });
+  } catch (error) {
+    console.warn("[overlay] copy failed:", error && error.message ? error.message : error);
+    sendOverlayActionResult({ action: "copy", ok: false });
+  }
+}
+
+/** Paste the translation into the focused app (replacing its selection). */
+async function insertOverlayText() {
+  const text = overlayActionState.text;
+  if (!text) {
+    sendOverlayActionResult({ action: "insert", ok: false });
+    return;
+  }
+  const before = await readClipboardSafe();
+  try {
+    // Clicking the overlay can activate SubTr on some macOS setups. If that
+    // happened, bring the app that owned the selection back before pasting.
+    if (process.platform === "darwin" && overlaySourceApp) {
+      const front = await getFrontmostAppName();
+      const ownNames = [app.getName(), path.basename(process.execPath), "SubTr", "Electron"]
+        .filter(Boolean)
+        .map((name) => String(name).toLowerCase());
+      const frontIsOurs = front && ownNames.some((name) => String(front).toLowerCase().includes(name));
+      if (frontIsOurs || (front && front !== overlaySourceApp)) {
+        await activateAppByName(overlaySourceApp);
+        await delay(140);
+      }
+    }
+    await clipboard.writeText(text);
+    await syntheticPaste();
+    sendOverlayActionResult({ action: "insert", ok: true });
+    // Restore the user's clipboard once the paste has been consumed.
+    setTimeout(() => {
+      void (async () => {
+        const current = await readClipboardSafe();
+        if (current === text && before) {
+          try {
+            await clipboard.writeText(before);
+          } catch {
+            // ignore
+          }
+        }
+      })();
+    }, 1200);
+  } catch (error) {
+    console.warn("[overlay] insert failed:", error && error.message ? error.message : error);
+    sendOverlayActionResult({ action: "insert", ok: false });
+  }
+}
+
+function onOverlaySpace() {
+  const now = Date.now();
+  if (now - lastOverlaySpaceAt <= 480) {
+    lastOverlaySpaceAt = 0;
+    if (overlaySpaceResetTimer) {
+      clearTimeout(overlaySpaceResetTimer);
+      overlaySpaceResetTimer = null;
+    }
+    void insertOverlayText();
+    return;
+  }
+  lastOverlaySpaceAt = now;
+  // A single Space is swallowed while hovering the card; tell the renderer so
+  // it can show “press again to insert”.
+  sendOverlayActionResult({ action: "space-first" });
+  if (overlaySpaceResetTimer) clearTimeout(overlaySpaceResetTimer);
+  overlaySpaceResetTimer = setTimeout(() => {
+    overlaySpaceResetTimer = null;
+    lastOverlaySpaceAt = 0;
+  }, 900);
+}
+
+function setOverlayShortcut(name, on) {
+  const accel = overlayShortcutAccels[name];
+  const armed = overlayShortcutsArmed[name];
+  if (on === armed) return;
+  if (on) {
+    try {
+      const ok = globalShortcut.register(accel, () => {
+        if (name === "copy") void copyOverlayText();
+        else if (name === "insert") void insertOverlayText();
+        else onOverlaySpace();
+      });
+      overlayShortcutsArmed[name] = ok;
+      if (!ok) console.warn(`[overlay] could not register ${accel}`);
+    } catch (error) {
+      overlayShortcutsArmed[name] = false;
+      console.warn(`[overlay] ${accel} registration error:`, error && error.message ? error.message : error);
+    }
+  } else {
+    try {
+      globalShortcut.unregister(accel);
+    } catch {
+      // ignore
+    }
+    overlayShortcutsArmed[name] = false;
+  }
+}
+
+/** Arm/unarm copy/insert/space from the latest renderer state. */
+function syncOverlayShortcuts() {
+  const s = overlayActionState;
+  const hasText = s.text.trim().length > 0;
+  const active = s.pinned && (s.hovered || s.menuOpen) && hasText;
+  setOverlayShortcut("copy", active);
+  setOverlayShortcut("insert", active && s.canInsert);
+  setOverlayShortcut("space", active && s.canInsert);
+  if (!active) lastOverlaySpaceAt = 0;
+}
+
+/** Reset overlay action state (overlay reload/close/dismiss). */
+function resetOverlayActions() {
+  overlayActionState = {
+    pinned: false,
+    hovered: false,
+    menuOpen: false,
+    canInsert: false,
+    text: "",
+  };
+  syncOverlayShortcuts();
+}
+
+// ---------------------------------------------------------------------------
 // Overlay interaction bridge (click-through toggle + one-shot global Escape)
 // ---------------------------------------------------------------------------
 
@@ -2672,6 +2986,7 @@ function disarmEsc() {
 /** Reset transient overlay state (used on overlay reload/close). */
 function resetOverlayState() {
   disarmEsc();
+  resetOverlayActions();
   // The renderer's onCapture subscription is gone after a reload; wait for the
   // ready handshake again (any pending capture is kept and flushed on ready).
   overlayListenerReady = false;
@@ -2699,6 +3014,30 @@ function registerDisplayListeners() {
 }
 
 function registerOverlayIpc() {
+  ipcMain.on("subtr:overlay-actions", (event, payload) => {
+    if (!isFromOverlay(event)) return;
+    if (!payload || typeof payload !== "object") return;
+    overlayActionState = {
+      pinned: payload.pinned === true,
+      hovered: payload.hovered === true,
+      menuOpen: payload.menuOpen === true,
+      canInsert: payload.canInsert === true,
+      text: typeof payload.text === "string" ? payload.text.slice(0, 20000) : "",
+    };
+    syncOverlayShortcuts();
+  });
+
+  ipcMain.on("subtr:overlay-action", (event, action) => {
+    if (!isFromOverlay(event)) return;
+    if (action === "copy") void copyOverlayText();
+    else if (action === "insert") void insertOverlayText();
+  });
+
+  ipcMain.on("subtr:open-main", (event) => {
+    if (!isFromOverlay(event)) return;
+    showMainWindow();
+  });
+
   ipcMain.on("subtr:overlay-interactive", (event, on) => {
     if (!isFromOverlay(event)) return;
     if (typeof on !== "boolean") return;
@@ -2761,11 +3100,11 @@ function registerOverlayIpc() {
   });
 
   // Renderer-configurable translation-toggle hotkey (main window only).
-  ipcMain.handle("subtr:set-toggle-hotkey", (event, accel) => {
+  ipcMain.handle("subtr:set-toggle-hotkey", (event, accel, options) => {
     const fromMain =
       !!mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents;
     if (!fromMain) return { ok: false, error: "unauthorized" };
-    return setToggleHotkey(accel);
+    return setToggleHotkey(accel, options);
   });
 
   // Renderer reports translate-mode state so the tray reflects idle vs active.
@@ -2773,6 +3112,38 @@ function registerOverlayIpc() {
     if (!isFromOurWindow(event)) return;
     if (typeof enabled !== "boolean") return;
     setTrayState(enabled);
+  });
+
+  // Seed the main-owned mode from the reader's persisted value exactly once per
+  // app process. Later syncs are ignored: main is authoritative so a toggle
+  // received while the window was closed is never overwritten.
+  ipcMain.on("subtr:mode-sync", (event, enabled) => {
+    if (!isFromMainWindow(event)) return;
+    if (typeof enabled !== "boolean") return;
+    if (modeSeeded) return;
+    modeSeeded = true;
+    currentTrayMode = enabled;
+    setTrayState(enabled);
+    broadcastToggleMode();
+  });
+
+  // User-initiated mode change from the TopBar switch: the renderer already
+  // wrote localStorage, so main only mirrors the authoritative value.
+  ipcMain.on("subtr:mode-set", (event, enabled) => {
+    if (!isFromMainWindow(event)) return;
+    if (typeof enabled !== "boolean") return;
+    modeSeeded = true;
+    currentTrayMode = enabled;
+    setTrayState(enabled);
+    broadcastToggleMode();
+  });
+
+  // The reader can request the authoritative mode after mounting (reconnect).
+  ipcMain.on("subtr:mode-request", (event) => {
+    if (!isFromOurWindow(event)) return;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("subtr:toggle-mode", { enabled: currentTrayMode });
+    }
   });
 
   // Settings-page position canvas backdrop: primary-screen thumbnail data URL.
@@ -2876,6 +3247,9 @@ function createOverlayWindow(baseUrl) {
     transparent: true,
     frame: false,
     focusable: false,
+    // macOS NSPanel: clicking the card must NOT activate the app (which would
+    // raise the reader window and steal focus from the app being translated).
+    ...(process.platform === "darwin" ? { type: "panel" } : {}),
     skipTaskbar: true,
     hasShadow: false,
     resizable: false,
@@ -3130,6 +3504,10 @@ async function start() {
   }
   appBaseUrl = baseUrl;
 
+  // Register the preferred toggle accelerator up-front (main-owned) so it
+  // works before the renderer boots; the renderer may override it with a stored
+  // custom value afterwards.
+  setToggleHotkey("CommandOrControl+Shift+T", { allowFallback: true });
   createMainWindow(baseUrl);
   createOverlayWindow(baseUrl);
   createTray();

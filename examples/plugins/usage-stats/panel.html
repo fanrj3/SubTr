@@ -4,17 +4,137 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Usage Stats</title>
-<!-- Shared plugin UI kit: cards, stats, badges, charts, heatmap, states. -->
+<!-- Shared plugin UI kit: surfaces, badges, buttons, states. -->
 <link rel="stylesheet" href="/plugin-kit/panel.css" />
 <style>
-  /* A little local polish on top of the kit. */
+  /* ------------------------------------------------------------------
+     Usage dashboard — local polish on top of the plugin kit.
+     Modern, calm, data-first: one hero number, a compact KPI row, a
+     smooth area chart and a calendar heatmap.
+     ------------------------------------------------------------------ */
   .app { display: flex; flex-direction: column; gap: 14px; }
-  .app-head { align-items: flex-start; }
-  .app-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
-  .app-sub { margin: 2px 0 0; font-size: 11px; color: var(--pk-muted); }
-  .app-sub b { color: var(--pk-fg); font-weight: 600; }
-  .chart-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-  .chart-head .pk-segmented { flex-wrap: wrap; }
+
+  .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .head-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .head-title h1 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.015em; }
+  .head-sub { margin: 3px 0 0; font-size: 11px; color: var(--pk-muted); }
+  .head-sub b { color: var(--pk-fg); font-weight: 600; }
+
+  .icon-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: 30px; padding: 0 10px; border-radius: 9px;
+    border: 1px solid var(--pk-border-strong);
+    background: var(--pk-surface); color: var(--pk-muted);
+    font: inherit; font-size: 11px; font-weight: 600;
+    cursor: pointer; transition: background 120ms var(--pk-ease), color 120ms var(--pk-ease);
+  }
+  .icon-btn:hover { background: var(--pk-card); color: var(--pk-fg); }
+  .icon-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--pk-accent); }
+  .icon-btn svg { width: 13px; height: 13px; }
+
+  /* Hero ---------------------------------------------------------------- */
+  .hero {
+    position: relative; overflow: hidden;
+    display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 16px; padding: 16px;
+    border: 1px solid color-mix(in srgb, var(--pk-accent) 22%, var(--pk-border));
+    border-radius: 14px;
+    background:
+      linear-gradient(135deg,
+        color-mix(in srgb, var(--pk-accent) 10%, var(--pk-surface)) 0%,
+        var(--pk-surface) 62%);
+  }
+  .hero-label { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 650; letter-spacing: 0.1em; text-transform: uppercase; color: var(--pk-muted); }
+  .hero-value { margin: 6px 0 0; font-size: 34px; line-height: 1; font-weight: 680; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+  .hero-value .cents { color: var(--pk-muted); font-size: 0.58em; letter-spacing: -0.01em; }
+  .hero-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+  .trend { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 650; }
+  .trend.up { color: var(--pk-danger); background: var(--pk-danger-soft); }
+  .trend.down { color: var(--pk-success); background: var(--pk-success-soft); }
+  .trend.flat { color: var(--pk-muted); background: var(--pk-card); }
+  .hero-note { font-size: 11px; color: var(--pk-muted); }
+
+  .hero-side { display: flex; flex-direction: column; justify-content: center; gap: 9px; }
+  .hero-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 11px; }
+  .hero-row span:first-child { color: var(--pk-muted); }
+  .hero-row b { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .hero-side hr { width: 100%; height: 1px; border: 0; margin: 1px 0; background: var(--pk-border); }
+
+  /* KPI cards ----------------------------------------------------------- */
+  .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .kpi {
+    padding: 10px 11px; border: 1px solid var(--pk-border); border-radius: 11px;
+    background: var(--pk-surface);
+  }
+  .kpi-label { display: block; font-size: 10px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--pk-faint); }
+  .kpi-value { display: block; margin-top: 4px; font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .kpi-hint { display: block; margin-top: 2px; font-size: 10px; color: var(--pk-muted); }
+
+  /* Chart --------------------------------------------------------------- */
+  .panel { border: 1px solid var(--pk-border); border-radius: 13px; background: var(--pk-surface); padding: 13px 13px 10px; }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .panel-title { margin: 0; font-size: 12px; font-weight: 650; letter-spacing: -0.005em; }
+  .panel-note { font-size: 10px; color: var(--pk-faint); }
+
+  .seg {
+    display: inline-flex; gap: 2px; padding: 2px; border-radius: 9px;
+    border: 1px solid var(--pk-border); background: var(--pk-card);
+  }
+  .seg button {
+    border: 0; background: transparent; color: var(--pk-muted);
+    font: inherit; font-size: 10px; font-weight: 600;
+    height: 22px; padding: 0 8px; border-radius: 7px; cursor: pointer;
+    transition: background 120ms var(--pk-ease), color 120ms var(--pk-ease);
+  }
+  .seg button:hover { color: var(--pk-fg); }
+  .seg button[aria-pressed="true"] { background: var(--pk-surface); color: var(--pk-fg); box-shadow: var(--pk-shadow-sm); }
+  .seg button:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--pk-accent); }
+
+  .chart-wrap { position: relative; min-height: 186px; }
+  .chart-wrap svg { display: block; width: 100%; height: 186px; overflow: visible; }
+  .chart-grid { stroke: var(--pk-border); stroke-width: 1; }
+  .chart-axis { fill: var(--pk-faint); font-size: 9px; font-variant-numeric: tabular-nums; }
+  .chart-area { fill: color-mix(in srgb, var(--pk-accent) 14%, transparent); }
+  .chart-line { fill: none; stroke: var(--pk-accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart-line-glow { fill: none; stroke: color-mix(in srgb, var(--pk-accent) 22%, transparent); stroke-width: 6; }
+  .chart-dot { fill: var(--pk-surface); stroke: var(--pk-accent); stroke-width: 2; opacity: 0; transition: opacity 100ms var(--pk-ease); }
+  .chart-dot.is-active { opacity: 1; }
+  .chart-hit { fill: transparent; cursor: crosshair; }
+  .chart-zero { display: flex; align-items: center; justify-content: center; height: 186px; color: var(--pk-muted); font-size: 11px; }
+
+  /* Calendar ------------------------------------------------------------ */
+  .heat-wrap { display: flex; gap: 6px; }
+  .heat-days { display: grid; grid-template-rows: repeat(7, var(--pk-cell)); gap: 3px; padding-top: 17px; }
+  .heat-days span { font-size: 8px; line-height: var(--pk-cell); color: var(--pk-faint); white-space: nowrap; }
+  .heat-body { flex: 1; min-width: 0; overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; }
+  .heat-months { position: relative; height: 14px; margin-bottom: 3px; }
+  .heat-months span { position: absolute; top: 0; font-size: 8px; color: var(--pk-faint); white-space: nowrap; }
+  .heat { --pk-cell: 12px; display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, var(--pk-cell)); gap: 3px; width: max-content; }
+  .heat .pk-cell { width: var(--pk-cell); height: var(--pk-cell); cursor: default; }
+  .heat .pk-cell.is-today { outline: 1.5px solid var(--pk-accent); outline-offset: 1px; }
+  .pk-legend { margin-top: 9px; justify-content: flex-end; }
+
+  /* Insights ------------------------------------------------------------ */
+  .insights { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .insight { padding: 9px 10px; border: 1px solid var(--pk-border); border-radius: 10px; background: var(--pk-card); }
+  .insight-label { display: block; font-size: 9px; font-weight: 650; letter-spacing: 0.07em; text-transform: uppercase; color: var(--pk-faint); }
+  .insight-value { display: block; margin-top: 3px; font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .footer-note { margin: 0; font-size: 10px; color: var(--pk-faint); text-align: center; }
+
+  .refresh-spin { animation: spin 700ms linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 520px) {
+    .hero { grid-template-columns: 1fr; }
+    .hero-side { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+    .hero-side hr { display: none; }
+    .hero-row { flex-direction: column; gap: 1px; }
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0ms !important; animation-duration: 0ms !important; }
+  }
 </style>
 </head>
 <body>
@@ -28,26 +148,39 @@
   var state = {
     theme: "light",
     lang: "en",
-    metric: "calls",
+    metric: "cost",
+    range: 30,
     data: null,
     status: "loading", // loading | ready | empty | error
+    lastLoadedAt: 0,
+    loading: false,
   };
 
-  var METRICS = ["calls", "translations", "tokens", "cost"];
-  var WEEKS = 26;
-  var CELL_STEP = 15; // --pk-cell (12) + gap (3): used to align month labels.
+  var METRICS = ["cost", "calls", "translations", "tokens"];
+  var RANGES = [7, 30, 90];
+  var CELL_STEP = 15; // --pk-cell (12) + gap (3)
 
   var COPY = {
     en: {
       title: "Usage",
-      range30: "Last 30 days",
-      calendar: "Calendar · 26 weeks",
+      subtitle: "Translation activity and estimated spend",
+      heroCost: "Estimated spend",
+      rangeLabel: "Last {n} days",
+      calendar: "Calendar",
+      calendarNote: "Last {n} weeks",
       cost: "Cost",
       calls: "Calls",
       translations: "Translations",
       tokens: "Tokens",
       inTok: "in",
       outTok: "out",
+      activeDays: "Active days",
+      avgDay: "Avg / day",
+      busiest: "Busiest day",
+      projected: "Projected month",
+      current30: "Current 30 days",
+      previous30: "Previous 30 days",
+      vsPrevious: "vs previous 30 days",
       updated: "updated",
       est: "estimated",
       loading: "Loading usage…",
@@ -58,19 +191,38 @@
       retry: "Retry",
       refresh: "Refresh",
       noActivity: "No activity in this period",
+      noActivityHint: "Pick another metric or range.",
       less: "Less",
       more: "More",
+      dayName: "Best day",
+      footer: "Costs are estimates based on published model pricing. Keys and translated text are never stored.",
+      metricCost: "Cost",
+      metricCalls: "Calls",
+      metricTranslations: "Translations",
+      metricTokens: "Tokens",
+      today: "Today",
+      allTime: "All time",
     },
     "zh-CN": {
       title: "用量",
-      range30: "最近 30 天",
-      calendar: "日历 · 26 周",
+      subtitle: "翻译活动与预估花费",
+      heroCost: "预估花费",
+      rangeLabel: "最近 {n} 天",
+      calendar: "日历",
+      calendarNote: "最近 {n} 周",
       cost: "花费",
       calls: "调用",
       translations: "翻译",
       tokens: "Token",
       inTok: "输入",
       outTok: "输出",
+      activeDays: "活跃天数",
+      avgDay: "日均",
+      busiest: "最忙一天",
+      projected: "本月预计",
+      current30: "当前 30 天",
+      previous30: "前 30 天",
+      vsPrevious: "较前 30 天",
       updated: "更新于",
       est: "估算",
       loading: "正在加载用量…",
@@ -81,13 +233,23 @@
       retry: "重试",
       refresh: "刷新",
       noActivity: "该时间段内没有活动",
+      noActivityHint: "可以切换指标或时间范围。",
       less: "少",
       more: "多",
+      dayName: "最佳日期",
+      footer: "花费按公开模型价格估算。密钥与翻译文本不会被存储。",
+      metricCost: "花费",
+      metricCalls: "调用",
+      metricTranslations: "翻译",
+      metricTokens: "Token",
+      today: "今天",
+      allTime: "全部",
     },
   };
 
   function t(key) {
-    return (COPY[state.lang] || COPY.en)[key];
+    var dict = COPY[state.lang] || COPY.en;
+    return dict[key] || key;
   }
 
   /* ---------- bridge ---------- */
@@ -118,6 +280,7 @@
       document.documentElement.classList.toggle("dark", state.theme === "dark");
       document.documentElement.lang = state.lang;
       render();
+      if (!state.data && state.status === "loading") load();
       return;
     }
     if (data.type === "subtr-plugin-fetch-result") {
@@ -130,10 +293,7 @@
 
   function reportResize() {
     try {
-      var height = Math.max(
-        document.body.scrollHeight,
-        document.documentElement.scrollHeight
-      );
+      var height = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
       parent.postMessage({ type: "subtr-plugin-resize", height: height }, "*");
     } catch (e) {}
   }
@@ -151,16 +311,16 @@
     return Math.round(n).toLocaleString(state.lang);
   }
 
+  function trim(v) {
+    return v.toFixed(1).replace(/\.0$/, "");
+  }
+
   function fmtCompact(n) {
     var v = Math.round(n);
     if (v >= 1e9) return trim(v / 1e9) + "B";
     if (v >= 1e6) return trim(v / 1e6) + "M";
     if (v >= 1e3) return trim(v / 1e3) + "k";
     return String(v);
-  }
-
-  function trim(v) {
-    return v.toFixed(1).replace(/\.0$/, "");
   }
 
   function fmtCost(v) {
@@ -170,22 +330,27 @@
     return "$0";
   }
 
-  // Precise value for stat cards and tooltips.
   function fmtFull(metric, v) {
     if (metric === "cost") return "$" + (v < 1 ? v.toFixed(4) : v.toFixed(2));
     return fmtInt(v);
   }
 
-  // Short value for axis ticks.
   function fmtShort(metric, v) {
     if (metric === "cost") return fmtCost(v);
     return fmtCompact(v);
   }
 
-  function metricValue(day) {
+  function metricLabel(metric) {
+    if (metric === "cost") return t("metricCost");
+    if (metric === "calls") return t("metricCalls");
+    if (metric === "translations") return t("metricTranslations");
+    return t("metricTokens");
+  }
+
+  function metricValue(day, metric) {
     if (!day) return 0;
-    if (state.metric === "tokens") return day.tokens;
-    return day[state.metric] || 0;
+    if (metric === "tokens") return day.tokens;
+    return day[metric] || 0;
   }
 
   function parseKey(key) {
@@ -194,36 +359,20 @@
   }
 
   function dateKey(d) {
-    return (
-      d.getFullYear() +
-      "-" +
-      String(d.getMonth() + 1).padStart(2, "0") +
-      "-" +
-      String(d.getDate()).padStart(2, "0")
-    );
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   }
 
   var dayFmt, dayFullFmt, monthFmt, weekdayFmt, relFmt;
   function formatters() {
     dayFmt = new Intl.DateTimeFormat(state.lang, { month: "short", day: "numeric" });
-    dayFullFmt = new Intl.DateTimeFormat(state.lang, {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
+    dayFullFmt = new Intl.DateTimeFormat(state.lang, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
     monthFmt = new Intl.DateTimeFormat(state.lang, { month: "short" });
     weekdayFmt = new Intl.DateTimeFormat(state.lang, { weekday: "short" });
     relFmt = new Intl.RelativeTimeFormat(state.lang, { numeric: "auto" });
   }
 
-  function fmtDay(key) {
-    return dayFmt.format(parseKey(key));
-  }
-
-  function fmtDayFull(key) {
-    return dayFullFmt.format(parseKey(key));
-  }
+  function fmtDay(key) { return dayFmt.format(parseKey(key)); }
+  function fmtDayFull(key) { return dayFullFmt.format(parseKey(key)); }
 
   function fmtRelative(iso) {
     if (!iso) return "";
@@ -231,13 +380,7 @@
     if (isNaN(ts)) return "";
     var diff = ts - Date.now();
     var abs = Math.abs(diff);
-    var units = [
-      ["year", 31536e6],
-      ["month", 2592e6],
-      ["day", 864e5],
-      ["hour", 36e5],
-      ["minute", 6e4],
-    ];
+    var units = [["year", 31536e6], ["month", 2592e6], ["day", 864e5], ["hour", 36e5], ["minute", 6e4]];
     for (var i = 0; i < units.length; i++) {
       if (abs >= units[i][1] || units[i][0] === "minute") {
         return relFmt.format(Math.round(diff / units[i][1]), units[i][0]);
@@ -247,6 +390,21 @@
   }
 
   /* ---------- data ---------- */
+
+  function num(v) {
+    return typeof v === "number" && isFinite(v) ? v : 0;
+  }
+
+  function pick(d) {
+    return {
+      calls: num(d.calls),
+      translations: num(d.translations),
+      tokens: num(d.inTok) + num(d.outTok),
+      inTok: num(d.inTok),
+      outTok: num(d.outTok),
+      cost: num(d.costUsd),
+    };
+  }
 
   function normalize(raw) {
     var src = raw || {};
@@ -264,7 +422,7 @@
     }
     return {
       totals: {
-        costUsd: num(src.costUsd),
+        cost: num(src.costUsd),
         calls: num(src.calls),
         translations: num(src.translations),
         inTok: num(src.inTokens),
@@ -276,36 +434,61 @@
     };
   }
 
-  function num(v) {
-    return typeof v === "number" && isFinite(v) ? v : 0;
-  }
-
-  function pick(d) {
-    return {
-      calls: num(d.calls),
-      translations: num(d.translations),
-      tokens: num(d.inTok) + num(d.outTok),
-      cost: num(d.costUsd),
-    };
-  }
-
   function load() {
+    state.loading = true;
     if (!state.data) {
       state.status = "loading";
+      render();
+    } else {
       render();
     }
     bridgeFetch("/api/stats")
       .then(function (res) {
         if (!res || !res.ok) throw new Error("HTTP " + (res && res.status));
         state.data = normalize(JSON.parse(res.body));
-        var hasData =
-          state.data.totals.calls > 0 || Object.keys(state.data.daily).length > 0;
+        var hasData = state.data.totals.calls > 0 || Object.keys(state.data.daily).length > 0;
         state.status = hasData ? "ready" : "empty";
+        state.lastLoadedAt = Date.now();
       })
       .catch(function () {
         state.status = state.data ? "ready" : "error";
       })
-      .then(render);
+      .then(function () {
+        state.loading = false;
+        render();
+      });
+  }
+
+  /* ---------- derived data ---------- */
+
+  function daysAgo(n) {
+    var d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - n);
+  }
+
+  function daySeries(count) {
+    var out = [];
+    for (var i = count - 1; i >= 0; i--) out.push(daysAgo(i));
+    return out;
+  }
+
+  function valueForDay(d, metric) {
+    return metricValue(state.data.daily[dateKey(d)], metric);
+  }
+
+  // `offsetDays` counts backwards from today; the window is [offset, offset+count-1].
+  function summarize(offsetDays, count, metric) {
+    var total = 0;
+    var active = 0;
+    var best = { date: null, value: 0 };
+    for (var i = offsetDays + count - 1; i >= offsetDays; i--) {
+      var d = daysAgo(i);
+      var value = valueForDay(d, metric);
+      total += value;
+      if (value > 0) active += 1;
+      if (value > best.value) best = { date: d, value: value };
+    }
+    return { total: total, active: active, best: best };
   }
 
   /* ---------- render ---------- */
@@ -330,142 +513,179 @@
       return;
     }
 
-    var totals = state.data.totals;
+    state.weeks = computeWeeks();
     root.innerHTML =
-      headerHTML(totals) +
-      statsHTML(totals) +
-      chartHTML() +
-      calendarHTML();
+      headerHTML() +
+      heroHTML() +
+      kpisHTML() +
+      chartPanelHTML() +
+      calendarPanelHTML() +
+      insightsHTML() +
+      '<p class="footer-note">' + esc(t("footer")) + "</p>";
 
     renderChart();
     renderHeat();
     scheduleResize();
   }
 
+  function esc(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
   function refreshIcon() {
     return (
-      '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
-      'stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="' +
+      (state.loading ? "refresh-spin" : "") + '">' +
       '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>'
     );
   }
 
-  function headerHTML(totals) {
+  function headerHTML() {
     var rel = fmtRelative(state.data.lastRecordAt);
+    var est = state.data.totals.estimated > 0;
+    var badge = est
+      ? '<span class="pk-badge pk-badge--warn" title="' + t("est") + '">~ ' + t("est") + "</span>"
+      : "";
     var sub =
-      t("range30") + (rel ? " · " + t("updated") + " <b>" + rel + "</b>" : "");
-    var badge =
-      totals.estimated > 0
-        ? '<span class="pk-badge pk-badge--warn" title="' +
-          fmtInt(totals.estimated) +
-          " / " +
-          fmtInt(totals.calls) +
-          '">~ ' +
-          t("est") +
-          "</span>"
-        : "";
+      t("subtitle") +
+      (rel ? " · " + t("updated") + " <b>" + esc(rel) + "</b>" : "");
     return (
-      '<header class="pk-row-between app-head">' +
+      '<header class="head">' +
       '<div style="min-width:0">' +
-      '<div class="pk-cluster" style="gap:8px">' +
-      '<span class="app-title">' +
-      t("title") +
-      "</span>" +
-      badge +
+      '<div class="head-title"><h1>' + t("title") + "</h1>" + badge + "</div>" +
+      '<p class="head-sub">' + sub + "</p>" +
       "</div>" +
-      '<p class="app-sub">' +
-      sub +
-      "</p>" +
-      "</div>" +
-      '<button type="button" class="pk-btn pk-btn--sm" data-action="reload">' +
-      refreshIcon() +
-      t("refresh") +
-      "</button>" +
+      '<button type="button" class="icon-btn" data-action="reload" aria-label="' + t("refresh") + '">' +
+      refreshIcon() + "<span>" + t("refresh") + "</span></button>" +
       "</header>"
     );
   }
 
-  function statHTML(label, value, hint) {
+  function heroHTML() {
+    var range = state.range;
+    var cost = summarize(0, range, "cost");
+    var calls = summarize(0, range, "calls");
+    var translations = summarize(0, range, "translations");
+    var tokens = summarize(0, range, "tokens");
+    var previous = summarize(range, range, "cost");
+    var delta = previous.total > 0 ? ((cost.total - previous.total) / previous.total) * 100 : null;
+    var trend = "";
+    if (delta !== null && isFinite(delta)) {
+      var cls = Math.abs(delta) < 0.5 ? "flat" : delta > 0 ? "up" : "down";
+      var arrow = delta > 5 ? "↑" : delta < -5 ? "↓" : "→";
+      trend =
+        '<span class="trend ' + cls + '" title="' + t("vsPrevious") + '">' + arrow + " " +
+        Math.abs(delta).toFixed(1) + "%</span>" +
+        '<span class="hero-note">' + t("vsPrevious") + "</span>";
+    } else {
+      trend = '<span class="hero-note">' + t("rangeLabel").replace("{n}", String(range)) + "</span>";
+    }
+    var totalCost = cost.total;
+    var display;
+    if (totalCost >= 1) {
+      var parts = totalCost.toFixed(2).split(".");
+      display = "$" + Number(parts[0]).toLocaleString(state.lang) + '<span class="cents">.' + parts[1] + "</span>";
+    } else {
+      display = "$" + totalCost.toFixed(4);
+    }
+
     return (
-      '<div class="pk-stat">' +
-      '<span class="pk-stat-label">' +
-      label +
-      "</span>" +
-      '<span class="pk-stat-value">' +
-      value +
-      "</span>" +
-      (hint ? '<span class="pk-stat-hint">' + hint + "</span>" : "") +
+      '<section class="hero" aria-label="' + t("heroCost") + '">' +
+      "<div>" +
+      '<div class="hero-label">' + t("heroCost") + " · " + t("rangeLabel").replace("{n}", String(range)) + "</div>" +
+      '<div class="hero-value">' + display + "</div>" +
+      '<div class="hero-foot">' + trend + "</div>" +
+      "</div>" +
+      '<div class="hero-side">' +
+      '<div class="hero-row"><span>' + t("calls") + "</span><b>" + (calls.total > 0 ? "~" : "") + fmtInt(calls.total) + "</b></div>" +
+      '<div class="hero-row"><span>' + t("translations") + "</span><b>" + (translations.total > 0 ? "~" : "") + fmtInt(translations.total) + "</b></div>" +
+      '<hr />' +
+      '<div class="hero-row"><span>' + t("tokens") + "</span><b>" + fmtCompact(tokens.total) + "</b></div>" +
+      '<div class="hero-row"><span>' + t("avgDay") + "</span><b>" + fmtFull("cost", cost.total / range) + "</b></div>" +
+      "</div>" +
+      "</section>"
+    );
+  }
+
+  function tokenBreakdown() {
+    var inTok = 0;
+    var outTok = 0;
+    for (var i = state.range - 1; i >= 0; i--) {
+      var day = state.data.daily[dateKey(daysAgo(i))];
+      if (!day) continue;
+      inTok += day.inTok || 0;
+      outTok += day.outTok || 0;
+    }
+    return { inTok: inTok, outTok: outTok, total: inTok + outTok };
+  }
+
+  function kpisHTML() {
+    var cost = summarize(0, state.range, "cost");
+    var calls = summarize(0, state.range, "calls");
+    var tokens = tokenBreakdown();
+    var avgActive = calls.total > 0 ? cost.total / Math.max(1, calls.active) : 0;
+    return (
+      '<section class="kpis" aria-label="Key figures">' +
+      kpiHTML(t("calls"), fmtInt(calls.total), t("rangeLabel").replace("{n}", String(state.range))) +
+      kpiHTML(t("activeDays"), fmtInt(calls.active) + "/" + state.range, t("avgDay") + " " + fmtCost(avgActive)) +
+      kpiHTML(t("tokens"), fmtCompact(tokens.total), "↓ " + fmtCompact(tokens.inTok) + " · ↑ " + fmtCompact(tokens.outTok)) +
+      kpiHTML(t("projected"), fmtCost((cost.total / state.range) * 30), t("rangeLabel").replace("{n}", "30")) +
+      "</section>"
+    );
+  }
+
+  function kpiHTML(label, value, hint) {
+    return (
+      '<div class="kpi">' +
+      '<span class="kpi-label">' + label + "</span>" +
+      '<span class="kpi-value">' + value + "</span>" +
+      (hint ? '<span class="kpi-hint">' + hint + "</span>" : "") +
       "</div>"
     );
   }
 
-  function statsHTML(totals) {
-    var tokenTotal = totals.inTok + totals.outTok;
-    var est = totals.estimated > 0 ? "~" : "";
-    return (
-      '<section class="pk-stats pk-stats--4">' +
-      statHTML(t("cost"), est + fmtFull("cost", totals.costUsd)) +
-      statHTML(t("calls"), est + fmtInt(totals.calls)) +
-      statHTML(t("translations"), est + fmtInt(totals.translations)) +
-      statHTML(
-        t("tokens"),
-        est + fmtInt(tokenTotal),
-        "↓ " +
-          fmtCompact(totals.inTok) +
-          " · ↑ " +
-          fmtCompact(totals.outTok)
-      ) +
-      "</section>"
-    );
-  }
-
-  function chartHTML() {
-    var items = METRICS.map(function (m) {
+  function chartPanelHTML() {
+    var metrics = METRICS.map(function (m) {
       return (
-        '<button type="button" class="pk-segmented__item" data-action="metric" data-metric="' +
-        m +
-        '" aria-pressed="' +
-        (state.metric === m) +
-        '">' +
-        t(m) +
-        "</button>"
+        '<button type="button" data-action="metric" data-metric="' + m + '" aria-pressed="' +
+        (state.metric === m) + '">' + metricLabel(m) + "</button>"
+      );
+    }).join("");
+    var ranges = RANGES.map(function (r) {
+      return (
+        '<button type="button" data-action="range" data-range="' + r + '" aria-pressed="' +
+        (state.range === r) + '">' + r + "d</button>"
       );
     }).join("");
     return (
-      '<section class="pk-section">' +
-      '<div class="chart-head">' +
-      '<h2 class="pk-section-title">' +
-      t("range30") +
-      "</h2>" +
-      '<div class="pk-segmented" role="group" aria-label="' +
-      t("range30") +
-      '">' +
-      items +
+      '<section class="panel">' +
+      '<div class="panel-head">' +
+      '<h2 class="panel-title">' + t("rangeLabel").replace("{n}", String(state.range)) + "</h2>" +
+      '<div class="seg" role="group" aria-label="Range">' + ranges + "</div>" +
+      '<div class="seg" role="group" aria-label="Metric">' + metrics + "</div>" +
       "</div>" +
-      "</div>" +
-      '<div class="pk-chart" id="chart">' +
-      '<div class="pk-chart__yaxis" id="yaxis"></div>' +
-      '<div class="pk-chart__canvas">' +
-      '<div class="pk-chart__grid" id="grid"></div>' +
-      '<div class="pk-bars" id="bars"></div>' +
-      "</div>" +
-      '<div class="pk-chart__xaxis" id="xaxis"></div>' +
-      "</div>" +
+      '<div class="chart-wrap" id="chartWrap"></div>' +
       "</section>"
     );
   }
 
-  function calendarHTML() {
+  function calendarPanelHTML() {
     return (
-      '<section class="pk-section">' +
-      '<h2 class="pk-section-title">' +
-      t("calendar") +
-      "</h2>" +
-      '<div class="pk-heat-wrap">' +
-      '<div class="pk-heat-days" id="heatDays"></div>' +
-      '<div class="pk-heat-body">' +
-      '<div class="pk-heat-months" id="heatMonths"></div>' +
-      '<div class="pk-heat" id="heat"></div>' +
+      '<section class="panel">' +
+      '<div class="panel-head">' +
+      '<h2 class="panel-title">' + t("calendar") + "</h2>" +
+      '<span class="panel-note">' + t("calendarNote").replace("{n}", String(state.weeks)) + " · " + metricLabel(state.metric) + "</span>" +
+      "</div>" +
+      '<div class="heat-wrap">' +
+      '<div class="heat-days" id="heatDays"></div>' +
+      '<div class="heat-body">' +
+      '<div class="heat-months" id="heatMonths"></div>' +
+      '<div class="heat" id="heat"></div>' +
       "</div>" +
       "</div>" +
       '<div class="pk-legend" id="legend"></div>' +
@@ -473,137 +693,185 @@
     );
   }
 
-  function loadingHTML() {
+  function insightsHTML() {
+    var series = daySeries(state.range);
+    var best = { date: null, value: 0 };
+    var active = 0;
+    series.forEach(function (d) {
+      var v = valueForDay(d, state.metric);
+      if (v > 0) active += 1;
+      if (v > best.value) best = { date: d, value: v };
+    });
+    var bestLabel = best.date ? fmtDayFull(dateKey(best.date)) : "—";
+    var bestValue = best.date ? fmtFull(state.metric, best.value) : "—";
     return (
-      '<div class="pk-loading"><span class="pk-spinner"></span>' + t("loading") + "</div>"
+      '<section class="insights" aria-label="Insights">' +
+      insightHTML(t("busiest"), bestLabel + " · " + bestValue) +
+      insightHTML(t("activeDays"), active + " / " + state.range) +
+      insightHTML(t("avgDay"), fmtFull(state.metric, summarize(0, state.range, state.metric).total / state.range)) +
+      insightHTML(t("projected"), fmtFull(state.metric, (summarize(0, state.range, state.metric).total / state.range) * 30)) +
+      "</section>"
     );
+  }
+
+  function insightHTML(label, value) {
+    return '<div class="insight"><span class="insight-label">' + label + '</span><span class="insight-value" title="' + esc(value) + '">' + esc(value) + "</span></div>";
+  }
+
+  function loadingHTML() {
+    return '<div class="pk-loading"><span class="pk-spinner"></span>' + t("loading") + "</div>";
   }
 
   function emptyHTML() {
     return (
-      '<div class="pk-empty"><strong>' +
-      t("emptyTitle") +
-      "</strong><span>" +
-      t("emptyHint") +
-      "</span></div>"
+      '<div class="pk-empty"><strong>' + t("emptyTitle") + "</strong><span>" + t("emptyHint") + "</span></div>" +
+      '<button type="button" class="icon-btn" data-action="reload" style="align-self:center">' + t("refresh") + "</button>"
     );
   }
 
   function errorHTML() {
     return (
-      '<div class="pk-error"><strong>' +
-      t("errorTitle") +
-      "</strong><span>" +
-      t("errorHint") +
-      '</span><button type="button" class="pk-btn pk-btn--sm" style="margin-top:6px" data-action="reload">' +
-      t("retry") +
-      "</button></div>"
+      '<div class="pk-error"><strong>' + t("errorTitle") + "</strong><span>" + t("errorHint") + "</span>" +
+      '<button type="button" class="pk-btn pk-btn--sm" style="margin-top:6px" data-action="reload">' +
+      t("retry") + "</button></div>"
     );
   }
 
-  /* ---------- chart ---------- */
-
-  function lastNDays(n) {
-    var out = [];
-    var today = new Date();
-    for (var i = n - 1; i >= 0; i--) {
-      out.push(new Date(today.getFullYear(), today.getMonth(), today.getDate() - i));
-    }
-    return out;
-  }
+  /* ---------- area chart ---------- */
 
   function renderChart() {
-    var days = lastNDays(30);
-    var values = days.map(function (d) {
-      return metricValue(state.data.daily[dateKey(d)]);
-    });
+    var wrap = document.getElementById("chartWrap");
+    if (!wrap) return;
+    var series = daySeries(state.range);
+    var values = series.map(function (d) { return valueForDay(d, state.metric); });
     var max = Math.max.apply(null, values.concat([0]));
 
-    var chart = document.getElementById("chart");
-    if (!chart) return;
-
     if (max <= 0) {
-      chart.innerHTML =
-        '<div class="pk-empty" style="grid-column:1/-1">' + t("noActivity") + "</div>";
+      wrap.innerHTML =
+        '<div class="chart-zero"><span>' + t("noActivity") + " · " + t("noActivityHint") + "</span></div>";
       return;
     }
 
-    var barsEl = document.getElementById("bars");
-    barsEl.innerHTML = days
-      .map(function (d, i) {
-        var v = values[i];
-        var pct = (v / max) * 100;
-        var cls = "pk-bar" + (v > 0 ? "" : " is-empty");
-        return (
-          '<div class="' +
-          cls +
-          '" data-date="' +
-          dateKey(d) +
-          '" data-value="' +
-          v +
-          '"><div class="pk-bar__fill" style="--pk-h:' +
-          Math.max(pct, v > 0 ? 2 : 1.5) +
-          '%"></div></div>'
+    var width = Math.max(260, wrap.clientWidth || 480);
+    var height = 186;
+    var padding = { top: 10, right: 8, bottom: 22, left: 42 };
+    var plotW = width - padding.left - padding.right;
+    var plotH = height - padding.top - padding.bottom;
+    var step = series.length > 1 ? plotW / (series.length - 1) : plotW;
+
+    var points = values.map(function (v, i) {
+      return {
+        x: padding.left + i * step,
+        y: padding.top + plotH - (v / max) * plotH,
+        value: v,
+        date: series[i],
+      };
+    });
+
+    var linePath = points.map(function (p, i) {
+      if (i === 0) return "M" + p.x.toFixed(1) + " " + p.y.toFixed(1);
+      var prev = points[i - 1];
+      var cx = (prev.x + p.x) / 2;
+      return "C" + cx.toFixed(1) + " " + prev.y.toFixed(1) + " " + cx.toFixed(1) + " " + p.y.toFixed(1) + " " + p.x.toFixed(1) + " " + p.y.toFixed(1);
+    }).join(" ");
+    var areaPath = linePath + " L" + points[points.length - 1].x.toFixed(1) + " " + (padding.top + plotH) + " L" + points[0].x.toFixed(1) + " " + (padding.top + plotH) + " Z";
+
+    var grid = "";
+    var axis = "";
+    for (var g = 0; g <= 2; g++) {
+      var y = padding.top + (plotH / 2) * g;
+      grid += '<line class="chart-grid" x1="' + padding.left + '" y1="' + y + '" x2="' + (width - padding.right) + '" y2="' + y + '" />';
+      axis += '<text class="chart-axis" x="' + (padding.left - 8) + '" y="' + (y + 3) + '" text-anchor="end">' + esc(fmtShort(state.metric, max - (max / 2) * g)) + "</text>";
+    }
+
+    var labelEvery = Math.max(1, Math.ceil(series.length / 6));
+    var lastLabel = -1;
+    var xLabels = "";
+    points.forEach(function (p, i) {
+      if (i % labelEvery !== 0 && i !== points.length - 1) return;
+      if (i !== points.length - 1 && i - lastLabel < labelEvery) return;
+      lastLabel = i;
+      xLabels += '<text class="chart-axis" x="' + p.x + '" y="' + (height - 5) + '" text-anchor="middle">' + esc(fmtDay(dateKey(p.date))) + "</text>";
+    });
+
+    var dots = points.map(function (p, i) {
+      return '<circle class="chart-dot" data-dot="' + i + '" cx="' + p.x + '" cy="' + p.y + '" r="3.2" />';
+    }).join("");
+
+    var hitWidth = Math.max(6, step);
+    var hits = points.map(function (p, i) {
+      return '<rect class="chart-hit" data-index="' + i + '" x="' + (p.x - hitWidth / 2) + '" y="' + padding.top + '" width="' + hitWidth + '" height="' + plotH + '" />';
+    }).join("");
+
+    wrap.innerHTML =
+      '<svg viewBox="0 0 ' + width + " " + height + '" role="img" aria-label="' + t("rangeLabel").replace("{n}", String(state.range)) + '">' +
+      '<defs><linearGradient id="area-fill" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0%" stop-color="var(--pk-accent)" stop-opacity="0.22" />' +
+      '<stop offset="100%" stop-color="var(--pk-accent)" stop-opacity="0.02" />' +
+      "</linearGradient></defs>" +
+      grid +
+      '<path class="chart-line-glow" d="' + linePath + '" />' +
+      '<path d="' + areaPath + '" fill="url(#area-fill)" />' +
+      '<path class="chart-line" d="' + linePath + '" />' +
+      dots +
+      xLabels +
+      axis +
+      hits +
+      "</svg>";
+
+    var activeDot = null;
+    wrap.querySelectorAll(".chart-hit").forEach(function (hit) {
+      hit.addEventListener("mousemove", function () {
+        var index = Number(hit.getAttribute("data-index"));
+        var p = points[index];
+        if (!p) return;
+        if (activeDot) activeDot.classList.remove("is-active");
+        activeDot = wrap.querySelector('[data-dot="' + index + '"]');
+        if (activeDot) activeDot.classList.add("is-active");
+        var box = wrap.getBoundingClientRect();
+        showTip(
+          dateKey(p.date),
+          p.value,
+          box.left + (p.x / width) * box.width,
+          box.top + ((p.y + 10) / height) * box.height
         );
-      })
-      .join("");
-
-    document.getElementById("grid").innerHTML =
-      '<div class="pk-chart__gridline" style="top:0"></div>' +
-      '<div class="pk-chart__gridline" style="top:50%"></div>';
-
-    document.getElementById("yaxis").innerHTML =
-      "<span>" +
-      fmtShort(state.metric, max) +
-      "</span><span>" +
-      fmtShort(state.metric, max / 2) +
-      "</span><span>0</span>";
-
-    var last = days.length - 1;
-    document.getElementById("xaxis").innerHTML = days
-      .map(function (d, i) {
-        var show = (i % 7 === 0 && i <= last - 3) || i === last;
-        var edge = i === 0 ? " pk-xcell--start" : i === last ? " pk-xcell--end" : "";
-        return (
-          '<span class="pk-xcell' +
-          edge +
-          '">' +
-          (show ? fmtDay(dateKey(d)) : "") +
-          "</span>"
-        );
-      })
-      .join("");
+      });
+    });
+    wrap.addEventListener("mouseleave", function () {
+      if (activeDot) activeDot.classList.remove("is-active");
+      hideTip();
+    });
   }
 
   /* ---------- calendar heatmap ---------- */
 
   function weekdayNames() {
     var names = [];
-    // 2024-01-07 is a Sunday, so the array runs Sunday → Saturday.
     for (var i = 0; i < 7; i++) names.push(weekdayFmt.format(new Date(2024, 0, 7 + i)));
     return names;
+  }
+
+  /** Fit 12–52 weeks to the available panel width (min cell 12px + 3px gap). */
+  function computeWeeks() {
+    var width = (document.body && document.body.clientWidth) || 700;
+    if (width >= 760) return 52;
+    if (width >= 520) return 34;
+    if (width >= 380) return 24;
+    return 16;
   }
 
   function renderHeat() {
     var today = new Date();
     var todayKey = dateKey(today);
-    var start = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate() - (WEEKS * 7 - 1)
-    );
-    start = new Date(
-      start.getFullYear(),
-      start.getMonth(),
-      start.getDate() - start.getDay()
-    );
+    var start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (state.weeks * 7 - 1));
+    start = new Date(start.getFullYear(), start.getMonth(), start.getDate() - start.getDay());
 
     var cells = [];
     var max = 0;
     var cursor = new Date(start);
     while (cursor <= today) {
       var key = dateKey(cursor);
-      var v = metricValue(state.data.daily[key]);
+      var v = valueForDay(cursor, state.metric);
       if (v > max) max = v;
       cells.push({ date: new Date(cursor), key: key, value: v });
       cursor.setDate(cursor.getDate() + 1);
@@ -622,32 +890,18 @@
         var level = max > 0 && c.value > 0 ? Math.max(1, Math.ceil((c.value / max) * 5)) : 0;
         level = Math.max(0, Math.min(5, level));
         var cls = "pk-cell pk-lvl-" + level + (c.key === todayKey ? " is-today" : "");
-        return (
-          '<div class="' +
-          cls +
-          '" data-date="' +
-          c.key +
-          '" data-value="' +
-          c.value +
-          '"></div>'
-        );
+        return '<div class="' + cls + '" data-date="' + c.key + '" data-value="' + c.value + '"></div>';
       })
       .join("");
 
     renderMonths(cells);
 
     document.getElementById("legend").innerHTML =
-      "<span>" +
-      t("less") +
-      "</span>" +
-      [1, 2, 3, 4, 5]
-        .map(function (l) {
-          return '<span class="pk-legend__item pk-lvl-' + l + '"></span>';
-        })
-        .join("") +
-      "<span>" +
-      t("more") +
-      "</span>";
+      "<span>" + t("less") + "</span>" +
+      [1, 2, 3, 4, 5].map(function (l) {
+        return '<span class="pk-legend__item pk-lvl-' + l + '"></span>';
+      }).join("") +
+      "<span>" + t("more") + "</span>";
   }
 
   function renderMonths(cells) {
@@ -656,12 +910,16 @@
     for (var j = 0; j < cells.length; j += 7) {
       var label = monthFmt.format(cells[j].date);
       var prev = months[months.length - 1];
-      if (!prev || prev.label !== label) months.push({ label: label, start: weekIndex });
+      // Keep labels readable: a month that only owns a week or two at the edge
+      // would overlap the next label.
+      if (!prev || (prev.label !== label && weekIndex - prev.start >= 3)) {
+        months.push({ label: label, start: weekIndex });
+      }
       weekIndex++;
     }
     document.getElementById("heatMonths").innerHTML = months
       .map(function (m) {
-        return '<span style="left:' + m.start * CELL_STEP + 'px">' + m.label + "</span>";
+        return '<span style="left:' + m.start * CELL_STEP + 'px">' + esc(m.label) + "</span>";
       })
       .join("");
   }
@@ -675,26 +933,14 @@
     tip.style.top = y + "px";
     tip.classList.add("pk-tooltip--visible");
     var rect = tip.getBoundingClientRect();
-    var clamped = Math.min(
-      Math.max(x, rect.width / 2 + 6),
-      window.innerWidth - rect.width / 2 - 6
-    );
+    var clamped = Math.min(Math.max(x, rect.width / 2 + 6), window.innerWidth - rect.width / 2 - 6);
     tip.style.left = clamped + "px";
   }
 
-  // Two lines: a muted date line, then the value + metric label. The whitespace
-  // between the two block elements keeps the text content readable too.
   function tooltipHTML(key, value) {
     return (
-      '<div class="pk-tooltip__date">' +
-      fmtDayFull(key) +
-      "</div>" +
-      "\n" +
-      '<div class="pk-tooltip__value">' +
-      fmtFull(state.metric, value) +
-      " " +
-      t(state.metric) +
-      "</div>"
+      '<div class="pk-tooltip__date">' + esc(fmtDayFull(key)) + "</div>" +
+      '<div class="pk-tooltip__value">' + esc(fmtFull(state.metric, value)) + " " + esc(metricLabel(state.metric)) + "</div>"
     );
   }
 
@@ -703,13 +949,6 @@
   }
 
   /* ---------- events ---------- */
-
-  function boot() {
-    formatters();
-    render();
-    scheduleResize();
-    load();
-  }
 
   document.getElementById("view").addEventListener("click", function (e) {
     var el = e.target.closest ? e.target.closest("[data-action]") : null;
@@ -723,14 +962,19 @@
         state.metric = next;
         render();
       }
+    } else if (action === "range") {
+      var range = Number(el.getAttribute("data-range"));
+      if (range && range !== state.range) {
+        state.range = range;
+        render();
+      }
     }
   });
 
-  // Delegated tooltips: the bars/heat nodes are rebuilt on every render, but
-  // the #view container is stable.
+  // Delegated tooltips for both chart hits and heatmap cells.
   document.getElementById("view").addEventListener("mousemove", function (e) {
     var target = e.target.closest ? e.target.closest("[data-date]") : null;
-    if (!target) return hideTip();
+    if (!target) return;
     showTip(
       target.getAttribute("data-date"),
       Number(target.getAttribute("data-value") || 0),
@@ -740,21 +984,35 @@
   });
   document.getElementById("view").addEventListener("mouseleave", hideTip);
   window.addEventListener("scroll", hideTip, true);
+
   window.addEventListener("resize", function () {
     hideTip();
+    renderChart();
     scheduleResize();
   });
+
+  function boot() {
+    formatters();
+    render();
+    scheduleResize();
+    load();
+    if (typeof ResizeObserver !== "undefined") {
+      var wrap = document.getElementById("view");
+      var observer = new ResizeObserver(function () {
+        scheduleResize();
+      });
+      observer.observe(wrap);
+    }
+    // Refresh quietly while the widget stays open (only when visible).
+    setInterval(function () {
+      if (document.visibilityState === "visible") load();
+    }, 60000);
+  }
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot);
   } else {
     boot();
-  }
-
-  if (typeof ResizeObserver !== "undefined") {
-    var observer = new ResizeObserver(scheduleResize);
-    observer.observe(document.documentElement);
-    observer.observe(document.body);
   }
 })();
 </script>

@@ -77,40 +77,118 @@ function sha256(buf) {
 }
 
 let visionCache = null;
+/** Timestamp of the last failed build, so a capture storm does not respawn swiftc. */
+let visionLastFailureAt = 0;
+
+/** Run `<bin> --version` and return its trimmed stdout (null when unusable). */
+function helperVersion(bin) {
+  try {
+    if (!fs.existsSync(bin)) return null;
+    const res = spawnSync(bin, ["--version"], { encoding: "utf8", timeout: 5000 });
+    return res.status === 0 ? String(res.stdout || "").trim() || "unknown" : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Resolve a Swift compiler (xcrun is the most reliable under Finder launch). */
+function findSwiftc() {
+  const candidates = [];
+  if (process.env.SUBTR_SWIFTC) candidates.push(process.env.SUBTR_SWIFTC);
+  candidates.push("/usr/bin/swiftc", "swiftc");
+  for (const candidate of candidates) {
+    try {
+      const probe = spawnSync(candidate, ["--version"], { encoding: "utf8", timeout: 10000 });
+      if (probe.status === 0) return candidate;
+    } catch {
+      // try next
+    }
+  }
+  try {
+    const found = spawnSync("xcrun", ["--find", "swiftc"], { encoding: "utf8", timeout: 10000 });
+    const pathText = String(found.stdout || "").trim();
+    if (found.status === 0 && pathText) return pathText;
+  } catch {
+    // ignore
+  }
+  return null;
+}
 
 function ensureVisionBuilt() {
-  if (visionCache && visionCache.ok) return visionCache;
+  if (visionCache) return visionCache;
+  if (visionLastFailureAt && Date.now() - visionLastFailureAt < 15000) {
+    return {
+      ok: false,
+      reason: "build-failed",
+      message: "Vision helper build failed recently; retry shortly.",
+    };
+  }
+
+  // 1) Prebuilt helper (shipped in the plugin zip for arm64+x86_64). This is
+  //    the normal path and needs no Xcode / Command Line Tools. Zip extraction
+  //    can drop the executable bit, so restore it before probing.
+  if (fs.existsSync(VISION_BIN)) {
+    try {
+      fs.chmodSync(VISION_BIN, 0o755);
+    } catch {
+      // ignore — helperVersion will report whether it can run
+    }
+  }
+  const prebuiltVersion = helperVersion(VISION_BIN);
+  if (prebuiltVersion) {
+    visionCache = { ok: true, bin: VISION_BIN, version: prebuiltVersion, cached: true };
+    return visionCache;
+  }
+
+  // 2) Compile-on-first-use fallback for source-only installs.
   let hash;
   try {
     hash = sha256(fs.readFileSync(VISION_SRC));
   } catch (error) {
+    visionLastFailureAt = Date.now();
     return { ok: false, reason: "no-source", message: String(error) };
   }
-  let stamp = null;
-  try {
-    stamp = JSON.parse(fs.readFileSync(VISION_STAMP, "utf8"));
-  } catch {
-    stamp = null;
-  }
-  if (stamp && stamp.hash === hash && fs.existsSync(VISION_BIN)) {
-    visionCache = { ok: true, bin: VISION_BIN, version: stamp.version || "unknown", cached: true };
-    return visionCache;
-  }
+
   try {
     fs.mkdirSync(path.dirname(VISION_BIN), { recursive: true });
   } catch {
     // ignore
   }
-  const built = spawnSync("swiftc", ["-O", "-o", VISION_BIN, VISION_SRC], { encoding: "utf8" });
+
+  const swiftc = findSwiftc();
+  if (!swiftc) {
+    visionLastFailureAt = Date.now();
+    return {
+      ok: false,
+      reason: "no-compiler",
+      message: "No Swift compiler found (install Xcode Command Line Tools).",
+    };
+  }
+
+  // Keep the module cache inside the plugin folder: Finder-launched apps do not
+  // always have a writable default clang module cache.
+  const cacheDir = path.join(path.dirname(VISION_BIN), ".swift-module-cache");
+  try {
+    fs.mkdirSync(cacheDir, { recursive: true });
+  } catch {
+    // ignore
+  }
+
+  const built = spawnSync(swiftc, ["-O", "-module-cache-path", cacheDir, "-o", VISION_BIN, VISION_SRC], {
+    encoding: "utf8",
+    timeout: 120000,
+    env: { ...process.env },
+  });
   if (built.status !== 0 || !fs.existsSync(VISION_BIN)) {
+    visionLastFailureAt = Date.now();
     return {
       ok: false,
       reason: "build-failed",
-      message: String(built.stderr || built.error || "swiftc failed").slice(0, 400),
+      message: String(built.stderr || built.error || "swiftc failed").slice(0, 500),
     };
   }
   let version = "unknown";
-  const v = spawnSync(VISION_BIN, ["--version"], { encoding: "utf8" });
+  const v = spawnSync(VISION_BIN, ["--version"], { encoding: "utf8", timeout: 5000 });
   if (v.status === 0) version = String(v.stdout || "").trim();
   try {
     fs.writeFileSync(VISION_STAMP, JSON.stringify({ hash, version, builtAt: new Date().toISOString() }, null, 2));
@@ -121,19 +199,45 @@ function ensureVisionBuilt() {
   return visionCache;
 }
 
-function runVision(imagePath) {
-  const built = ensureVisionBuilt();
-  if (!built.ok) return { ok: false, reason: "no-engine", message: built.message };
-  const res = spawnSync(built.bin, [imagePath], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
-  if (res.status !== 0) {
-    return { ok: false, reason: "ocr-failed", message: String(res.stderr || "").slice(0, 300) };
-  }
+function parseVisionOutput(stdout, version) {
   try {
-    const parsed = JSON.parse(res.stdout);
-    return { ok: true, blocks: Array.isArray(parsed.blocks) ? parsed.blocks : [], version: built.version };
+    const parsed = JSON.parse(stdout);
+    return { ok: true, blocks: Array.isArray(parsed.blocks) ? parsed.blocks : [], version };
   } catch {
     return { ok: false, reason: "ocr-failed", message: "invalid helper output" };
   }
+}
+
+function runVision(imagePath) {
+  const built = ensureVisionBuilt();
+  if (!built.ok) return { ok: false, reason: "no-engine", message: built.message };
+
+  const res = spawnSync(built.bin, [imagePath], {
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+    timeout: 30000,
+  });
+  if (res.status === 0) return parseVisionOutput(res.stdout, built.version);
+
+  // The prebuilt helper should always run. If it does not (e.g. an exotic
+  // architecture), fall back to the Swift interpreter before giving up.
+  if (process.platform === "darwin") {
+    const fallback = spawnSync("swift", [VISION_SRC, imagePath], {
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+      timeout: 60000,
+    });
+    if (fallback.status === 0) {
+      const parsed = parseVisionOutput(fallback.stdout, "swift-interpreter");
+      if (parsed.ok) return parsed;
+    }
+  }
+
+  return {
+    ok: false,
+    reason: "ocr-failed",
+    message: String(res.stderr || res.error || "").slice(0, 300) || "Vision helper exited with an error",
+  };
 }
 
 // --- helpers ---------------------------------------------------------------
@@ -202,7 +306,16 @@ function testImageShot() {
 
 async function activate(api) {
   let cfg = loadConfig();
-  const state = { sessionId: null, boxes: [], translations: new Map(), hovered: null, translateError: null };
+  const state = {
+    sessionId: null,
+    boxes: [],
+    translations: new Map(),
+    hovered: null,
+    translateError: null,
+    translating: false,
+    ocrError: null,
+    captureError: null,
+  };
   const translationCache = new Map(); // text → translation (across sessions)
 
   api.log.info(`image-translate ${api.plugin.version} activating`);
@@ -225,11 +338,12 @@ async function activate(api) {
       return "Screen recording is off — enable it in System Settings.";
     }
     if (reason === "no-display") return "Couldn't capture the screen.";
-    return "Capture failed.";
+    return "Capture failed — try again.";
   }
 
   async function pretranslate(boxes) {
     state.translateError = null;
+    state.translating = true;
     const pending = boxes.filter((b) => !translationCache.has(b.text));
     for (const group of chunk(pending, 8)) {
       let res;
@@ -246,6 +360,16 @@ async function activate(api) {
           const src = group[i];
           if (src && t && typeof t.text === "string") translationCache.set(src.text, t.text);
         });
+        // Refresh the hovered line as soon as its translation is available —
+        // otherwise a hover before the batch resolves stays stuck on
+        // "Translating…" forever (the old 0.2.10 bug).
+        for (const box of group) {
+          const translated = translationCache.get(box.text);
+          if (translated) state.translations.set(box.id, translated);
+        }
+        if (state.hovered) {
+          void api.overlay.subtitle.show(subtitleForBox(state.hovered));
+        }
       } else {
         // Record why so hover can degrade visibly and the status panel can show it.
         const reason = res && res.reason ? res.reason : "error";
@@ -260,6 +384,10 @@ async function activate(api) {
     for (const b of boxes) {
       const t = translationCache.get(b.text);
       if (t) state.translations.set(b.id, t);
+    }
+    state.translating = false;
+    if (state.hovered) {
+      void api.overlay.subtitle.show(subtitleForBox(state.hovered));
     }
     record({
       type: "translated",
@@ -277,10 +405,14 @@ async function activate(api) {
     const box = state.boxes.find((b) => b.id === boxId);
     if (state.translateError) {
       const src = box && box.text ? `${box.text} · ` : "";
-      const detail = state.translateError.reason === "no-profile" ? "" : " · Translation unavailable";
-      return { text: `${src}翻译暂不可用${detail}`, tone: "muted" };
+      const detail =
+        state.translateError.reason === "no-profile"
+          ? "Add a profile to translate."
+          : "Translation unavailable";
+      return { text: `${src}${detail}`, tone: "muted" };
     }
-    return { text: "Translating…", tone: "muted" };
+    const pending = box && box.text ? `${box.text} · ` : "";
+    return { text: `${pending}Translating…`, tone: "muted" };
   }
 
   async function runCapture() {
@@ -294,9 +426,13 @@ async function activate(api) {
           );
       record({ type: "shot", source: testShot ? "test-image" : "capture", ok: !!(shot && shot.ok), reason: shot && shot.reason });
       if (!shot || !shot.ok) {
-        if (!shot || shot.reason !== "cancelled") await showError(reasonMessage(shot && shot.reason));
+        if (!shot || shot.reason !== "cancelled") {
+          state.captureError = (shot && shot.reason) || "error";
+          await showError(reasonMessage(shot && shot.reason));
+        }
         return;
       }
+      state.captureError = null;
       let imagePath = null;
       let ocr;
       try {
@@ -312,14 +448,16 @@ async function activate(api) {
         }
       }
       if (!ocr.ok) {
+        state.ocrError = { reason: ocr.reason, message: ocr.message || null };
         record({ type: "ocr", ok: false, reason: ocr.reason, message: ocr.message });
         await showError(
           ocr.reason === "no-engine"
-            ? "Text engine unavailable (Vision helper could not build)."
-            : "Text engine unavailable.",
+            ? "Text engine unavailable — the Vision helper could not load. See Image Translate settings."
+            : "Text engine unavailable — the OCR helper failed. See Image Translate settings.",
         );
         return;
       }
+      state.ocrError = null;
       record({ type: "ocr", ok: true, version: ocr.version, blocks: (ocr.blocks || []).length });
       const boxes = ocr.blocks
         .filter((b) => b && typeof b.text === "string" && b.text.trim().length > 0)
@@ -404,9 +542,15 @@ async function activate(api) {
         // True when a capture is on screen; lastTranslateError explains a failed
         // pre-translation (surfaced instead of a stuck "Translating…").
         active: !!state.sessionId,
+        translating: state.translating,
+        readyTranslations: state.translations.size,
+        totalBoxes: state.boxes.length,
         lastTranslateError: state.translateError || null,
+        lastOcrError: state.ocrError || null,
+        lastCaptureError: state.captureError || null,
         vision: {
           built: vision.ok === true,
+          cached: vision.ok ? vision.cached === true : false,
           version: vision.ok ? vision.version : null,
           reason: vision.ok ? null : vision.reason,
           message: vision.ok ? null : vision.message,

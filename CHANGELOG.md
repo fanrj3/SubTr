@@ -10,6 +10,7 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 
 | Version | Key commits | Theme |
 |---|---|---|
+| **0.2.11** | release build | Subtitle actions + style menu, global toggle reliability, OCR helper fix, Usage dashboard |
 | pre-0.1.0 | `ccdb396` scaffold · `09c96d8` rename · `23b595e` web app · `8219072` overlap fix · `a2598c4` dedup fix | Web app: reader, subtitle overlay, LLM proxy, presets |
 | 0.1.x→0.2.0 dev | `46feadf` | OpenCode Go preset + Electron desktop (system-wide capture) |
 | **0.2.0** | `032dbf4` | Fast mode, Auto target language, teleprompter scroll, lessons learned |
@@ -30,6 +31,11 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 
 | Feature | Since | Commit | Primary files |
 |---|---|---|---|
+| Locked-subtitle actions (⌘C copy · ⌘I / double-space insert · style menu) | 0.2.11 | release | `src/components/subtitle-overlay.tsx`, `desktop/main.cjs`, `desktop/preload.cjs` |
+| Global toggle hotkey (main-owned mode + fallback + app-wide bridge) | 0.2.11 | release | `src/components/mode-bridge.tsx`, `src/lib/client/hotkey.ts`, `desktop/main.cjs` |
+| CJK-aware target detection + echo retry | 0.2.11 | release | `src/lib/language.ts`, `src/lib/client/translate.ts`, `src/lib/server/llm.ts` |
+| Image Translate 0.1.1 (prebuilt Vision helper, hover refresh, diagnostics) | 0.2.11 | release | `examples/plugins/image-translate/` |
+| Usage Stats 0.2.0 (area chart, ranges, insights, modern dashboard) | 0.2.11 | release | `examples/plugins/usage-stats/` |
 | Next.js scaffold + Tailwind v4 + ESLint | pre-0.1.0 | `ccdb396` | `next.config.ts`, `eslint.config.mjs` |
 | Reader (paste / edit / select) | pre-0.1.0 | `23b595e` | `src/components/reader.tsx` |
 | Subtitle overlay (in-app, streaming) | pre-0.1.0 | `23b595e` | `src/components/subtitle-overlay.tsx` |
@@ -102,6 +108,15 @@ Repo: `~/04_Dev/SubTr` · Stack: Next.js 16 (App Router) · React 19 · TypeScri
 ---
 
 ## Version details
+
+### 0.2.11 — subtitle actions · reliable toggle · OCR fix · usage dashboard
+
+- **Subtitle actions while locked.** Hover a pinned card and press **⌘C** to copy the translation (toast confirmation), **⌘I** or a **double space** to paste it into the focused text field (replacing the current selection), and **right-click** for a compact style menu: text size, text color swatches + custom picker, font family, reset, copy/insert, and **Open SubTr window**. Left-click still only pins; the overlay is now a non-activating macOS `panel`, so clicking it never raises the reader window.
+- **Global ⌘⇧T actually works everywhere.** Main keeps the authoritative translate-mode value, registers the shortcut at startup, falls back to `Alt+⇧+Space` / `Ctrl+⇧+Space` / `Alt+⌘+T` when the preferred one is taken, and a root-layout `ModeBridge` handles the toggle on Settings and every other route (previously only the home page subscribed). The TopBar shows the live accelerator.
+- **Image Translate 0.1.1.** The Apple Vision helper is now a prebuilt universal (arm64 + x86_64) binary shipped in the plugin zip, so no Xcode/CLT install is needed; imports restore the executable bit and the plugin also chmods/compiles on demand. OCR/build failures surface their real reason in the panel, and a hover made before the batch translation resolves is refreshed in place (the old stuck "Translating…" and "Text engine unavailable" loops are gone).
+- **CJK detection + echo retry.** Language detection counts letters (ignoring whitespace/punctuation/digits) with a 40% CJK floor for mixed copy, and an identical response to a clearly cross-script request triggers one stricter retry (`forceTranslate`) with a prompt that forbids returning the source unchanged.
+- **Usage Stats 0.2.0.** A modern dashboard: hero spend with 30-day trend, KPI cards, a smooth SVG area chart with 7/30/90-day ranges and four metrics, a 26-week activity calendar, and busiest-day/average/projection insights. Auto-refreshes while visible.
+- **UI polish.** Refreshed top bar (brand tile, live mode switch, hotkey chip), reading surface and empty state with clipboard paste, floating usage dock, plugin widget cards, update banner, and toast/menu motion.
 
 ### pre-0.1.0 → web app (`23b595e`)
 - Reader; selection-triggered translation; subtitle card at bottom-center; `/api/translate` (streaming) + `/api/test`; 15 provider presets; localStorage settings; README.

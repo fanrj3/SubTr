@@ -13,7 +13,7 @@ import {
   writeAvailableUpdate,
 } from "@/lib/client";
 import { RELEASES_URL } from "@/lib/version";
-import { XIcon } from "./icons";
+import { RefreshIcon, XIcon } from "./icons";
 
 export function UpdateBanner() {
   const { t } = useT();
@@ -48,17 +48,22 @@ export function UpdateBanner() {
   }
 
   return (
-    <div className="border-b border-card-border bg-card">
-      <div className="mx-auto flex h-9 max-w-[75rem] items-center justify-between gap-3 px-4 text-xs sm:px-6">
-        <span className="min-w-0 truncate text-muted">
-          {t("update.banner.available", { version: update.version })}
+    <div className="px-3 pt-2.5 sm:px-4">
+      <div className="mx-auto flex max-w-[75rem] items-center justify-between gap-3 rounded-xl border border-accent/20 bg-accent-dim/50 px-3 py-2 text-[11px] shadow-sm sm:px-4">
+        <span className="flex min-w-0 items-center gap-2 text-foreground/80">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
+            <RefreshIcon className="h-3 w-3" />
+          </span>
+          <span className="min-w-0 truncate">
+            {t("update.banner.available", { version: update.version })}
+          </span>
         </span>
-        <span className="flex shrink-0 items-center gap-2">
+        <span className="flex shrink-0 items-center gap-1.5">
           <a
             href={update.url || RELEASES_URL}
             target="_blank"
             rel="noreferrer"
-            className="font-medium text-accent underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="rounded-md px-2 py-1 font-semibold text-accent transition-colors hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             {t("update.banner.view")}
           </a>

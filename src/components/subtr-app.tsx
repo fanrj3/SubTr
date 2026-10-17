@@ -6,7 +6,6 @@ import { PROVIDER_PRESETS } from "@/lib/presets";
 import {
   useLocalStorage,
   useMode,
-  useHotkeyBootstrap,
   readSettings,
   toLlmConfig,
   streamTranslate,
@@ -30,7 +29,6 @@ const DEFAULT_TARGET_LANG = "auto";
 export function SubTrApp() {
   const { t } = useT();
   const [mode, setMode] = useMode();
-  useHotkeyBootstrap();
   const [targetLang, setTargetLang] = useLocalStorage(TARGET_LANG_KEY, DEFAULT_TARGET_LANG);
   const [subtitle, setSubtitle] = useState<SubtitleState>({ kind: "idle" });
 
@@ -188,7 +186,7 @@ export function SubTrApp() {
   }, []);
 
   return (
-    <div className="flex min-h-full flex-col pb-9">
+    <div className="flex min-h-full flex-col pb-16">
       <TopBar
         mode={mode}
         onModeChange={handleModeChange}

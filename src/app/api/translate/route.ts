@@ -42,7 +42,7 @@ export async function POST(req: Request): Promise<Response> {
     return errorResponse("Invalid request body", 400);
   }
 
-  const { text, targetLang, config: rawConfig, stream, bodyOverrides, presetId, profileId } = rawBody;
+  const { text, targetLang, config: rawConfig, stream, bodyOverrides, presetId, profileId, forceTranslate } = rawBody;
 
   if (typeof text !== "string") {
     return errorResponse("text must be a string", 400);
@@ -108,7 +108,10 @@ export async function POST(req: Request): Promise<Response> {
     model: config.model,
     stream: wantStream,
     messages: [
-      { role: "system", content: buildSystemPrompt(lang) },
+      {
+        role: "system",
+        content: buildSystemPrompt(lang, { forceTranslate: forceTranslate === true }),
+      },
       { role: "user", content: effectiveText },
     ],
   };

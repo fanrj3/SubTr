@@ -34,6 +34,11 @@ export type TranslateRequest = {
    * controls for short-text fast mode). Cannot override model/messages/stream.
    */
   bodyOverrides?: Record<string, unknown>;
+  /**
+   * Client-side echo retry: the first response repeated the source, so ask the
+   * model explicitly to translate instead of returning it unchanged.
+   */
+  forceTranslate?: boolean;
 };
 
 /** 200 response body for stream=false. */

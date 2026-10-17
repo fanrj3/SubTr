@@ -1514,6 +1514,12 @@ export async function importPluginZip(
       }
       await fs.mkdir(/* turbopackIgnore: true */ path.dirname(dest), { recursive: true });
       await fs.writeFile(/* turbopackIgnore: true */ dest, bytes);
+      // Plugin helpers live under bin/ (and shell entry points end in .sh/.command).
+      // Zip archives do not reliably carry the executable bit, so restore it here;
+      // otherwise a shipped OCR helper fails with EACCES on first use.
+      if (rel.startsWith("bin/") || /\.(sh|command)$/i.test(rel)) {
+        await fs.chmod(/* turbopackIgnore: true */ dest, 0o755).catch(() => {});
+      }
     }
 
     const backup = path.join(/* turbopackIgnore: true */ dir, `.trash-${id}-${randomSuffix()}`);

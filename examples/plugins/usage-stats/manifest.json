@@ -1,12 +1,19 @@
 {
   "id": "usage-stats",
   "name": "Usage Stats",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "apiVersion": 1,
-  "minAppVersion": "0.2.6",
-  "description": "Shows recent usage: totals, a 30-day bar chart, and a calendar heatmap.",
-  "capabilities": ["ui.panel"],
+  "minAppVersion": "0.2.11",
+  "description": "A modern usage dashboard: spend, calls, tokens, a 7/30/90-day area chart and a 26-week activity calendar.",
+  "capabilities": [
+    "ui.panel"
+  ],
   "panels": [
-    { "id": "main", "title": "Usage Stats", "entry": "panel.html", "location": "home" }
+    {
+      "id": "main",
+      "title": "Usage Stats",
+      "entry": "panel.html",
+      "location": "home"
+    }
   ]
 }

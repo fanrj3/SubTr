@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useT } from "@/lib/client";
+import { useLocalStorage, useT } from "@/lib/client";
 import {
   DEFAULT_HOTKEY,
+  HOTKEY_KEY,
   SUGGESTED_HOTKEYS,
   acceleratorFromEvent,
   formatAccel,
@@ -17,7 +18,7 @@ import {
 
 export function HotkeyRecorder() {
   const { t } = useT();
-  const [accel, setAccel] = useState(() => readHotkey());
+  const [accel, setAccel] = useLocalStorage<string>(HOTKEY_KEY, DEFAULT_HOTKEY);
   const [recording, setRecording] = useState(false);
   const [preview, setPreview] = useState("");
   const [error, setError] = useState<{ message: string; suggestions: string[] } | null>(
@@ -58,7 +59,7 @@ export function HotkeyRecorder() {
         });
       }
     },
-    [t]
+    [t, setAccel]
   );
 
   useEffect(() => {

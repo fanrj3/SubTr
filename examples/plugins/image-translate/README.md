@@ -15,21 +15,24 @@ highlighted line in the normal subtitle line when you hover it.
 > not exist today. Those are listed below with exact shapes and land in a later
 > wave (see [`docs/image-translate-plugin.md`](../../../docs/image-translate-plugin.md)).
 
-## Build status (phase P0 — this round)
+## Build status (plugin 0.1.1)
 
-This folder is a **spec plus skeleton**. Nothing runs end to end yet:
+The plugin runs end to end on macOS: **⌘⇧P** freezes the display, you frame a
+region, the crop is read by an on-device **Apple Vision** helper, highlights are
+drawn over the image, and hover translations stream into the normal subtitle
+line. The helper is shipped prebuilt as a universal (arm64 + x86_64) binary in
+`bin/vision-ocr`, so no Xcode / Command Line Tools install is required; if the
+binary is missing the plugin compiles `vision-ocr.swift` on first use.
 
 | File | State |
 | --- | --- |
-| `manifest.json` | Complete, but declares capabilities the host does not have yet. |
-| `README.md` | The spec (this file). |
-| `panel.html` | Settings-panel shell on the plugin UI kit, static config + TODOs. |
-| `index.cjs` | No-op placeholder; the planned wiring is written out as comments. |
+| `manifest.json` | Complete; requests the apiVersion-2 host capabilities it uses. |
+| `index.cjs` | Capture → OCR → batched pre-translation → hover/select → subtitle. |
+| `panel.html` | Live settings panel (engine status, diagnostic, shortcut, highlight style). |
+| `bin/vision-ocr` | Prebuilt universal Vision helper (shipped in the plugin zip). |
+| `vision-ocr.swift` | Helper source, used for compile-on-demand installs. |
 
-Until the host wave ships `capture.region`, `overlay.regions`,
-`overlay.subtitle`, `translate.text`, and `hotkey.register`, the loader refuses
-the manifest with `unknown capabilities: …` and the plugin shows as **error**.
-That is expected. It cannot be enabled or previewed in-app yet.
+PP-OCRv6 (Windows/Linux) remains a later phase; the panel labels it as such.
 
 ## What it does (user-approved target)
 
